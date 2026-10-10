@@ -1,8 +1,9 @@
 package build
 
 func applyGraphics(chr, gchr []byte) {
-	copy(chr[0x50*1024:], spritePage(gchr, 0x0C))
-	copy(chr[0x51*1024:], spritePage(gchr, 0x0D))
+	smbPlayer := append([]byte(nil), chr[0x50*1024:0x51*1024]...)
+	copy(chr[0x50*1024:], spritePage(gchr, smbPlayer, 0x0C))
+	copy(chr[0x51*1024:], spritePage(gchr, smbPlayer, 0x0D))
 
 	type stamp struct {
 		page, tile int
@@ -23,11 +24,17 @@ func applyGraphics(chr, gchr []byte) {
 	applyLogo(chr, gchr)
 }
 
-func spritePage(gchr []byte, srcPage int) []byte {
+func spritePage(gchr, smbPlayer []byte, srcPage int) []byte {
 	data := append([]byte(nil), gchr[srcPage*1024:(srcPage+1)*1024]...)
-	extra := [][3]int{{0x28, 0x08, 0x00}, {0x2A, 0x08, 0x10}, {0x2C, 0x0C, 0x2E}, {0x38, 0x0C, 0x3E}}
+	extra := [][3]int{{0x28, 0x08, 0x00}, {0x2A, 0x08, 0x10}}
 	for _, e := range extra {
 		copy(data[e[0]*16:], pair(gchr, e[1], e[2]))
+	}
+	if srcPage == 0x0D {
+		copy(data[0x00*16:], pair(gchr, 0x0D, 0x2E))
+	}
+	for _, s := range [][2]int{{0x2C, 0x10}, {0x2E, 0x12}, {0x38, 0x14}, {0x3C, 0x16}} {
+		copy(data[s[0]*16:], smbPlayer[s[1]*16:s[1]*16+32])
 	}
 	return data
 }

@@ -4485,8 +4485,8 @@ PRG003_B6FD:
 	LDA <Temp_Var2	
 	STA Sprite_RAM+$03,Y
 
-	; Pattern $17
-	LDA #$17
+	; Bubble pattern
+	LDA #BUBBLE_TILE
 	STA Sprite_RAM+$01,Y
 
 	LDX #$03	 ; X = 3

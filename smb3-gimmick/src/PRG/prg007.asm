@@ -1930,7 +1930,7 @@ Bubble_Draw:
 	BCS PRG007_A91E	 ; If this bubble's X >= 248, jump  to PRG007_A91E (destroy bubble)
 
 	; Bubble's pattern
-	LDA #$17
+	LDA #BUBBLE_TILE
 	STA Sprite_RAM+$01,Y
 
 	; Bubble's attributes
@@ -1986,7 +1986,7 @@ PRG007_A9A0:
 	RTS		 ; Return
 
 Splash_Patterns:
-	.byte $11, $13, $15, $47, $47, $47
+	.byte $2D, $2F, $39, $47, $47, $47
 
 Splash_Remove:
 
@@ -3887,7 +3887,7 @@ PRG007_B364:
 	STA Sprite_RAM+$03,Y
 
 	; Set bubble pattern
-	LDA #$17
+	LDA #BUBBLE_TILE
 	STA Sprite_RAM+$01,Y
 
 	; Set bubble attributes

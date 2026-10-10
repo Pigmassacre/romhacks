@@ -3621,6 +3621,7 @@ GIM_GRAVITY		= 4
 GIM_HURTTIME		= $7F	; Player_FlashInv on hit
 GIM_STUNTIME		= $66	; Player_FlashInv at or above this: stunned, hurt animation, no blinking
 GIM_CARDDROP		= 16	; Pixels the end-level card is lowered
+BUBBLE_TILE		= $3D	; SMB3's bubble, moved off the player page tiles Yumetaro uses (tools/build_chr.py)
 
 GIMSND_JUMP		= 1
 GIMSND_CHARGE		= 2

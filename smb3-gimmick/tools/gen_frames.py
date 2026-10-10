@@ -5,6 +5,8 @@ ROOT = os.path.join(os.path.dirname(__file__), '..')
 prg, _ = load_rom(os.path.join(ROOT, 'Gimmick! (Japan).nes'))
 BANK = 15 * 0x4000
 PAGE_MAP = {0x0C: 0x50, 0x0D: 0x51}
+# Must match MOVED in build_chr.py
+MOVED = {0x0D: {0x2E: 0x00}}
 NFRAMES = 22
 
 
@@ -30,6 +32,8 @@ def main():
     ptr_l, ptr_h, pages, bodies = [], [], [], []
     for i in range(NFRAMES):
         spr = frame_sprites(i)
+        moved = MOVED.get(rd(0x85CE + i), {})
+        spr = [(dy, moved.get(t & 0xFE, t & 0xFE) | (t & 1), a, dx) for dy, t, a, dx in spr]
         bottom = [s for s in spr if s[0] >= -24]
         top = [s for s in spr if s[0] < -24]
         assert len(bottom) <= 3 and len(top) <= 3, (i, spr)

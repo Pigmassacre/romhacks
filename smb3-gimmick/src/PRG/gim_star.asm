@@ -19,6 +19,7 @@ Gim_Star:
 	STA Star_Ridden
 Gim_StarNoPipe:
 	LDA <Player_HaltGame
+	ORA Player_HaltTick
 	ORA Player_IsDying
 	ORA Level_PipeMove
 	BEQ Gim_StarActive
@@ -948,7 +949,9 @@ Gim_StarRideCheck:
 	JMP Gim_StarRideSnap
 Gim_StarRideWasOn:
 	CMP #16+17
-	BGE Gim_StarRideRTS
+	BLT Gim_StarRideSnap
+Gim_StarRideRTS:
+	RTS
 
 Gim_StarRideSnap:
 	LDA Star_Y
@@ -961,22 +964,109 @@ Gim_StarRideSnap:
 	STA <Player_YVel
 	STA <Player_InAir
 
+	; The star only probes its own box; Yumetaro's head is 16px above it, so a ceiling there stops them both
+	LDA #$08
+	STA <Temp_Var1
+	LDA #$10
+	STA <Temp_Var2
+	JSR Gim_PlayerSetPoint
+	JSR Gim_RiderSolid
+	BCC Gim_StarRideCarry
+	PHA
+	LDA <Temp_Var14
+	AND #$F0
+	STA <Player_Y
+	ADD #32
+	STA Star_Y
+	LDA <Temp_Var13
+	STA <Player_YHi
+	ADC #0
+	STA Star_YHi
+	LDA #$00
+	STA Star_YVel
+	STA Star_YFrac
+	PLA
+	JSR Gim_StarBump
+
+Gim_StarRideCarry:
 	LDA Star_X
 	SUB Star_PrevX
-	STA <Temp_Var1
+	STA <Temp_Var5
 	LDA Star_XHi
 	SBC Star_PrevXHi
-	STA <Temp_Var2
+	STA <Temp_Var6
+	ORA <Temp_Var5
+	BEQ Gim_StarRideOn
+
 	LDA <Player_X
-	ADD <Temp_Var1
+	STA <Temp_Var7
+	ADD <Temp_Var5
 	STA <Player_X
 	LDA <Player_XHi
-	ADC <Temp_Var2
+	STA <Temp_Var8
+	ADC <Temp_Var6
 	STA <Player_XHi
 
+	LDY #$0D
+	LDA <Temp_Var6
+	BPL Gim_StarRideFront
+	LDY #$02
+Gim_StarRideFront:
+	STY <Temp_Var1
+	LDA #$14
+	STA <Temp_Var2
+	JSR Gim_PlayerSetPoint
+	JSR Gim_RiderSolid
+	BCS Gim_StarRideBlocked
+	LDA #$1B
+	STA <Temp_Var2
+	JSR Gim_PlayerSetPoint
+	JSR Gim_RiderSolid
+	BCC Gim_StarRideOn
+Gim_StarRideBlocked:
+	LDA <Temp_Var7
+	STA <Player_X
+	LDA <Temp_Var8
+	STA <Player_XHi
+
+Gim_StarRideOn:
 	LDA #$01
 	STA Star_Ridden
-Gim_StarRideRTS:
+	RTS
+
+	; Temp_Var13/14 = Player Y + Temp_Var2, Temp_Var15/16 = Player X + Temp_Var1
+Gim_PlayerSetPoint:
+	LDA <Player_Y
+	ADD <Temp_Var2
+	STA <Temp_Var14
+	LDA <Player_YHi
+	ADC #0
+	STA <Temp_Var13
+	LDA <Player_X
+	ADD <Temp_Var1
+	STA <Temp_Var16
+	LDA <Player_XHi
+	ADC #0
+	STA <Temp_Var15
+	RTS
+
+	; Carry set (A = tile) if the point Temp_Var13-16 is solid on all sides; floor slope tiles don't count
+Gim_RiderSolid:
+	JSR Gim_TileAt
+	CMP Tile_AttrTable+4,Y
+	BCC Gim_RiderSolidRTS
+	STA <Temp_Var9
+	JSR Gim_TileShape
+	TAY
+	LDA Slope_PlayerVel_Effect,Y
+	CMP #$01
+	LDA <Temp_Var9
+	BCS Gim_RiderSolidNo
+	SEC
+	RTS
+Gim_RiderSolidNo:
+	CLC
+Gim_RiderSolidRTS:
 	RTS
 
 

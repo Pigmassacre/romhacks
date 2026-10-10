@@ -3,8 +3,15 @@ from nes import load_rom
 
 ROOT = os.path.join(os.path.dirname(__file__), '..')
 _, gchr = load_rom(os.path.join(ROOT, 'Gimmick! (Japan).nes'))
+_, schr = load_rom(os.path.join(ROOT, 'Super Mario Bros III.nes'))
 
-EXTRA = [(0x28, 0x08, 0x00), (0x2A, 0x08, 0x10), (0x2C, 0x0C, 0x2E), (0x38, 0x0C, 0x3E)]
+EXTRA = [(0x28, 0x08, 0x00), (0x2A, 0x08, 0x10)]
+
+# Must match MOVED in gen_frames.py
+MOVED = {0x0D: [(0x2E, 0x00)]}
+
+# SMB3's splash and bubble tiles, which it draws from the player page; must match Splash_Patterns and BUBBLE_TILE
+SMB3_SHARED = [(0x2C, 0x10), (0x2E, 0x12), (0x38, 0x14), (0x3C, 0x16)]
 
 
 def pair(page, tile):
@@ -16,6 +23,11 @@ def build(src_page):
     data = bytearray(gchr[src_page * 1024:(src_page + 1) * 1024])
     for dst, page, tile in EXTRA:
         data[dst * 16:dst * 16 + 32] = pair(page, tile)
+    for src, dst in MOVED.get(src_page, []):
+        data[dst * 16:dst * 16 + 32] = pair(src_page, src)
+    for dst, src in SMB3_SHARED:
+        o = 0x50 * 1024 + src * 16
+        data[dst * 16:dst * 16 + 32] = schr[o:o + 32]
     return bytes(data)
 
 
