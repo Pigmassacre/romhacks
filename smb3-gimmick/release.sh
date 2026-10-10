@@ -47,7 +47,7 @@ local="$(git rev-parse HEAD)"
 if [[ -n "$remote" && "$remote" != "$local" ]]; then
 	echo "GitHub's main branch does not match this one."
 	echo "If GitHub still has older commits, replacing main removes them:"
-	echo "  git push --force-with-lease origin main"
+	echo "  git push --force-with-lease=refs/heads/main:${remote} origin main"
 	echo "Run ./release.sh again after that."
 	exit 1
 fi
