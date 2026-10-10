@@ -68,8 +68,9 @@ def main():
         rows.append(out)
     print('logo tiles: %d of %d free slots' % (len(slots), len(FREE)))
 
+    os.makedirs(os.path.join(ROOT, 'out', 'chr'), exist_ok=True)
     for i in range(4):
-        with open(os.path.join(ROOT, 'src', 'CHR', 'chr%03d.bin' % (SMB_BANK + i)), 'wb') as f:
+        with open(os.path.join(ROOT, 'out', 'chr', 'chr%03d.bin' % (SMB_BANK + i)), 'wb') as f:
             f.write(chr_data[i * 1024:(i + 1) * 1024])
 
     attr = ATTR[:]

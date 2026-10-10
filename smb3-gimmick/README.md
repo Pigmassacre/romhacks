@@ -11,9 +11,11 @@ Download SMB3 Gimmick from the [GitHub releases](https://github.com/Pigmassacre/
 | Computer | File |
 |---|---|
 | Windows | `SMB3-Gimmick-windows.zip` |
+| Windows on ARM | `SMB3-Gimmick-windows-arm64.zip` |
 | Mac (2020 or newer) | `SMB3-Gimmick-mac.zip` |
 | Mac (older Intel Mac) | `SMB3-Gimmick-mac-intel.zip` |
 | Linux | `SMB3-Gimmick-linux.zip` |
+| Linux on ARM | `SMB3-Gimmick-linux-arm64.zip` |
 
 Unzip it and open **SMB3 Gimmick**. A page opens in your web browser. Drop in Super Mario Bros. 3 (the original US release) and Gimmick! (the Japanese game), then choose **Make the game**. The result is `SMB3 Gimmick.nes` in your downloads folder. Open that in an NES emulator.
 
@@ -34,8 +36,14 @@ Leave the small text window open while you use the page. Close it when you are f
 
 Yumetaro's movement was written for this project, on top of [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). *Super Mario Bros. 3* is © Nintendo. *Gimmick!* is © Sunsoft.
 
+The original code in this repository is under the MIT license. See [LICENSE](LICENSE) for what it covers.
+
 ## Working on the game
 
-`./release.sh v1.0.0` builds the program for Windows, Mac, and Linux and publishes those files as a GitHub release. You need [Go](https://go.dev/dl/) and the [GitHub CLI](https://cli.github.com/), logged in.
+The disassembly is in `src/`, based on [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). Yumetaro's code is in `src/PRG/gim_player.asm`, `gim_star.asm`, `gim_frames.asm`, and `gim_death.asm`.
 
-The assembly for Yumetaro is in `hack/`. `tools/gen_patch.py` rebuilds `internal/build/patch.bin` after a local build of the game. The original game's code and graphics are not in this repository. `build.sh` only works where that private source is present.
+The ROM files are not included, and neither are any Gimmick! graphics. Put your own copies in the repository folder, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build, the tests, and the release script read them from there.
+
+`./build.sh` assembles `out/smb3-gimmick.nes`. It needs Python 3 and expects [NESASM](https://github.com/camsaul/nesasm) at `ref/nesasm/nesasm`. Before assembling, `tools/build_chr.py` and `tools/build_title.py` copy Yumetaro's tiles and the logo from the Gimmick! ROM into `out/chr/`, so `src/CHR` only ever holds the stock SMB3 graphics. After a build, `python3 tools/gen_patch.py` rebuilds `internal/build/patch.bin`. `go test ./...` then checks that the builder produces the same game.
+
+`./release.sh v1.0.0` builds the program for Windows, Mac, and Linux and publishes those files as a GitHub release. You need [Go](https://go.dev/dl/) and the [GitHub CLI](https://cli.github.com/), logged in. Before building, it checks that no ROMs or Gimmick! graphics are tracked anywhere in the git history, and it runs the tests.

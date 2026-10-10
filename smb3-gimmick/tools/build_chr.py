@@ -42,14 +42,19 @@ MAP_TILES = [
 ]
 
 
+OUT = os.path.join(ROOT, 'out', 'chr')
+os.makedirs(OUT, exist_ok=True)
+
 for out_page, src_page in ((0x50, 0x0C), (0x51, 0x0D)):
-    with open(os.path.join(ROOT, 'src', 'CHR', 'chr%03d.bin' % out_page), 'wb') as f:
+    with open(os.path.join(OUT, 'chr%03d.bin' % out_page), 'wb') as f:
         f.write(build(src_page))
 
+pages = {}
 for page, tile, data in MAP_TILES:
-    path = os.path.join(ROOT, 'src', 'CHR', 'chr%03d.bin' % page)
-    with open(path, 'rb') as f:
-        chr_data = bytearray(f.read())
-    chr_data[tile * 16:tile * 16 + 32] = data
-    with open(path, 'wb') as f:
+    if page not in pages:
+        with open(os.path.join(ROOT, 'src', 'CHR', 'chr%03d.bin' % page), 'rb') as f:
+            pages[page] = bytearray(f.read())
+    pages[page][tile * 16:tile * 16 + 32] = data
+for page, chr_data in pages.items():
+    with open(os.path.join(OUT, 'chr%03d.bin' % page), 'wb') as f:
         f.write(chr_data)

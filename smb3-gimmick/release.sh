@@ -18,29 +18,48 @@ if ! command -v gh >/dev/null 2>&1; then
 	exit 1
 fi
 
+if [[ ! -f "Super Mario Bros III.nes" ]]; then
+	echo "Put the US Super Mario Bros. 3 ROM here as 'Super Mario Bros III.nes'. It is needed to check the graphics in src/CHR."
+	exit 1
+fi
+
 python3 - << 'PY'
-import subprocess, sys
-names = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = []
-for n in names:
-    if n.startswith("src/") or n.endswith(".nes") or n == "Mesen":
-        bad.append(n)
-    if n.endswith(".bin") and n != "internal/build/patch.bin":
-        bad.append(n)
+import re, subprocess, sys
+smb = open("Super Mario Bros III.nes", "rb").read()
+stock = smb[16 + 0x40000:16 + 0x40000 + 0x20000]
+chr_page = re.compile(r"^src/CHR/chr(\d{3})\.bin$")
+
+def allowed(path):
+    if path.endswith(".nes") or path == "Mesen":
+        return False
+    if path.endswith(".bin"):
+        return path == "internal/build/patch.bin" or chr_page.match(path) is not None
+    return True
+
+def stock_page(path, blob):
+    i = int(chr_page.match(path).group(1))
+    data = subprocess.check_output(["git", "cat-file", "blob", blob])
+    return data == stock[i * 1024:(i + 1) * 1024]
+
+bad = [n for n in subprocess.check_output(["git", "ls-files"], text=True).splitlines() if not allowed(n)]
 if bad:
     print("These tracked files can't be published:")
     print("\n".join(bad))
     sys.exit(1)
-log = subprocess.check_output(["git", "rev-list", "--all", "--objects"], text=True)
-for line in log.splitlines():
+for line in subprocess.check_output(["git", "rev-list", "--all", "--objects"], text=True).splitlines():
     parts = line.split(" ", 1)
     if len(parts) < 2:
         continue
-    path = parts[1]
-    if path.startswith("src/") or path.endswith(".nes") or path == "Mesen" or (path.endswith(".bin") and not path.endswith("patch.bin")):
+    blob, path = parts
+    if not allowed(path):
         print("Git history still contains", path)
         sys.exit(1)
+    if chr_page.match(path) and not stock_page(path, blob):
+        print("Git history contains modified graphics in", path, "(only stock SMB3 pages may be tracked)")
+        sys.exit(1)
 PY
+
+go test ./...
 
 remote="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
 local="$(git rev-parse HEAD)"
