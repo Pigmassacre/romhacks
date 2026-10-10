@@ -32,7 +32,7 @@ Leave the small text window open while you use the page. Close it when you are f
 
 ## Credits
 
-Yumetaro's movement was written for this project. *Super Mario Bros. 3* is © Nintendo. *Gimmick!* is © Sunsoft.
+Yumetaro's movement was written for this project, on top of [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). *Super Mario Bros. 3* is © Nintendo. *Gimmick!* is © Sunsoft.
 
 ## Working on the game
 
