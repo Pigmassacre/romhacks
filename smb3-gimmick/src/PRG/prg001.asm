@@ -2987,8 +2987,8 @@ PRG001_AE56:
 	LDX <SlotIndexBackup	 ; X = current object slot index
 
 
-	; 10 hits to take out a Koopaling
-	LDA #$0a	
+	; Koopaling_DieByFire turns each star hit (HitCount 1 -> 0) into a stomp hit
+	LDA #$01
 	STA Objects_HitCount,X
 
 	; Set object variable 3 to $40
@@ -3331,12 +3331,10 @@ PRG001_B01F:
 
 Koopaling_DieByFire:
 	LDA Objects_HitCount,X
-	BNE PRG001_B01F	 ; If hits remain, jump to PRG001_B01F
+	BNE PRG001_B01F	 ; If not hit by the star, jump to PRG001_B01F
 
-	; Set hit count to 2 (will force the third and final hit after the jump!)
-	LDA #$02	
-	STA <Objects_Var4,X
-	JMP PRG001_B17B	 ; Jump to PRG001_B17B (force third and final hit!)
+	INC Objects_HitCount,X
+	JMP Koopaling_Hurt
 
 PRG001_B02C:
 	.byte -$0E, $1E
@@ -3631,10 +3629,12 @@ PRG001_B158:
 
 PRG001_B160:
 
-	; Bounce Player off Koopaling!
+	; Bounce Player off Koopaling! Yumetaro can't hurt him by stomping
 	LDA #-$30
 	STA <Player_YVel
+	RTS
 
+Koopaling_Hurt:
 	LDA Objects_Timer2,X
 	BNE PRG001_B1C9	 ; If timer 2 is not expired, jump to PRG001_B1C9 (RTS)
 

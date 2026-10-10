@@ -1050,10 +1050,17 @@ Gim_PlayerSetPoint:
 	STA <Temp_Var15
 	RTS
 
+	; Carry set (A = tile) if the point Temp_Var13-16 is solid from above; floor slope tiles don't count
+Gim_RiderFloor:
+	JSR Gim_TileAt
+	CMP Tile_AttrTable,Y
+	JMP Gim_RiderNoSlope
+
 	; Carry set (A = tile) if the point Temp_Var13-16 is solid on all sides; floor slope tiles don't count
 Gim_RiderSolid:
 	JSR Gim_TileAt
 	CMP Tile_AttrTable+4,Y
+Gim_RiderNoSlope:
 	BCC Gim_RiderSolidRTS
 	STA <Temp_Var9
 	JSR Gim_TileShape

@@ -1963,8 +1963,8 @@ ObjInit_BoomBoom:
 	STA <Objects_YHi,X
 	STA Objects_IsGiant,X	 ; Boom Boom is considered a "giant" enemy
 
-	; Boom Boom requires 37 fire balls before going down 
-	LDA #37
+	; ObjNorm_BoomBoom turns each star hit (HitCount 1 -> 0) into a stomp hit
+	LDA #$01
 	STA Objects_HitCount,X
 
 	; Boom Boom starts on frame 7
@@ -1997,20 +1997,24 @@ ObjNorm_BoomBoom:
 
 PRG003_AA25:
 	LDA Objects_HitCount,X
-	CMP #$20
-	BNE PRG003_AA3B	 ; If HitCount <> $20, jump to PRG003_AA3B
+	BNE PRG003_AA3B	 ; If not hit by the star, jump to PRG003_AA3B
 
-	DEC Objects_HitCount,X	 ; HitCount--
+	INC Objects_HitCount,X
 
-	; Var5 = 5
-	LDA #$05
-	STA <Objects_Var5,X
+	LDA Objects_Timer2,X
+	BNE PRG003_AA3B	 ; If still down from the last hit, jump to PRG003_AA3B
 
-	; Timer = $50
-	LDA #$50
-	STA Objects_Timer,X
+	LDA Objects_Frame,X
+	CMP #$07
+	BEQ PRG003_AA3B	 ; If in his spiky shell, jump to PRG003_AA3B
 
-	JMP BoomBoom_Draw	 ; Draw Boom Boom and don't come back
+	LDA <Objects_Var5,X
+	CMP #$02
+	BLT PRG003_AA3B	 ; If not fighting yet, jump to PRG003_AA3B
+	CMP #$05
+	BGE PRG003_AA3B	 ; If already dying, jump to PRG003_AA3B
+
+	JSR BoomBoom_Hurt
 
 PRG003_AA3B:
 	JSR BoomBoom_Draw	 ; Draw Boom Boom
@@ -2817,6 +2821,12 @@ PRG003_AE50:
 	LDA <Player_YVel
 	BMI PRG003_AE87	 ; If Player is moving upward, jump to PRG003_AE87 (RTS)
 
+	; Player Y Vel = -$30 (bounce off); Yumetaro can't hurt him by stomping
+	LDA #-$30
+	STA <Player_YVel
+	RTS
+
+BoomBoom_Hurt:
 	; Play squish sound
 	LDA Sound_QPlayer
 	ORA #SND_PLAYERSWIM
@@ -2826,10 +2836,6 @@ PRG003_AE50:
 	LDA <Objects_Var5,X
 	ADD #$07
 	JSR Score_PopUp
-
-	; Player Y Vel = -$30 (bounce off)
-	LDA #-$30
-	STA <Player_YVel
 
 	LDA <Objects_Var5,X
 	INC <Objects_Var5,X	; Var5++ (Next internal state)

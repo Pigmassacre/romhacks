@@ -249,6 +249,30 @@ Gim_CannonStand:
 	STA <Player_YVel
 	STA <Player_InAir
 
+	; Cannonballs fly through terrain; once the ground reaches Yumetaro's feet he steps off onto it
+	TXA
+	PHA
+	LDA #$08
+	STA <Temp_Var1
+	LDA #$1F
+	STA <Temp_Var2
+	JSR Gim_PlayerSetPoint
+	JSR Gim_RiderFloor
+	PLA
+	TAX
+	LDA #$00
+	STA <Temp_Var1
+	BCC Gim_CannonRide
+	LDA <Temp_Var14
+	AND #$F0
+	SUB #32
+	STA <Player_Y
+	LDA <Temp_Var13
+	SBC #0
+	STA <Player_YHi
+	RTS
+
+Gim_CannonRide:
 	TXA
 	ORA #$80
 	STA Gim_RideSlotNew

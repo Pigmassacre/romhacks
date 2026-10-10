@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const hackSHA256 = "acf81319183476ef9cf3032a38a21a84f9d552c71dc3301bc629a24e13eaaede"
+const hackSHA256 = "897527e0caf8b26e43f293c2c62af0ec0cf660d1c5baeb84131eaae0a44efe8b"
 
 func TestPatchHeader(t *testing.T) {
 	if string(patchBin[:4]) != "S3GP" || patchBin[4] != 1 {
