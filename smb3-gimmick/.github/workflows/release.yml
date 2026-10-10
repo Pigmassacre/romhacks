@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  linux-windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+      - name: Build
+        run: |
+          mkdir -p dist/linux dist/windows
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME} -extldflags '-static-libstdc++ -static-libgcc'" \
+            -o "dist/linux/SMB3 Gimmick" ./cmd/smb3-gimmick
+          CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ \
+            go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=${GITHUB_REF_NAME}" \
+            -o "dist/windows/SMB3 Gimmick.exe" ./cmd/smb3-gimmick
+          (cd dist/linux && zip -r ../SMB3-Gimmick-linux.zip .)
+          (cd dist/windows && zip -r ../SMB3-Gimmick-windows.zip .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows
+          path: dist/*.zip
+
+  mac:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          flags="-s -w -X main.version=${GITHUB_REF_NAME}"
+          CGO_ENABLED=1 GOARCH=arm64 go build -trimpath -ldflags "$flags" -o build/arm64 ./cmd/smb3-gimmick
+          CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
+            go build -trimpath -ldflags "$flags" -o build/amd64 ./cmd/smb3-gimmick
+          app="dist/SMB3 Gimmick.app"
+          mkdir -p "$app/Contents/MacOS"
+          lipo -create -output "$app/Contents/MacOS/SMB3 Gimmick" build/arm64 build/amd64
+          v="${GITHUB_REF_NAME#v}"
+          cat > "$app/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>SMB3 Gimmick</string>
+            <key>CFBundleDisplayName</key><string>SMB3 Gimmick</string>
+            <key>CFBundleExecutable</key><string>SMB3 Gimmick</string>
+            <key>CFBundleIdentifier</key><string>com.pigmassacre.smb3-gimmick</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${v}</string>
+            <key>CFBundleVersion</key><string>${v}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          codesign --force --deep --sign - "$app"
+          (cd dist && ditto -c -k --keepParent "SMB3 Gimmick.app" SMB3-Gimmick-mac.zip)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: dist/SMB3-Gimmick-mac.zip
+
+  release:
+    needs: [linux-windows, mac]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md << 'EOF'
+          SMB3 Gimmick builds the game on your computer from your own copies of Super Mario Bros. 3 and Gimmick!.
+
+          Unzip the download and open **SMB3 Gimmick**. Drop the original US Super Mario Bros. 3 and the Japanese Gimmick! on its window, then choose **Make the game**.
+
+          | Computer | File |
+          |---|---|
+          | Windows | SMB3-Gimmick-windows.zip |
+          | Mac | SMB3-Gimmick-mac.zip |
+          | Linux | SMB3-Gimmick-linux.zip |
+
+          The first time you open it, Windows or macOS may ask you to confirm. On Windows, choose More info, then Run anyway. On a Mac, right-click the app and choose Open.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --title "SMB3 Gimmick ${GITHUB_REF_NAME}" --notes-file notes.md dist/*.zip

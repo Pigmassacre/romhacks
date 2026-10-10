@@ -1,137 +1,142 @@
 package main
 
 import (
-	"embed"
-	"encoding/json"
-	"fmt"
+	_ "embed"
+	"errors"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
-	"time"
+	"sync"
+	"unsafe"
+
+	"github.com/AllenDang/cimgui-go/imgui"
+	g "github.com/AllenDang/giu"
+	"github.com/ncruces/zenity"
 
 	"github.com/Pigmassacre/smb3-gimmick/internal/build"
 )
 
-//go:embed page.html
-var page embed.FS
+//go:embed fonts/NotoSans-Regular.ttf
+var regularFont []byte
+
+//go:embed fonts/NotoSans-SemiBold.ttf
+var boldFont []byte
 
 var version = "dev"
 
+const outName = "SMB3 Gimmick.nes"
+
+var (
+	ink       = rgb(0x2c2622)
+	muted     = rgb(0x6d645c)
+	paper     = rgb(0xf6f1e8)
+	card      = rgb(0xfffdf8)
+	line      = rgb(0xe4d9c8)
+	green     = rgb(0x1f7a45)
+	greenDark = rgb(0x166237)
+	soft      = rgb(0xe7f5ec)
+	softLine  = rgb(0xb7dfc6)
+	warnBg    = rgb(0xfdecea)
+	warn      = rgb(0x8d2e2e)
+	fileBtn   = rgb(0xefe7da)
+	fileHover = rgb(0xe6dccb)
+	white     = rgb(0xffffff)
+)
+
+type game struct {
+	path string
+	data []byte
+}
+
+var (
+	mu      sync.Mutex
+	smb3    game
+	gimmick game
+	problem string
+	busy    bool
+	savedTo string
+
+	regular *imgui.Font
+	bold    *imgui.Font
+	scale   float32
+	width   float32
+	dialogs = zenity.IsAvailable()
+)
+
+func rgb(c uint32) imgui.Vec4 {
+	return imgui.Vec4{
+		X: float32(c>>16&0xff) / 255,
+		Y: float32(c>>8&0xff) / 255,
+		Z: float32(c&0xff) / 255,
+		W: 1,
+	}
+}
+
 func main() {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "The program could not start.")
-		os.Exit(1)
-	}
-	addr := ln.Addr().String()
-	url := "http://" + addr + "/"
+	wnd := g.NewMasterWindow("SMB3 Gimmick", 620, 680, 0)
+	wnd.SetStyle(nil)
+	wnd.SetBgColor(g.Vec4ToRGBA(paper))
+	wnd.SetDropCallback(take)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", servePage)
-	mux.HandleFunc("/check", serveCheck)
-	mux.HandleFunc("/build", serveBuild)
-	mux.HandleFunc("/bye", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || !fromHere(r) {
-			http.NotFound(w, r)
-			return
+	style := imgui.CurrentStyle()
+	scale = style.FontScaleDpi()
+	wnd.SetSizeLimits(int(460*scale), int(560*scale), -1, -1)
+
+	imgui.StyleColorsLight()
+	colors := style.Colors()
+	colors[imgui.ColText] = ink
+	colors[imgui.ColTextDisabled] = muted
+	colors[imgui.ColWindowBg] = paper
+	colors[imgui.ColChildBg] = card
+	colors[imgui.ColBorder] = line
+	colors[imgui.ColButton] = fileBtn
+	colors[imgui.ColButtonHovered] = fileHover
+	colors[imgui.ColButtonActive] = fileHover
+	colors[imgui.ColScrollbarBg] = paper
+	style.SetColors(&colors)
+	style.SetWindowPadding(imgui.Vec2{X: 28 * scale, Y: 28 * scale})
+	style.SetFramePadding(imgui.Vec2{X: 18 * scale, Y: 10 * scale})
+	style.SetItemSpacing(imgui.Vec2{X: 10 * scale, Y: 12 * scale})
+	style.SetFrameRounding(999)
+	style.SetChildRounding(14 * scale)
+	style.SetChildBorderSize(1.5 * scale)
+	style.SetWindowBorderSize(0)
+	style.SetDisabledAlpha(1)
+
+	take(os.Args[1:])
+	wnd.Run(loop)
+}
+
+func take(paths []string) {
+	mu.Lock()
+	defer mu.Unlock()
+	problem = ""
+	for _, p := range paths {
+		p, _ = filepath.Abs(p)
+		data, err := readGame(p)
+		if err != nil {
+			problem = "That file could not be opened: " + filepath.Base(p)
+			continue
 		}
-		w.WriteHeader(http.StatusNoContent)
-		go func() {
-			time.Sleep(150 * time.Millisecond)
-			os.Exit(0)
-		}()
-	})
-
-	fmt.Printf("SMB3 Gimmick %s\n", version)
-	fmt.Println()
-	fmt.Println("A page should have opened in your web browser.")
-	fmt.Println("If it didn't, open this address:")
-	fmt.Println()
-	fmt.Println("  " + url)
-	fmt.Println()
-	fmt.Println("Leave this window open while you use it.")
-	fmt.Println("Close this window when you are done.")
-
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		openBrowser(url)
-	}()
-
-	srv := &http.Server{Handler: mux}
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintln(os.Stderr, "The program stopped.")
-		os.Exit(1)
+		info := build.Recognize(data)
+		if !info.OK {
+			problem = info.Message
+			continue
+		}
+		savedTo = ""
+		if info.Role == "smb3" {
+			smb3 = game{path: p, data: data}
+		} else {
+			gimmick = game{path: p, data: data}
+		}
 	}
+	g.Update()
 }
 
-func servePage(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/favicon.ico" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	f, err := page.Open("page.html")
-	if err != nil {
-		http.Error(w, "missing page", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	io.Copy(w, f)
-}
-
-func serveCheck(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || !fromHere(r) {
-		http.NotFound(w, r)
-		return
-	}
-	data, err := oneFile(r, "file")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, build.Game{Message: "Choose a game file and try again."})
-		return
-	}
-	writeJSON(w, http.StatusOK, build.Recognize(data))
-}
-
-func serveBuild(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || !fromHere(r) {
-		http.NotFound(w, r)
-		return
-	}
-	smb, err := oneFile(r, "smb3")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, build.Game{Message: "Choose Super Mario Bros. 3 and try again."})
-		return
-	}
-	gim, err := oneFile(r, "gimmick")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, build.Game{Message: "Choose Gimmick! and try again."})
-		return
-	}
-	out, err := build.Build(smb, gim)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, build.Game{Message: err.Error()})
-		return
-	}
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", `attachment; filename="SMB3 Gimmick.nes"`)
-	w.Header().Set("Cache-Control", "no-store")
-	w.Write(out)
-}
-
-func oneFile(r *http.Request, field string) ([]byte, error) {
-	r.Body = http.MaxBytesReader(nil, r.Body, 2<<20)
-	if err := r.ParseMultipartForm(2 << 20); err != nil {
-		return nil, err
-	}
-	f, _, err := r.FormFile(field)
+func readGame(path string) ([]byte, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -139,36 +144,217 @@ func oneFile(r *http.Request, field string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, 1<<20+512))
 }
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+func choose() {
+	paths, err := zenity.SelectFileMultiple(
+		zenity.Title("Choose the game files"),
+		zenity.FileFilter{Name: "NES games", Patterns: []string{"*.nes"}, CaseFold: true},
+	)
+	mu.Lock()
+	busy = false
+	if err != nil && !errors.Is(err, zenity.ErrCanceled) {
+		problem = "The file chooser could not open. Drop the game files on this window instead."
+	}
+	mu.Unlock()
+	if err == nil {
+		take(paths)
+	}
+	g.Update()
 }
 
-func fromHere(r *http.Request) bool {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(r.Host); err == nil {
-		host = h
+func makeGame(smb, gim []byte, path string) {
+	if dialogs {
+		p, err := zenity.SelectFileSave(
+			zenity.Title("Save the game"),
+			zenity.Filename(path),
+			zenity.ConfirmOverwrite(),
+			zenity.FileFilter{Name: "NES games", Patterns: []string{"*.nes"}, CaseFold: true},
+		)
+		if err != nil {
+			mu.Lock()
+			busy = false
+			if !errors.Is(err, zenity.ErrCanceled) {
+				problem = "The save window could not open. Please try again."
+			}
+			mu.Unlock()
+			g.Update()
+			return
+		}
+		path = p
+		if filepath.Ext(path) == "" {
+			path += ".nes"
+		}
 	}
-	if host != "127.0.0.1" && host != "localhost" {
-		return false
+
+	out, err := build.Build(smb, gim)
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	} else if err := os.WriteFile(path, out, 0o644); err != nil {
+		msg = "The game could not be saved in " + filepath.Dir(path) + ". Please choose another folder."
 	}
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
+
+	mu.Lock()
+	busy = false
+	problem = msg
+	if msg == "" {
+		savedTo = path
 	}
-	return origin == "http://"+r.Host || origin == "http://127.0.0.1" || origin == "http://localhost"
+	mu.Unlock()
+	g.Update()
 }
 
-func openBrowser(url string) {
+func reveal(path string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command("explorer", "/select,", path)
+	case "darwin":
+		cmd = exec.Command("open", "-R", path)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		cmd = exec.Command("xdg-open", filepath.Dir(path))
 	}
 	_ = cmd.Start()
+}
+
+func loop() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// giu may build its font atlas before main gets to add fonts, so they are added on the first frame instead.
+	if regular == nil {
+		regular = addFont(regularFont)
+		bold = addFont(boldFont)
+	}
+	imgui.PushFont(regular, 18)
+	defer imgui.PopFont()
+
+	vp := imgui.MainViewport()
+	imgui.SetNextWindowPos(vp.WorkPos())
+	imgui.SetNextWindowSize(vp.WorkSize())
+	imgui.BeginV("main", nil, imgui.WindowFlagsNoTitleBar|imgui.WindowFlagsNoResize|imgui.WindowFlagsNoMove|
+		imgui.WindowFlagsNoCollapse|imgui.WindowFlagsNoSavedSettings|imgui.WindowFlagsNoBringToFrontOnFocus)
+
+	width = min(imgui.ContentRegionAvail().X, 600*scale)
+	if margin := (imgui.ContentRegionAvail().X - width) / 2; margin > 0 {
+		imgui.IndentV(margin)
+	}
+	imgui.PushTextWrapPosV(imgui.CursorPosX() + width)
+
+	imgui.PushFont(bold, 32)
+	imgui.TextUnformatted("Let's make your game")
+	imgui.PopFont()
+	colored(muted, "Yumetaro from Gimmick! takes Mario's place in Super Mario Bros. 3. Add the two games below. Everything happens on this computer.")
+	imgui.Spacing()
+
+	if problem != "" {
+		panel("problem", warnBg, warnBg, func() { colored(warn, problem) })
+	}
+
+	panel("drop", card, line, func() {
+		centered(muted, "Drop both game files on this window")
+		if dialogs {
+			centered(muted, "or")
+			label := "Choose files"
+			w := imgui.CalcTextSize(label).X + imgui.CurrentStyle().FramePadding().X*2
+			imgui.SetCursorPosX(imgui.CursorPosX() + (imgui.ContentRegionAvail().X-w)/2)
+			imgui.BeginDisabledV(busy)
+			if imgui.Button(label) {
+				busy = true
+				go choose()
+			}
+			imgui.EndDisabled()
+		}
+	})
+
+	gameCard("smb3", "Super Mario Bros. 3", smb3, "Waiting for the original US game")
+	gameCard("gimmick", "Gimmick!", gimmick, "Waiting for the Japanese game")
+	imgui.Spacing()
+
+	if savedTo == "" {
+		ready := smb3.data != nil && gimmick.data != nil
+		label := "Make the game###make"
+		if busy && ready {
+			label = "Making it…###make"
+		}
+		bg := green
+		if !ready || busy {
+			bg = rgb(0xc9c1b6)
+		}
+		imgui.PushStyleColorVec4(imgui.ColButton, bg)
+		imgui.PushStyleColorVec4(imgui.ColButtonHovered, greenDark)
+		imgui.PushStyleColorVec4(imgui.ColButtonActive, greenDark)
+		imgui.PushStyleColorVec4(imgui.ColText, white)
+		imgui.PushFont(imgui.CurrentFont(), 20)
+		imgui.BeginDisabledV(!ready || busy)
+		if imgui.ButtonV(label, imgui.Vec2{X: width, Y: imgui.FrameHeight() * 1.4}) {
+			busy = true
+			go makeGame(smb3.data, gimmick.data, filepath.Join(filepath.Dir(smb3.path), outName))
+		}
+		imgui.EndDisabled()
+		imgui.PopFont()
+		imgui.PopStyleColorV(4)
+	} else {
+		panel("done", soft, softLine, func() {
+			imgui.PushFont(bold, 22)
+			imgui.TextUnformatted("Your game is ready")
+			imgui.PopFont()
+			imgui.TextUnformatted("It was saved as " + savedTo + ". Open it with an NES emulator.")
+			if imgui.Button("Show in folder") {
+				reveal(savedTo)
+			}
+		})
+	}
+
+	imgui.Spacing()
+	imgui.Spacing()
+	colored(muted, "Super Mario Bros. 3 is Nintendo's game. Gimmick! is Sunsoft's game.")
+	colored(muted, "Version "+version)
+
+	imgui.PopTextWrapPos()
+	imgui.End()
+}
+
+func panel(id string, bg, border imgui.Vec4, body func()) {
+	imgui.PushStyleColorVec4(imgui.ColChildBg, bg)
+	imgui.PushStyleColorVec4(imgui.ColBorder, border)
+	imgui.PushStyleVarVec2(imgui.StyleVarWindowPadding, imgui.Vec2{X: 18 * scale, Y: 14 * scale})
+	imgui.PushStyleVarVec2(imgui.StyleVarItemSpacing, imgui.Vec2{X: 10 * scale, Y: 6 * scale})
+	imgui.BeginChildStrV(id, imgui.Vec2{X: width}, imgui.ChildFlagsBorders|imgui.ChildFlagsAutoResizeY|imgui.ChildFlagsAlwaysUseWindowPadding, 0)
+	imgui.PushTextWrapPosV(0)
+	body()
+	imgui.PopTextWrapPos()
+	imgui.EndChild()
+	imgui.PopStyleVarV(2)
+	imgui.PopStyleColorV(2)
+}
+
+func gameCard(id, title string, gm game, waiting string) {
+	bg, border, state, col := card, line, waiting, muted
+	if gm.data != nil {
+		bg, border, state, col = soft, softLine, filepath.Base(gm.path), greenDark
+	}
+	panel(id, bg, border, func() {
+		imgui.PushFont(bold, 0)
+		imgui.TextUnformatted(title)
+		imgui.PopFont()
+		colored(col, state)
+	})
+}
+
+func addFont(data []byte) *imgui.Font {
+	cfg := imgui.NewFontConfig()
+	cfg.SetFontDataOwnedByAtlas(false)
+	return imgui.CurrentIO().Fonts().AddFontFromMemoryTTFV(uintptr(unsafe.Pointer(&data[0])), int32(len(data)), 0, cfg, nil)
+}
+
+func colored(col imgui.Vec4, text string) {
+	imgui.PushStyleColorVec4(imgui.ColText, col)
+	imgui.TextUnformatted(text)
+	imgui.PopStyleColor()
+}
+
+func centered(col imgui.Vec4, text string) {
+	w := imgui.CalcTextSize(text).X
+	imgui.SetCursorPosX(imgui.CursorPosX() + (imgui.ContentRegionAvail().X-w)/2)
+	colored(col, text)
 }
