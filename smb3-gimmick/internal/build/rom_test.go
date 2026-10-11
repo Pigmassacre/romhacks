@@ -48,6 +48,24 @@ func TestBuild(t *testing.T) {
 	if _, err := Build(padded, gim); err != nil {
 		t.Fatal(err)
 	}
+
+	// The same games with NES 2.0 headers must be recognized and build the same hack.
+	smb2 := append([]byte(nil), smb...)
+	gim2 := append([]byte(nil), gim...)
+	for _, b := range [][]byte{smb2, gim2} {
+		b[7] |= 0x08
+		b[15] = 0x01
+	}
+	if Recognize(smb2).Role != "smb3" || Recognize(gim2).Role != "gimmick" {
+		t.Fatal("a game with an NES 2.0 header was not recognized")
+	}
+	got2, err := Build(smb2, gim2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, got2) {
+		t.Fatal("the header of the input games changed the built game")
+	}
 }
 
 func repoRoot(t *testing.T) string {

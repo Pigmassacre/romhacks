@@ -2,7 +2,6 @@ package build
 
 import (
 	"bytes"
-	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -24,12 +23,16 @@ const (
 //go:embed patch.bin
 var patchBin []byte
 
+// Hashes of the game data after the 16-byte iNES header. Dumps of the same
+// game carry different headers (iNES or NES 2.0), so the header is left out.
 const (
-	smb3SHA256    = "6ea0777ca520ba7ad7b0ea0f6452140d59aa0b1dffe5045cb1e8020dde10c267"
-	gimmickSHA256 = "1b1e40c9b0096a5bcbeea178fa0904fa7debb3c11ece41cdcb417173d38c368d"
-	mrGimmickSHA  = "7371801fd9dd3888cfea99faa0920aa9863998df"
-	smb3RevASHA   = "6bd518e85eb46a4252af07910f61036e84b020d1"
+	smb3SHA256      = "d77d17d34af24871d7ce1160ccd3330555835c8e940b7100e095ac38973d927a"
+	gimmickSHA256   = "1bbe4b3e20a004a4f741018e31e6ae291772b8876d6fb6f01494c9c5b0917c6c"
+	mrGimmickSHA256 = "3264e4c57ffaf64df816cc97b1d6d278042545a4be248f5c195d82037f0a9bfd"
+	smb3RevASHA256  = "959fdd32c71735d6fb2bd16a646d39f4ee65623273dd035e6a968e991bd13ef8"
 )
+
+var outHeader = [headerLen]byte{'N', 'E', 'S', 0x1a, 0x20, 0x10, 0x40}
 
 const (
 	msgNotNES       = "This doesn't look like an NES game. Choose the .nes file for the game."
@@ -62,19 +65,15 @@ func Recognize(b []byte) Game {
 	if len(b) < headerLen || !bytes.Equal(b[:4], []byte("NES\x1a")) {
 		return Game{Message: msgNotNES}
 	}
-	sum := sha256.Sum256(b)
+	sum := sha256.Sum256(b[headerLen:])
 	switch hex.EncodeToString(sum[:]) {
 	case smb3SHA256:
 		return Game{OK: true, Role: "smb3", Title: "Super Mario Bros. 3"}
 	case gimmickSHA256:
 		return Game{OK: true, Role: "gimmick", Title: "Gimmick!"}
-	}
-	sha := sha1.Sum(b)
-	id := hex.EncodeToString(sha[:])
-	switch id {
-	case mrGimmickSHA:
+	case mrGimmickSHA256:
 		return Game{Message: msgMrGimmick}
-	case smb3RevASHA:
+	case smb3RevASHA256:
 		return Game{Message: msgSMB3Rev}
 	}
 	return Game{Message: msgUnrecognized}
@@ -102,8 +101,7 @@ func Build(smb, gim []byte) ([]byte, error) {
 	}
 
 	out := make([]byte, outLen)
-	copy(out, smb[:headerLen])
-	out[4] = 0x20
+	copy(out, outHeader[:])
 
 	smbPRG := smb[headerLen : headerLen+smbPRGLen]
 	prg := out[headerLen : headerLen+hackPRG]
