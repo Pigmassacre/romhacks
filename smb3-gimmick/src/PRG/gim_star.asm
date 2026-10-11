@@ -13,10 +13,16 @@ Gim_Star:
 	JSR Gim_DropEndCard
 	JSR Gim_RideRotate
 	LDA Level_PipeMove
-	BEQ Gim_StarNoPipe
+	BNE Gim_StarRemove
+	; Wand grabbed: Yumetaro falls off the airship with no control, so no star either
+	LDA Level_GetWandState
+	CMP #$03
+	BLT Gim_StarNoPipe
+Gim_StarRemove:
 	LDA #$00
 	STA Star_State
 	STA Star_Ridden
+	JMP Gim_StarDraw
 Gim_StarNoPipe:
 	LDA <Player_HaltGame
 	ORA Player_HaltTick

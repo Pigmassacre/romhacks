@@ -477,16 +477,22 @@ Gim_JumpCutDone:
 
 	LDA <Player_InAir
 	BEQ Gim_GravityDone
-	LDA <Player_YVel
-	BMI Gim_GravityAdd
-	CMP #(GIM_FALLMAX - GIM_GRAVITY + 1)
-	BGE Gim_GravityMax
+	; Vertical levels scroll down at most 4 pixels a frame; falling faster drops him off the screen, which kills
+	LDY #GIM_FALLMAX
+	LDA Level_7Vertical
+	BEQ Gim_GravityAdd
+	LDY #GIM_FALLMAXVERT
 Gim_GravityAdd:
+	STY <Temp_Var1
+	LDA <Player_YVel
 	ADD #GIM_GRAVITY
-	STA <Player_YVel
-	JMP Gim_GravityDone
+	BVS Gim_GravityMax
+	BMI Gim_GravitySet
+	CMP <Temp_Var1
+	BLT Gim_GravitySet
 Gim_GravityMax:
-	LDA #GIM_FALLMAX
+	LDA <Temp_Var1
+Gim_GravitySet:
 	STA <Player_YVel
 Gim_GravityDone:
 

@@ -10,6 +10,6 @@
 	.byte OBJ_BIGREDTROOPA, $58, $13
 	.byte OBJ_BIGREDTROOPA, $5F, $15
 	.byte OBJ_BIGREDTROOPA, $64, $13
-	.byte OBJ_VENUSFIRETRAP, $72, $15
+	.byte OBJ_VENUSFIRETRAP, $70, $15
 	.byte OBJ_BIGGREENTROOPA, $7A, $17
 	.byte $FF	; Terminator

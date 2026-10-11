@@ -3611,6 +3611,7 @@ PLAYER_FROG_MAXYVEL	= -$20
 GIM_BANK		= 32	; PRG bank holding the Yumetaro / star logic (mapped at $A000 via Gim_Call)
 GIM_DEATHBANK		= 33	; PRG bank holding the death jingle (mapped at $C000 by the sound engine)
 GIM_FALLMAX		= $7F
+GIM_FALLMAXVERT		= $40	; In vertical levels: the fastest fall their scrolling keeps up with
 GIM_WALKMAX		= 23
 GIM_SLOPESTEEPMAX	= $30
 GIM_SLOPEGENTLEMAX	= $28
