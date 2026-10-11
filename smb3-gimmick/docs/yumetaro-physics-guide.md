@@ -759,8 +759,8 @@ play throw sound
 | just after jumping (vy -80) | ±40 | 8 |
 | at the top of a jump | ±40 | 48 |
 | falling at 60 | ±40 | 78 |
-| falling at 126 | ±40 | 111 |
-| falling at 127 (the cap) | ±40 | **-17**, see [Quirks](#15-quirks) |
+| falling at 124 (one frame before the cap) | ±40 | 110 |
+| falling at 127 (the cap) | ±40 | **-17**: almost level, see [Quirks](#15-quirks) |
 
 The direction is his facing on the frame of the throw. The walk input runs earlier in the same frame, so pressing a direction on the frame B is released aims the throw that way.
 
@@ -1100,7 +1100,18 @@ Things the original does that you might not expect, and would have to copy on pu
 
 **The comparisons are not really signed.** `CMP / BPL` only looks at the sign of the 8-bit difference. For values more than 127 apart it gives the wrong answer. Nothing in normal play reaches those values, but it means, for example, that Right stops accelerating him when vx is -106 or lower.
 
-**A throw at terminal velocity goes up.** The throw halves his velocity with `CMP #$7F / ROR`, which uses the carry to copy the sign bit. `CMP #$7F` sets the carry for any value from `$7F` up, so exactly 127, the falling speed cap, is treated as negative and becomes -65. The star is then thrown at vy -17 instead of +111. This follows from the code and the reference implementation reproduces it, but it was not caught in a recording of the real game.
+**A throw at the fall speed cap leaves almost level.** The throw halves his velocity with `CMP #$7F / ROR`, which uses the carry to copy the sign bit. `CMP #$7F` sets the carry for any value from `$7F` up, so exactly 127, the falling speed cap, is treated as negative and becomes -65. The star then gets vy -17 instead of +111.
+
+It is easy to miss. He only reaches 127 after falling for 32 frames, about 124 px or nearly eight tiles. One frame earlier, at 124, the throw is the hardest downward throw there is (vy 110). And -17 is a weak upward speed: the star rises 1.75 px over four frames and then falls as usual. What you see is a star that leaves level with his head and drops in a shallow arc, instead of being flung down. It also applies on the frame he lands, because the throw uses the velocity from before that frame's move.
+
+Recorded from the real game, throwing at different points of the same fall:
+
+| Released | His vy at the throw | Star vy |
+|---|---|---|
+| 30 frames into the fall | 120 | 108 |
+| 32 frames (first frame at the cap) | 127 | -17 |
+| 33 frames (the frame he lands) | 127 | -17 |
+| after landing | 0 | 48 |
 
 **Walls push 1 px per frame.** See [Walls](#walls). Fast objects sink into walls and come back out slowly.
 
@@ -1225,7 +1236,7 @@ Not implemented: the fireball and bomb, item pickups, score, lives and checkpoin
 
 The rules were read from the ROM, then tested against the game itself.
 
-`tools/gim_physics_trace.py` runs the real game in Mesen through 21 scripted scenarios on stage 1 and records Yumetaro's and the star's full state at the end of every frame, along with the buttons, the frame counter and the map. `godot/tests/verify_traces.gd` feeds the same buttons to the reference implementation and compares 45 values per frame: both objects' status, position, velocity, flags, timers, animation frame and sizes, plus the camera and the jump, lockout and saved-velocity variables.
+`tools/gim_physics_trace.py` runs the real game in Mesen through 25 scripted scenarios on stage 1 and records Yumetaro's and the star's full state at the end of every frame, along with the buttons, the frame counter and the map. `godot/tests/verify_traces.gd` feeds the same buttons to the reference implementation and compares 45 values per frame: both objects' status, position, velocity, flags, timers, animation frame and sizes, plus the camera and the jump, lockout and saved-velocity variables.
 
 ```bash
 python3 tools/gim_physics_trace.py
@@ -1235,9 +1246,9 @@ python3 tools/gim_physics_trace.py
 godot --headless --path godot -s tests/verify_traces.gd -- ../out/gimtrace
 ```
 
-**All 26,612 frames match exactly.**
+**All 27,648 frames match exactly.**
 
-What the scenarios cover: walking, turning, every length of jump, walls, edges, ceilings, cancelled and minimum charges, throws while standing, running, rising and falling, bounces, wall rebounds, riding the star (including into walls), gentle slopes, conveyors, the tube at the end of the first room including its vertical screen change, a hit, a fatal hit, both tile deaths, respawn timing, and a star left behind by the camera.
+What the scenarios cover: walking, turning, every length of jump, walls, edges, ceilings, cancelled and minimum charges, throws while standing, running, rising, falling and at the fall speed cap, bounces, wall rebounds, riding the star (including into walls), gentle slopes, conveyors, the tube at the end of the first room including its vertical screen change, a hit, a fatal hit, both tile deaths, respawn timing, and a star left behind by the camera.
 
 Some things stage 1 does not have near its start, so the scenarios create them by changing the game's memory: the ground's floor type is set to ice (7) and to the unused types 5 and 6, and the two hills' slope behaviour is set to each of the 20 values in turn. That checks the code for each, on the shapes stage 1 has.
 
@@ -1248,7 +1259,6 @@ What was **not** compared against the running game, and rests on reading the cod
 - Tube paths 2, 4 and 5, and upward travel. The stage 1 tube uses paths 0, 1 and 3, downward.
 - Upward vertical screen changes.
 - Items, the fireball and the bomb.
-- The terminal-velocity throw.
 
 The traces are made from your own ROM and are not in the repository.
 

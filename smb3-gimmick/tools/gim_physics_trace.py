@@ -198,6 +198,10 @@ S["lethal1"] = dict(length=400, inputs=[(10, 60, "R"), (20, 80, "B")],
 # Yumetaro is moved far away from a bouncing star, so the camera leaves it behind.
 S["despawn"] = dict(length=500, inputs=[(10, 60, "B"), (200, 250, "B"), (250, 251, "L")],
     pokes=[(70, at(30, 5)), (260, at(40, 5))])
+# A charged star is carried up to row 1 and dropped with him. He reaches the fall speed cap
+# (127) 32 frames into the fall; the throw is made just before it, on it, and after landing.
+for name, release in (("fallthrow", 30), ("capthrow", 32), ("capthrow2", 33), ("landthrow", 34)):
+    S[name] = dict(length=260, inputs=[(10, 60 + release, "B")], pokes=[(60, at(6, 1))])
 S["edge"] = dict(length=900, pokes=[(2, at(19, 8)), (290, at(20, 8)), (690, at(13, 9))], inputs=[
     (10, 200, "R"), (300, 420, "L"), (500, 560, "B"), (700, 800, "R"), (740, 744, "A")])
 
