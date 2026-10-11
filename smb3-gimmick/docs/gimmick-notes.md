@@ -4,6 +4,9 @@ Findings from porting Yumetaro into SMB3. Everything here was verified against
 `ref/gimmick` (JP disassembly) and/or by tracing in Mesen. Items marked
 **(unverified)** are educated guesses.
 
+For a complete, checked account of how Yumetaro and the star move, see
+[yumetaro-physics-guide.md](yumetaro-physics-guide.md). Where the two disagree, the guide is right.
+
 ## Navigating the disassembly
 
 - Mapper: Sunsoft FME-7, 8 KB PRG banks. 16 files of 16 KB, `GIMMICK-JPN<N>.asm`
@@ -132,7 +135,7 @@ physics (`$F596` reads `$0364` to snap the rider onto the carrier's top).
 - If `|vx| < 2`: counter `$0382 = 4`, keep stand/blink frame unless L/R held.
 - Otherwise `counter += 1 + (|vx| >> 4)`, wrap at 61 (`$3D`), and
   `frame = $83A1[counter]`.
-- On ice / special floor with L/R held: step is fixed at 2.
+- On ice / special floor with L/R held: the counter advances by 3 (A = 2, then `sec / adc`).
 - Table `$83A1` (61 bytes): `7x2, 16x3, 7x4, 7x5, 17x6, 7x7`.
 - In the air (not on floor, frame != `$15`): frame 8, `$0382 = $3B`.
 

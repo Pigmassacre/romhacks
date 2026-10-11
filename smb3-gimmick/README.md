@@ -41,6 +41,8 @@ The original code in this repository is under the MIT license. See [LICENSE](LIC
 
 The disassembly is in `src/`, based on [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). Yumetaro's code is in `src/PRG/gim_player.asm`, `gim_star.asm`, `gim_frames.asm`, and `gim_death.asm`.
 
+`docs/yumetaro-physics-guide.md` describes exactly how Yumetaro and the star move in the original *Gimmick!*, and `godot/` is a Godot 4 project that implements it and is checked frame by frame against the real game. `docs/gimmick-notes.md` has the working notes on the Gimmick! ROM.
+
 The ROM files are not included, and neither are any Gimmick! graphics. Put your own copies in the repository folder, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build, the tests, and the release script read them from there.
 
 `./build.sh` assembles `out/smb3-gimmick.nes`. It needs Python 3 and expects [NESASM](https://github.com/camsaul/nesasm) at `ref/nesasm/nesasm`. Before assembling, `tools/build_chr.py` and `tools/build_title.py` copy Yumetaro's tiles and the logo from the Gimmick! ROM into `out/chr/`, so `src/CHR` only ever holds the stock SMB3 graphics. After a build, `python3 tools/gen_patch.py` rebuilds `internal/build/patch.bin`. `go test ./...` then checks that the builder produces the same game.

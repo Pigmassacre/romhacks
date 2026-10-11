@@ -5,3 +5,4 @@ ref/
 __pycache__/
 *.pyc
 dist/
+godot/.godot/
