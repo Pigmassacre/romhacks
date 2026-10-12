@@ -2645,6 +2645,12 @@ PRG008_ACC8:
 PRG008_ACCD:
 	TYA	
 	ADD <Player_YVel
+	; Suits from the map inventory still move like Mario; past his fall cap this gravity would wrap GIM_FALLMAX into a rise
+	BMI PRG008_GimSuitFall
+	CMP #FALLRATE_MAX
+	BLT PRG008_GimSuitFall
+	LDA #FALLRATE_MAX
+PRG008_GimSuitFall:
 	STA <Player_YVel ; Player_YVel += Y
 
 	LDA <Player_WagCount

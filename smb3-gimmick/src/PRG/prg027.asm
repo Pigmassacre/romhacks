@@ -1056,14 +1056,21 @@ PRG027_A749:
 PRG027_A752:
 	INC CineKing_Timer2	 ; CineKing_Timer2++
 
+	LDX #GIMF_JUMP
 	LDA PlayerFall_Frame,Y	 ; Get appropriate Player falling frame
 	JMP PRG027_A75E	 ; Jump to PRG027_A75E
 
 PRG027_A75B:
+	LDX #$00
 	LDA PlayerStand_Frame,Y	 ; Get appropriate Player standing frame
 
 PRG027_A75E:
 	STA <Player_Frame	; Set appropriate Player frame
+
+	; Mario's small standing frame is a walk frame, which Player_Draw would turn into Yumetaro's walk cycle
+	STX Gim_Frame
+	LDA #$01
+	STA Gim_Animated
 
 	; Load page 29 @ C000
 	LDA #29
@@ -1071,6 +1078,9 @@ PRG027_A75E:
 	JSR PRGROM_Change_C000
 
 	JSR Player_Draw		; Draw Player!
+
+	LDA #$00
+	STA Gim_Animated
 
 	; Load page 0 @ C000
 	LDA #0
