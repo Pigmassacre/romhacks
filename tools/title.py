@@ -60,11 +60,13 @@ def _strokes():
     line(10.6, 3.0, 10.6, 36.5, 2.9, 2.9)
     # .: a round dot like the !'s
     line(19.8, 34.3, 19.8, 34.3, 4.6)
-    # 5: top bar, stem, and a bowl that ends in a short flick up
+    # 5: top bar, stem, and a bowl whose end curls inward into a ball, the
+    # way the G's does
     line(31.8, 4.0, 44.6, 2.6, 2.7, 2.3)
     line(31.8, 4.0, 30.9, 17.5, 2.8)
-    arc(36.6, 26.6, 8.0, 9.9, -126, 152, 2.8, 2.7)
-    line(29.5, 31.3, 28.6, 28.6, 2.7, 1.9)
+    arc(36.6, 26.6, 8.0, 9.9, -126, 150, 2.8, 2.7)
+    arc(34.6, 30.4, 4.6, 4.6, 165, 290, 2.6, 2.3, n=40)
+    line(36.4, 26.4, 36.4, 26.4, 2.9)
     return s
 
 

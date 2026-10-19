@@ -28,9 +28,11 @@ game's physics, not taken from *Gimmick! 2*.
 
 ## Play it
 
-Patch your ROM with `gimmick-1.5.bps` using [Flips](https://github.com/Alcaro/Flips) or
-[Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/). There are two patches because the
-two common dumps of *Gimmick! (Japan)* differ only in their 16-byte header:
+Download the patch from the [releases](https://github.com/Pigmassacre/gimmick-1.5/releases)
+page (or [build it](#build-it)) and apply it to your ROM with
+[Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/).
+There are two patches because the two common dumps of *Gimmick! (Japan)* differ only in their
+16-byte header:
 
 | Your ROM's CRC32 | Patch |
 |---|---|
@@ -49,13 +51,15 @@ Put your ROM in this folder as `Gimmick! (Japan).nes` (either dump), then:
 python3 tools/build.py
 ```
 
-That writes `out/gimmick-1.5.nes` and both patches. It needs Python 3 and
-[asm6](https://www.romhacking.net/utilities/674/) at `tools/asm6`. If `tools/asm6` is missing and
-the disassembly is in `ref/gimmick/`, the build compiles it from the `asm6.c` there.
+That writes `out/gimmick-1.5.nes` and both patches. It needs Python 3 and loopy's asm6 1.6 at
+`tools/asm6`. That is the version it has been built with; [asm6f](https://github.com/freem/asm6f),
+a fork, may work too. If `tools/asm6` is missing and a Gimmick! disassembly with `asm6.c` is in
+`ref/gimmick/`, the build compiles asm6 from that.
 
 ### Tests
 
-The tests play the game in [Mesen](https://www.mesen.ca/) (`./Mesen`, headless) and check RAM:
+The tests play the game headless in [Mesen 2](https://www.mesen.ca/) and check RAM. Put the
+Linux build at `./Mesen`, then:
 
 ```bash
 python3 tests/run.py
@@ -117,10 +121,12 @@ address and the tuning values (coyote and buffer frames, skip speeds, effect len
 
 `docs/notes.md` has what was learnt about the ROM along the way: free RAM, the debug block, the
 map layout, water and tubes, the star's animation frames, the title screen, and how the sound
-driver layers effects. `ref/docs/` has smb3-gimmick's notes and its physics guide.
+driver layers effects. It builds on smb3-gimmick's [notes on the ROM](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/gimmick-notes.md) and
+its [physics guide](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/yumetaro-physics-guide.md).
 
 ## Credits
 
-*Gimmick!* is © Sunsoft. *Gimmick! 2* is © Sunsoft and Bitwave Games. asm6 is by loopy. The
-Gimmick! disassembly in `ref/gimmick/` and the notes in `ref/docs/` come from the smb3-gimmick
-project and are not part of this repository.
+*Gimmick!* is © Sunsoft. *Gimmick! 2* is © Sunsoft and Bitwave Games. asm6 is by loopy.
+
+The original code in this repository is under the MIT license. See [LICENSE](LICENSE) for what
+it covers.
