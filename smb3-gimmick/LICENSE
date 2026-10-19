@@ -2,12 +2,12 @@ MIT License
 
 Copyright (c) 2026 Olof Karlsson
 
-This license covers the original work in this folder: the builder program
-(cmd/, internal/), Yumetaro's code (src/PRG/gim_*.asm), the tools in tools/, and
-the documentation. It does not cover the Super Mario Bros. 3 disassembly and
-graphics in src/, which are based on Southbird's disassembly and remain the
-property of Nintendo, or anything derived from Gimmick!, which remains the
-property of Sunsoft.
+This license covers the original work in this folder: Yumetaro's code
+(src/PRG/gim_*.asm), the tools in tools/, and the documentation. It does not
+cover the Super Mario Bros. 3 disassembly and graphics in src/, which are based
+on Southbird's disassembly and remain the property of Nintendo, or anything
+derived from Gimmick!, which remains the property of Sunsoft, including the
+graphics that the release patch carries.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

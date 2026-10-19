@@ -2,23 +2,19 @@
 
 Yumetaro, from Sunsoft's *Gimmick!*, in the worlds of *Super Mario Bros. 3*. He keeps his own jump, his star, and his health. The levels are Super Mario Bros. 3.
 
-You bring your own copies of the two NES games. The SMB3 Gimmick program builds the new game from them on your computer.
+You bring your own copy of Super Mario Bros. 3. The hack is a BPS patch.
 
 ## Play it
 
-Download SMB3 Gimmick from the [releases](https://github.com/Pigmassacre/romhacks/releases) page: the releases named SMB3 Gimmick. Version 1.5.0 and earlier are on the [old smb3-gimmick repository](https://github.com/Pigmassacre/smb3-gimmick/releases).
+Download `smb3-gimmick.bps` from the [releases](https://github.com/Pigmassacre/romhacks/releases) page (the releases named SMB3 Gimmick) and apply it to your Super Mario Bros. 3 with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/). It is made for the original US release, not Revision A:
 
-| Computer | File |
+| Your ROM's CRC32 | Patch |
 |---|---|
-| Windows | `SMB3-Gimmick-windows.zip` |
-| Mac | `SMB3-Gimmick-mac.zip` |
-| Linux | `SMB3-Gimmick-linux.zip` |
+| `85A79D9C` (`A0B0B742` without its 16-byte header) | `smb3-gimmick.bps` |
 
-Unzip it and open **SMB3 Gimmick**. Drop Super Mario Bros. 3 (the original US release) and Gimmick! (the Japanese game) on its window, or choose them with **Choose files**. Then choose **Make the game** and pick where to save `SMB3 Gimmick.nes`. Open that in an NES emulator.
+The result is a 640 KB ROM: 512 KB of PRG ROM and 128 KB of CHR ROM on the MMC3 mapper (mapper 4). It has been tested in Mesen.
 
-The first time you open it, Windows or macOS may ask you to confirm. On Windows, choose **More info**, then **Run anyway**. On a Mac, right-click the app and choose **Open**.
-
-The Linux version needs a 2023 or newer distribution, such as Ubuntu 24.04 or Linux Mint 22. **Choose files** and the save window use `zenity` or `kdialog`. Without either, drop the files on the window, and the game is saved next to Super Mario Bros. 3.
+Versions 1.5.0 and earlier were a program that built the game from both Super Mario Bros. 3 and Gimmick!. They are on the [old smb3-gimmick repository](https://github.com/Pigmassacre/smb3-gimmick/releases).
 
 ## What you get
 
@@ -31,9 +27,7 @@ The Linux version needs a 2023 or newer distribution, such as Ubuntu 24.04 or Li
 
 ## Credits
 
-Yumetaro's movement was written for this project, on top of [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). *Super Mario Bros. 3* is © Nintendo. *Gimmick!* is © Sunsoft.
-
-The builder program uses [Dear ImGui](https://github.com/ocornut/imgui) through [giu](https://github.com/AllenDang/giu), and the [Noto Sans](https://notofonts.github.io/) font under the SIL Open Font License (`cmd/smb3-gimmick/fonts/OFL.txt`).
+Yumetaro's movement was written for this project, on top of [Southbird's Super Mario Bros. 3 disassembly](https://github.com/captainsouthbird/smb3). *Super Mario Bros. 3* is © Nintendo. *Gimmick!* is © Sunsoft; the patch includes Yumetaro's graphics, his star, and the Gimmick! logo from it.
 
 The original code in this folder is under the MIT license. See [LICENSE](LICENSE) for what it covers.
 
@@ -43,10 +37,8 @@ The disassembly is in `src/`, based on [Southbird's Super Mario Bros. 3 disassem
 
 `docs/yumetaro-physics-guide.md` describes exactly how Yumetaro and the star move in the original *Gimmick!*, and `godot/` is a Godot 4 project that implements it and is checked frame by frame against the real game. `docs/gimmick-notes.md` has the working notes on the Gimmick! ROM.
 
-The ROM files are not included, and neither are any Gimmick! graphics. Put your own copies in the `smb3-gimmick` folder, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build, the tests, and the release script read them from there.
+This folder holds no ROMs and no Gimmick! graphics. Put your own copies in it, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build and the release script read them from there.
 
-`./build.sh` assembles `out/smb3-gimmick.nes`. It needs Python 3 and expects [NESASM](https://github.com/camsaul/nesasm) at `ref/nesasm/nesasm`. Before assembling, `tools/build_chr.py` and `tools/build_title.py` copy Yumetaro's tiles and the logo from the Gimmick! ROM into `out/chr/`, so `src/CHR` only ever holds the stock SMB3 graphics. After a build, `python3 tools/gen_patch.py` rebuilds `internal/build/patch.bin`. `go test ./...` then checks that the builder produces the same game.
+`./build.sh` assembles `out/smb3-gimmick.nes` and writes the patch, `out/smb3-gimmick.bps`. It needs Python 3 and expects [NESASM](https://github.com/camsaul/nesasm) at `ref/nesasm/nesasm`. Before assembling, `tools/build_chr.py` and `tools/build_title.py` copy Yumetaro's tiles and the logo from the Gimmick! ROM into `out/chr/`, so `src/CHR` only ever holds the stock SMB3 graphics. Then `tools/patch.py` makes the patch. It copies every run of 8 or more bytes that is anywhere in Super Mario Bros. 3 from the player's ROM, so the patch holds only Yumetaro's code and the graphics from Gimmick!. It also checks that the patch reproduces the game.
 
-The builder program is in `cmd/smb3-gimmick`. It needs cgo: on Linux, a C compiler plus the OpenGL and X11 development packages (`libgl1-mesa-dev xorg-dev` on Ubuntu). `go run ./cmd/smb3-gimmick` opens it. The Windows version cross-compiles from Linux with MinGW (`CGO_ENABLED=1 GOOS=windows CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++`). The Mac version has to be built on a Mac.
-
-`./release.sh v1.0.0` publishes a GitHub release. You need [Go](https://go.dev/dl/) and the [GitHub CLI](https://cli.github.com/), logged in. It checks that no ROMs or Gimmick! graphics are tracked anywhere in the git history, and it runs the tests. Then it pushes the tag `smb3-gimmick-v1.0.0`, and `.github/workflows/smb3-gimmick-release.yml` at the top of the romhacks repository builds the program for Windows, Mac, and Linux and publishes it.
+`./release.sh v2.0.0` publishes a GitHub release. You need the [GitHub CLI](https://cli.github.com/), logged in, and a clean working tree. It checks that no ROMs or Gimmick! graphics are tracked anywhere in the git history, builds the game and the patch, tags `smb3-gimmick-v2.0.0`, and publishes `smb3-gimmick.bps` as the release.

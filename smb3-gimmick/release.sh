@@ -5,23 +5,24 @@ cd "$(dirname "$0")"
 version="${1:-}"
 if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 	echo "Usage: ./release.sh v1.2.3"
-	echo "Checks the repository, tags smb3-gimmick-v1.2.3, and lets GitHub build and publish the release."
+	echo "Checks the repository, builds the patch, and publishes it as the release smb3-gimmick-v1.2.3."
 	exit 1
 fi
 # The romhacks repository holds more than one project, so tags name theirs.
 tag="smb3-gimmick-${version}"
 
-if ! command -v go >/dev/null 2>&1; then
-	echo "Go is not installed. Install it from https://go.dev/dl/ and run this again."
-	exit 1
-fi
 if ! command -v gh >/dev/null 2>&1; then
 	echo "The GitHub CLI is not installed. Install it from https://cli.github.com/ and run this again."
 	exit 1
 fi
-
-if [[ ! -f "Super Mario Bros III.nes" ]]; then
-	echo "Put the US Super Mario Bros. 3 ROM here as 'Super Mario Bros III.nes'. It is needed to check the graphics in src/CHR."
+for rom in "Super Mario Bros III.nes" "Gimmick! (Japan).nes"; do
+	if [[ ! -f "$rom" ]]; then
+		echo "Put your copy of the game here as '$rom'. The build needs it."
+		exit 1
+	fi
+done
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+	echo "Commit your changes first: the patch has to match the tagged commit."
 	exit 1
 fi
 
@@ -37,6 +38,7 @@ def allowed(path):
     if path.endswith(".nes") or path.rsplit("/", 1)[-1] == "Mesen":
         return False
     if path.endswith(".bin"):
+        # patch.bin was the old builder program's data; it is in the history only
         return path == "smb3-gimmick/internal/build/patch.bin" or chr_page.match(path) is not None
     return True
 
@@ -63,16 +65,12 @@ for line in subprocess.check_output(["git", "rev-list", "--all", "--objects"], t
         sys.exit(1)
 PY
 
-go vet ./...
-go test ./...
+./build.sh
 
 remote="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
 local="$(git rev-parse HEAD)"
 if [[ -n "$remote" && "$remote" != "$local" ]]; then
-	echo "GitHub's main branch does not match this one."
-	echo "If GitHub still has older commits, replacing main removes them:"
-	echo "  git push --force-with-lease=refs/heads/main:${remote} origin main"
-	echo "Run ./release.sh again after that."
+	echo "GitHub's main branch does not match this one. Push (or pull) first, then run this again."
 	exit 1
 fi
 
@@ -81,11 +79,21 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null || [[ -n "$(git ls-re
 	exit 1
 fi
 
+notes="$(mktemp)"
+cat > "$notes" << 'EOF'
+Yumetaro, from Sunsoft's *Gimmick!*, in the worlds of *Super Mario Bros. 3*.
+
+You need your own copy of Super Mario Bros. 3, the original US release (not Revision A). Apply `smb3-gimmick.bps` to it with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/).
+
+| Your ROM's CRC32 | Patch |
+|---|---|
+| `85A79D9C` (`A0B0B742` without its 16-byte header) | `smb3-gimmick.bps` |
+
+The result is a 640 KB ROM on the MMC3 mapper (mapper 4). It has been tested in Mesen.
+EOF
+
 git tag "$tag"
 git push origin "$tag"
-
-echo "GitHub is building ${tag} for Windows, Mac, and Linux."
-sleep 10
-run="$(gh run list --workflow smb3-gimmick-release.yml --branch "$tag" --limit 1 --json databaseId --jq '.[0].databaseId')"
-gh run watch "$run" --exit-status
+gh release create "$tag" out/smb3-gimmick.bps --title "SMB3 Gimmick ${version}" --notes-file "$notes"
+rm -f "$notes"
 echo "Published ${tag}"

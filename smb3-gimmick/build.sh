@@ -9,3 +9,5 @@ cd src
 mv smb3.nes ../out/smb3-gimmick.nes
 [ -f smb3.fns ] && mv smb3.fns ../out/
 echo "built out/smb3-gimmick.nes"
+cd ..
+python3 tools/patch.py
