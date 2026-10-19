@@ -1,0 +1,8 @@
+# Your own ROMs, the emulator, the disassembly and build output stay out of git.
+*.nes
+Mesen
+ref/
+out/
+tools/asm6
+__pycache__/
+*.pyc
