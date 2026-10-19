@@ -1,4 +1,4 @@
-local OUT="/home/olof/dev/smb3-gimmick/out/"
+local OUT="/home/olof/dev/romhacks/smb3-gimmick/out/"
 local f=0
 local function shot(name)
   local h=io.open(OUT..name..".png","wb"); h:write(emu.takeScreenshot()); h:close()

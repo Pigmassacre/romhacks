@@ -7,7 +7,7 @@ Per frame: GimSnd_Ctl = volume << 4 | timer high (0 = end), GimSnd_Lo = timer lo
 """
 import math
 
-ROOT = '/home/olof/dev/smb3-gimmick/'
+ROOT = '/home/olof/dev/romhacks/smb3-gimmick/'
 SOUNDS = [('JUMP', 0x0D, 32), ('CHARGE', 0x10, 70), ('THROW', 0x13, 24), ('BOUNCE', 0x15, 22)]
 
 seq = {}

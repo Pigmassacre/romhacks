@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 INPUT=function(f)
   if f>=120 and f<125 then return {start=true} end
   if f>=200 and f<205 then return {start=true} end

@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 loadstate(OUT.."w11.mss")
 INPUT=function(f) return {} end
 FRAME=function(f)

@@ -2,7 +2,7 @@ MIT License
 
 Copyright (c) 2026 Olof Karlsson
 
-This license covers the original work in this repository: the builder program
+This license covers the original work in this folder: the builder program
 (cmd/, internal/), Yumetaro's code (src/PRG/gim_*.asm), the tools in tools/, and
 the documentation. It does not cover the Super Mario Bros. 3 disassembly and
 graphics in src/, which are based on Southbird's disassembly and remain the

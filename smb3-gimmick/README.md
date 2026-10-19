@@ -6,7 +6,7 @@ You bring your own copies of the two NES games. The SMB3 Gimmick program builds 
 
 ## Play it
 
-Download SMB3 Gimmick from the [GitHub releases](https://github.com/Pigmassacre/smb3-gimmick/releases) page.
+Download SMB3 Gimmick from the [releases](https://github.com/Pigmassacre/romhacks/releases) page: the releases named SMB3 Gimmick. Version 1.5.0 and earlier are on the [old smb3-gimmick repository](https://github.com/Pigmassacre/smb3-gimmick/releases).
 
 | Computer | File |
 |---|---|
@@ -35,7 +35,7 @@ Yumetaro's movement was written for this project, on top of [Southbird's Super M
 
 The builder program uses [Dear ImGui](https://github.com/ocornut/imgui) through [giu](https://github.com/AllenDang/giu), and the [Noto Sans](https://notofonts.github.io/) font under the SIL Open Font License (`cmd/smb3-gimmick/fonts/OFL.txt`).
 
-The original code in this repository is under the MIT license. See [LICENSE](LICENSE) for what it covers.
+The original code in this folder is under the MIT license. See [LICENSE](LICENSE) for what it covers.
 
 ## Working on the game
 
@@ -43,10 +43,10 @@ The disassembly is in `src/`, based on [Southbird's Super Mario Bros. 3 disassem
 
 `docs/yumetaro-physics-guide.md` describes exactly how Yumetaro and the star move in the original *Gimmick!*, and `godot/` is a Godot 4 project that implements it and is checked frame by frame against the real game. `docs/gimmick-notes.md` has the working notes on the Gimmick! ROM.
 
-The ROM files are not included, and neither are any Gimmick! graphics. Put your own copies in the repository folder, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build, the tests, and the release script read them from there.
+The ROM files are not included, and neither are any Gimmick! graphics. Put your own copies in the `smb3-gimmick` folder, named exactly `Super Mario Bros III.nes` and `Gimmick! (Japan).nes`. The build, the tests, and the release script read them from there.
 
 `./build.sh` assembles `out/smb3-gimmick.nes`. It needs Python 3 and expects [NESASM](https://github.com/camsaul/nesasm) at `ref/nesasm/nesasm`. Before assembling, `tools/build_chr.py` and `tools/build_title.py` copy Yumetaro's tiles and the logo from the Gimmick! ROM into `out/chr/`, so `src/CHR` only ever holds the stock SMB3 graphics. After a build, `python3 tools/gen_patch.py` rebuilds `internal/build/patch.bin`. `go test ./...` then checks that the builder produces the same game.
 
 The builder program is in `cmd/smb3-gimmick`. It needs cgo: on Linux, a C compiler plus the OpenGL and X11 development packages (`libgl1-mesa-dev xorg-dev` on Ubuntu). `go run ./cmd/smb3-gimmick` opens it. The Windows version cross-compiles from Linux with MinGW (`CGO_ENABLED=1 GOOS=windows CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++`). The Mac version has to be built on a Mac.
 
-`./release.sh v1.0.0` publishes a GitHub release. You need [Go](https://go.dev/dl/) and the [GitHub CLI](https://cli.github.com/), logged in. It checks that no ROMs or Gimmick! graphics are tracked anywhere in the git history, and it runs the tests. Then it pushes the version tag, and `.github/workflows/release.yml` builds the program for Windows, Mac, and Linux and publishes it.
+`./release.sh v1.0.0` publishes a GitHub release. You need [Go](https://go.dev/dl/) and the [GitHub CLI](https://cli.github.com/), logged in. It checks that no ROMs or Gimmick! graphics are tracked anywhere in the git history, and it runs the tests. Then it pushes the tag `smb3-gimmick-v1.0.0`, and `.github/workflows/smb3-gimmick-release.yml` at the top of the romhacks repository builds the program for Windows, Mac, and Linux and publishes it.

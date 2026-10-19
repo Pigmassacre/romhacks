@@ -1,6 +1,6 @@
 -- Drops Yumetaro from high up wearing a map-inventory suit (param: level suit flytime frames [flap]); he must keep falling.
 -- With flap, A is tapped for that many frames first (flying with a P-Wing), and he must come down after letting go
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local P=io.open(OUT.."param.txt"):read("l")
 local name,suit,fly,dur,flap=P:match("(%S+) (%d+) (%d+) (%d+) ?(%d*)")
 suit=tonumber(suit) fly=tonumber(fly) dur=tonumber(dur) flap=tonumber(flap) or 0

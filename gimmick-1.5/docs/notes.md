@@ -1,7 +1,7 @@
 # Notes on the Gimmick! (J) ROM
 
 Findings from making Gimmick! 1.5 that are not in smb3-gimmick's
-[notes on the ROM](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/gimmick-notes.md) or its [physics guide](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/yumetaro-physics-guide.md). Addresses are CPU
+[notes on the ROM](../../smb3-gimmick/docs/gimmick-notes.md) or its [physics guide](../../smb3-gimmick/docs/yumetaro-physics-guide.md). Addresses are CPU
 addresses; `1D:8469` means bank `$1D` mapped where the game maps it.
 
 ## Banks during play

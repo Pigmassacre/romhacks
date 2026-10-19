@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 loadstate(OUT.."w11.mss")
 local function s8(v) return (v+128)%256-128 end
 local P=io.open(OUT.."param.txt"):read("l")

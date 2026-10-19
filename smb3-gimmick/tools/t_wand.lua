@@ -1,5 +1,5 @@
 -- Holds B through a Koopaling room; from frame 150 pretends the wand was grabbed. The star must vanish and stay away
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 loadstate(OUT.."lv_W1BOSS.mss")
 INPUT=function(f) return {b=(f%80)<60} end
 local seen=0

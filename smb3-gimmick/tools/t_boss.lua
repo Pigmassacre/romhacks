@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local P=io.open(OUT.."param.txt"):read("l")
 local name,id,mode,dur=P:match("(%S+) (%x+) (%S+) (%d+)")
 id=tonumber(id,16) dur=tonumber(dur)

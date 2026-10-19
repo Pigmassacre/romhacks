@@ -2,10 +2,10 @@ MIT License
 
 Copyright (c) 2026 Olof Karlsson
 
-This license covers the original work in this repository: the hack's code
+This license covers the original work in this folder: the hack's code
 (src/), the tools in tools/, the tests in tests/, and the documentation. It does
 not cover anything derived from Gimmick!, which remains the property of Sunsoft:
-the original game's code and graphics, which this repository does not contain,
+the original game's code and graphics, which this folder does not contain,
 and the parts of its title screen that tools/title.py rearranges.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy

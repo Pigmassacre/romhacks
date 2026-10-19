@@ -1,6 +1,6 @@
 import sys
 
-ROM = "/home/olof/dev/smb3-gimmick/Gimmick! (Japan).nes"
+ROM = "/home/olof/dev/romhacks/smb3-gimmick/Gimmick! (Japan).nes"
 data = open(ROM, "rb").read()
 
 

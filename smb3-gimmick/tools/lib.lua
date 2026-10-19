@@ -1,4 +1,4 @@
-OUT="/home/olof/dev/smb3-gimmick/out/"
+OUT="/home/olof/dev/romhacks/smb3-gimmick/out/"
 M=emu.memType.nesMemory
 function r(a) return emu.read(a,M) end
 function r16(hi,lo) return r(hi)*256+r(lo) end

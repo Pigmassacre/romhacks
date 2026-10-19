@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local name=io.open(OUT.."param.txt"):read("l")
 loadstate(OUT.."lv_"..name..".mss")
 FRAME=function(f)

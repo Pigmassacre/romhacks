@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local P=io.open(OUT.."param.txt"):read("l")
 local name,scroll,sx,sy,jx=P:match("(%S+) (%d+) (%d+) (%d+) (%d+)")
 scroll,sx,sy,jx=tonumber(scroll),tonumber(sx),tonumber(sy),tonumber(jx)

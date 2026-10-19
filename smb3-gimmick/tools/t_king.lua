@@ -1,5 +1,5 @@
 -- Grabs the wand in a Koopaling room and plays on into the king's room. Yumetaro must fall in, then stand still
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 loadstate(OUT.."lv_W1BOSS.mss")
 local landed,walk,king=0,0,false
 emu.addMemoryCallback(function() if rs("PAGE_A000")==27 then king=true end end, emu.callbackType.exec, S["CineKing_DoWandReturn"], S["CineKing_DoWandReturn"])

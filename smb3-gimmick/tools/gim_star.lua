@@ -1,4 +1,4 @@
-local OUT="/home/olof/dev/smb3-gimmick/out/"
+local OUT="/home/olof/dev/romhacks/smb3-gimmick/out/"
 local M=emu.memType.nesMemory
 local function r(a) return emu.read(a,M) end
 local f=0

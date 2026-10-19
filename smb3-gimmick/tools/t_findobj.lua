@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local P=io.open(OUT.."param.txt"):read("l")
 local name,obj,frames=P:match("(%S+) (%x+) (%d+)")
 obj,frames=tonumber(obj,16),tonumber(frames)

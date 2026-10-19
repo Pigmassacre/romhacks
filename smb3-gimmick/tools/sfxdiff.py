@@ -4,7 +4,7 @@ apu = {}
 b5 = {}
 sel = 0
 frames = {}
-for line in open('/home/olof/dev/smb3-gimmick/out/gim_sfx.log'):
+for line in open('/home/olof/dev/romhacks/smb3-gimmick/out/gim_sfx.log'):
     p = line.split()
     f = int(p[0])
     if p[1] == 'SFX':

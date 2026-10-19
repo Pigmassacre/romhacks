@@ -11,7 +11,7 @@ The 5B voices are descending sweeps; the triangle carries the loudest one each f
 Stream: (register - $4000, value) pairs, $FF ends a frame, $FE ends the last frame.
 """
 
-ROOT = '/home/olof/dev/smb3-gimmick/'
+ROOT = '/home/olof/dev/romhacks/smb3-gimmick/'
 
 writes = {}
 state = {}

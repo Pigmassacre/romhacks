@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 loadstate(OUT.."w11.mss")
 local died=nil
 emu.addMemoryCallback(function() if not died then died=F log("DIE f="..F) end end, emu.callbackType.exec, S["Player_Die"], S["Player_Die"])

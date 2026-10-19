@@ -1,4 +1,4 @@
-dofile("/home/olof/dev/smb3-gimmick/tools/lib.lua")
+dofile("/home/olof/dev/romhacks/smb3-gimmick/tools/lib.lua")
 local P=io.open(OUT.."param.txt"):read("l")
 local name,x0,x1,y0,y1=P:match("(%S+) (%d+) (%d+) (%d+) (%d+)")
 loadstate(OUT.."lv_"..name..".mss")

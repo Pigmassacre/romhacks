@@ -28,7 +28,7 @@ game's physics, not taken from *Gimmick! 2*.
 
 ## Play it
 
-Download the patch from the [releases](https://github.com/Pigmassacre/gimmick-1.5/releases)
+Download the patch from the [releases](https://github.com/Pigmassacre/romhacks/releases)
 page (or [build it](#build-it)) and apply it to your ROM with
 [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/).
 There are two patches because the two common dumps of *Gimmick! (Japan)* differ only in their
@@ -121,12 +121,12 @@ address and the tuning values (coyote and buffer frames, skip speeds, effect len
 
 `docs/notes.md` has what was learnt about the ROM along the way: free RAM, the debug block, the
 map layout, water and tubes, the star's animation frames, the title screen, and how the sound
-driver layers effects. It builds on smb3-gimmick's [notes on the ROM](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/gimmick-notes.md) and
-its [physics guide](https://github.com/Pigmassacre/smb3-gimmick/blob/main/docs/yumetaro-physics-guide.md).
+driver layers effects. It builds on [SMB3 Gimmick](../smb3-gimmick/)'s [notes on the ROM](../smb3-gimmick/docs/gimmick-notes.md) and
+its [physics guide](../smb3-gimmick/docs/yumetaro-physics-guide.md).
 
 ## Credits
 
 *Gimmick!* is © Sunsoft. *Gimmick! 2* is © Sunsoft and Bitwave Games. asm6 is by loopy.
 
-The original code in this repository is under the MIT license. See [LICENSE](LICENSE) for what
+The original code in this folder is under the MIT license. See [LICENSE](LICENSE) for what
 it covers.

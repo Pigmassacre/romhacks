@@ -1,8 +1,10 @@
-name: Release
+name: SMB3 Gimmick release
 
+# smb3-gimmick/release.sh pushes a tag like smb3-gimmick-v1.6.0. This builds the
+# builder program for Windows, Mac and Linux and publishes it as a release.
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["smb3-gimmick-v*.*.*"]
 
 permissions:
   contents: write
@@ -10,47 +12,57 @@ permissions:
 jobs:
   linux-windows:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: smb3-gimmick
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: smb3-gimmick/go.mod
+          cache-dependency-path: smb3-gimmick/go.sum
       - run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
       - name: Build
         run: |
+          version="${GITHUB_REF_NAME#smb3-gimmick-}"
           mkdir -p dist/linux dist/windows
           go build -trimpath \
-            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME} -extldflags '-static-libstdc++ -static-libgcc'" \
+            -ldflags "-s -w -X main.version=${version} -extldflags '-static-libstdc++ -static-libgcc'" \
             -o "dist/linux/SMB3 Gimmick" ./cmd/smb3-gimmick
           CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ \
-            go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=${GITHUB_REF_NAME}" \
+            go build -trimpath -ldflags "-s -w -H windowsgui -X main.version=${version}" \
             -o "dist/windows/SMB3 Gimmick.exe" ./cmd/smb3-gimmick
           (cd dist/linux && zip -r ../SMB3-Gimmick-linux.zip .)
           (cd dist/windows && zip -r ../SMB3-Gimmick-windows.zip .)
       - uses: actions/upload-artifact@v4
         with:
           name: linux-windows
-          path: dist/*.zip
+          path: smb3-gimmick/dist/*.zip
 
   mac:
     runs-on: macos-latest
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
+    defaults:
+      run:
+        working-directory: smb3-gimmick
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: smb3-gimmick/go.mod
+          cache-dependency-path: smb3-gimmick/go.sum
       - name: Build
         run: |
-          flags="-s -w -X main.version=${GITHUB_REF_NAME}"
+          version="${GITHUB_REF_NAME#smb3-gimmick-}"
+          flags="-s -w -X main.version=${version}"
           CGO_ENABLED=1 GOARCH=arm64 go build -trimpath -ldflags "$flags" -o build/arm64 ./cmd/smb3-gimmick
           CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" CXX="clang++ -arch x86_64" \
             go build -trimpath -ldflags "$flags" -o build/amd64 ./cmd/smb3-gimmick
           app="dist/SMB3 Gimmick.app"
           mkdir -p "$app/Contents/MacOS"
           lipo -create -output "$app/Contents/MacOS/SMB3 Gimmick" build/arm64 build/amd64
-          v="${GITHUB_REF_NAME#v}"
+          v="${version#v}"
           cat > "$app/Contents/Info.plist" << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -73,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: mac
-          path: dist/SMB3-Gimmick-mac.zip
+          path: smb3-gimmick/dist/SMB3-Gimmick-mac.zip
 
   release:
     needs: [linux-windows, mac]
@@ -101,4 +113,4 @@ jobs:
           The first time you open it, Windows or macOS may ask you to confirm. On Windows, choose More info, then Run anyway. On a Mac, right-click the app and choose Open.
           EOF
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --title "SMB3 Gimmick ${GITHUB_REF_NAME}" --notes-file notes.md dist/*.zip
+            --title "SMB3 Gimmick ${GITHUB_REF_NAME#smb3-gimmick-}" --notes-file notes.md dist/*.zip
