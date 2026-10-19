@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the Mesen test scripts in tests/ against a ROM.
 
-    python3 tests/run.py                  # every test, against out/gimmick-recall.nes
+    python3 tests/run.py                  # every test, against out/gimmick-1.5.nes
     python3 tests/run.py recall coyote    # just these
     python3 tests/run.py --rom "Gimmick! (Japan).nes" ramguard   # against the original
     python3 tests/run.py perf             # a survey from tests/survey/
@@ -48,7 +48,7 @@ def run(name, rom):
 
 def main():
     args = sys.argv[1:]
-    rom = os.path.join(REPO, "out", "gimmick-recall.nes")
+    rom = os.path.join(REPO, "out", "gimmick-1.5.nes")
     if args[:1] == ["--rom"]:
         rom = os.path.abspath(args[1])
         args = args[2:]

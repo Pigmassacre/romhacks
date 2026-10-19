@@ -1,4 +1,4 @@
-; Gimmick! Recall: addresses in the original game, and the hack's own RAM.
+; Gimmick! 1.5: addresses in the original game, and the hack's own RAM.
 ;
 ; Object arrays have 10 slots: slot 0 is Yumetaro, slot 1 is the star.
 ; See ref/docs/yumetaro-physics-guide.md for what each one means.

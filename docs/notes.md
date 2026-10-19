@@ -1,6 +1,6 @@
 # Notes on the Gimmick! (J) ROM
 
-Findings from making Gimmick! Recall that are not in `ref/docs/gimmick-notes.md` or
+Findings from making Gimmick! 1.5 that are not in `ref/docs/gimmick-notes.md` or
 `ref/docs/yumetaro-physics-guide.md` (both copied from smb3-gimmick). Addresses are CPU
 addresses; `1D:8469` means bank `$1D` mapped where the game maps it.
 
@@ -30,7 +30,7 @@ Select refills health, and controller 2 A+B adds a life. After that comes code f
 it: four NOPs at `$E287` replaced whatever led there.
 
 Nothing jumps into it. The two `$E2xx` references elsewhere (`B2_0365`, `B8_36d1`) are data
-read as code by the disassembler. Gimmick! Recall puts its far-call code here.
+read as code by the disassembler. Gimmick! 1.5 puts its far-call code here.
 
 Select is not read anywhere else during play.
 
@@ -38,7 +38,7 @@ Select is not read anywhere else during play.
 
 `$0440-$04FF` is never read or written during play, on any stage, in the intro, the credits, or
 after a game over. The only write is the reset code clearing RAM (`$E078`). The few references
-to `$04xx` in the disassembly are data read as code. Gimmick! Recall uses `$0470-$048C`.
+to `$04xx` in the disassembly are data read as code. Gimmick! 1.5 uses `$0470-$048C`.
 
 ## The map
 
@@ -89,6 +89,22 @@ into one at column `$3D`, row 9 of screen 1.
 
 The star's tiles are on CHR page `$08`, mapped at PPU `$0400` on every stage.
 
+## The title screen
+
+Bank `$1B`, mapped at `$8000`; its entry is `$8003`.
+
+- It fills both nametables with tile `$10` (sky), then copies `$8242-$85C1` to PPU
+  `$2080-$23FF`: nametable rows 4-29 and the attribute table (at `$8582`), raw. The logo panel
+  is rows 4-14, columns 4-27.
+- Background CHR (`$E5-$E8`, PPU `$1000-$1FFF`) is set by `lda #$00`, `#$65`, `#$66`, `#$67` at
+  `$808A-$8097`. Pages `$65-$67` hold the logo; only 12 of their tiles are unused.
+- The palette is at `$8222`. Palette 0 is the panel (black, two greys, white), palette 1 the
+  sky, palette 2 the panel's bottom row. Tile `$01` is plain colour 3, white in every palette.
+- The sprites start at `$819A`. Sprites 0 and 1 sit behind the background at y `$60`, x `$20` and
+  `$D8`: on the panel's white side margins, where they cannot be seen. Nothing reads the
+  sprite-0 hit, so what they are for is not known. Moved onto black pixels they show as blue
+  dots. START and CONTINUE are sprites too.
+
 ## Sound
 
 `jsr $F285` queues a sound. The driver is in bank 7 and runs in NMI. `$80FC` starts sound `A`:
@@ -127,5 +143,5 @@ that stage. Set lives `$0104` too, or a game over ends it.
 ## Timing
 
 The main loop waits at `$F29F`. On busy screens the original already misses frames now and
-then. Gimmick! Recall's routines cost about 400 cycles a frame on average and 1,800 at most
+then. Gimmick! 1.5's routines cost about 400 cycles a frame on average and 1,800 at most
 (when it draws effects), out of 29,780 (`tests/survey/s_perf.lua`).

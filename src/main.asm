@@ -1,4 +1,4 @@
-; Gimmick! Recall
+; Gimmick! 1.5
 ;
 ; tools/build.py assembles this file with asm6. Each `;@ seg <bank> <start> <end>`
 ; line starts a segment: the code after it is assembled at <start> and written

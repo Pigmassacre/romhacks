@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
-"""Build Gimmick! Recall from your own copy of Gimmick! (Japan).
+"""Build Gimmick! 1.5 from your own copy of Gimmick! (Japan).
 
-    python3 tools/build.py            # writes out/gimmick-recall.nes and .bps
+    python3 tools/build.py            # writes out/gimmick-1.5.nes and .bps
 
 Steps:
 
 1. Read `Gimmick! (Japan).nes` and check it is the right game (PRG and CHR
    checksum; the header is ignored, so both common dumps work).
-2. Expand PRG from 256 KB to 512 KB. Original banks keep their numbers
-   ($00-$1F); the fixed bank is copied to $3F, because the FME-7 always maps
-   the last bank at $E000. Banks $20-$3E are new and empty.
+2. Expand PRG from 256 KB to 512 KB and CHR from 128 KB to 256 KB. Original
+   banks keep their numbers ($00-$1F); the fixed bank is copied to $3F,
+   because the FME-7 always maps the last bank at $E000. PRG banks $20-$3E
+   and CHR pages $80-$FF are new.
 3. Assemble src/main.asm with asm6. The source is split into segments by
    `;@ seg <bank> <start> <end>` lines. Each segment is assembled at its CPU
    address and its bytes are written into that bank. A segment may be shorter
    than its range, never longer.
-4. Write the ROM and BPS patches for both common dumps (iNES and NES 2.0
+4. Rebuild the title screen to say "Gimmick! 1.5" (tools/title.py).
+5. Write the ROM and BPS patches for both common dumps (iNES and NES 2.0
    headers). A patch copies everything it can from the original ROM, so it
    holds only the new code.
 """
@@ -29,9 +31,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO, "src")
 OUT = os.path.join(REPO, "out")
 ROM_IN = os.path.join(REPO, "Gimmick! (Japan).nes")
-ROM_OUT = os.path.join(OUT, "gimmick-recall.nes")
-BPS_OUT = os.path.join(OUT, "gimmick-recall.bps")
-BPS2_OUT = os.path.join(OUT, "gimmick-recall (NES 2.0 header).bps")
+ROM_OUT = os.path.join(OUT, "gimmick-1.5.nes")
+BPS_OUT = os.path.join(OUT, "gimmick-1.5.bps")
+BPS2_OUT = os.path.join(OUT, "gimmick-1.5 (NES 2.0 header).bps")
 # The two common dumps of Gimmick! (Japan) differ only in their header.
 HEADER_INES = bytes.fromhex("4e45531a101050400000000000000000")   # file CRC32 EEB6B362
 HEADER_NES2 = bytes.fromhex("4e45531a101050480000000000000001")   # file CRC32 EE8879D5
@@ -43,6 +45,8 @@ BANK = 0x2000
 OLD_PRG_BANKS = 32
 NEW_PRG_BANKS = 64
 CHR_SIZE = 128 * 1024
+NEW_CHR_SIZE = 256 * 1024   # the FME-7's limit; pages $80-$FF are new
+TITLE_PAGES = (0x80, 0x81, 0x82, 0x83)
 
 SEG_RE = re.compile(r"^\s*;@\s*seg\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s*(.*)$")
 
@@ -73,9 +77,10 @@ def expand(data):
     banks = [prg[i * BANK:(i + 1) * BANK] for i in range(OLD_PRG_BANKS)]
     new = banks + [b"\xff" * BANK] * (NEW_PRG_BANKS - OLD_PRG_BANKS)
     new[NEW_PRG_BANKS - 1] = banks[OLD_PRG_BANKS - 1]
+    chr_ = chr_ + b"\x00" * (NEW_CHR_SIZE - CHR_SIZE)
     header = bytearray(data[:16])
     header[4] = NEW_PRG_BANKS * BANK // 0x4000
-    header[5] = CHR_SIZE // 0x2000
+    header[5] = NEW_CHR_SIZE // 0x2000
     header[6] = 0x50 | (header[6] & 0x0F)  # mapper 69: low nibble 5
     header[7] = 0x40                         # mapper 69: high nibble 4, plain iNES
     header[8:16] = bytes(8)
@@ -172,19 +177,25 @@ def apply(rom, segs):
         print("  %-22s %02X:%04X-%04X  %4d/%4d bytes" % (name, bank, start, start + len(code), len(code), end - start))
 
 
+# (target offset, source offset, length): where unchanged data in the new ROM
+# came from in the original. The BPS writer copies these from the source.
+COPIES = []
+
+
+def base_copies():
+    prg = OLD_PRG_BANKS * BANK
+    return [
+        (16, 16, prg),                                                   # PRG banks $00-$1F
+        (16 + (NEW_PRG_BANKS - 1) * BANK, 16 + (OLD_PRG_BANKS - 1) * BANK, BANK),   # fixed bank
+        (16 + NEW_PRG_BANKS * BANK, 16 + prg, CHR_SIZE),                 # CHR
+    ]
+
+
 def src_offset(t):
     """Where the byte at target offset t came from in the original file."""
-    prg = 16 + OLD_PRG_BANKS * BANK
-    if t < 16:
-        return None
-    if t < prg:
-        return t
-    fixed = 16 + (NEW_PRG_BANKS - 1) * BANK
-    if fixed <= t < fixed + BANK:
-        return t - fixed + 16 + (OLD_PRG_BANKS - 1) * BANK
-    chr_ = 16 + NEW_PRG_BANKS * BANK
-    if t >= chr_:
-        return t - chr_ + prg
+    for dst, src, n in COPIES:
+        if dst <= t < dst + n:
+            return t - dst + src
     return None
 
 
@@ -304,12 +315,21 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     data = load_rom()
     rom = expand(data)
+    COPIES[:] = base_copies()
     prologue, segs = split_segments(os.path.join(SRC, "main.asm"))
     built = assemble(prologue, segs)
     print("segments:")
     apply(rom, built)
+    import title
+    chr_base = 16 + NEW_PRG_BANKS * BANK
+    copied = []
+    n = title.patch(rom, chr_base, TITLE_PAGES, copied)
+    for dst, page in copied:
+        COPIES.append((dst, 16 + OLD_PRG_BANKS * BANK + page * 1024, 1024))
+    print("  title: \"1.5\" in %d new tiles, CHR pages %s" % (n, " ".join("%02X" % p for p in TITLE_PAGES)))
     open(ROM_OUT, "wb").write(rom)
     print("built %s (%d KB)" % (os.path.relpath(ROM_OUT, REPO), len(rom) // 1024))
+    title.preview(rom, chr_base, os.path.join(OUT, "title.png"))
     for header, path in ((HEADER_INES, BPS_OUT), (HEADER_NES2, BPS2_OUT)):
         src = header + data[16:]
         n = write_bps(src, bytes(rom), path)
