@@ -37,7 +37,7 @@ There are two patches because the two common dumps of *Gimmick! (Japan)* differ 
 | Your ROM's CRC32 | Patch |
 |---|---|
 | `EEB6B362` (iNES header) | `gimmick-1.5.bps` |
-| `EE8879D5` (NES 2.0 header) | `gimmick-1.5 (NES 2.0 header).bps` |
+| `EE8879D5` (NES 2.0 header) | `gimmick-1.5-nes2.bps` |
 
 Both give the same 768 KB ROM: 512 KB of PRG ROM and 256 KB of CHR ROM, the most the Sunsoft
 FME-7 mapper (mapper 69) can address. Your emulator or flash cart has to support that. It has

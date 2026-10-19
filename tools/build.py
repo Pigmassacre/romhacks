@@ -33,7 +33,7 @@ OUT = os.path.join(REPO, "out")
 ROM_IN = os.path.join(REPO, "Gimmick! (Japan).nes")
 ROM_OUT = os.path.join(OUT, "gimmick-1.5.nes")
 BPS_OUT = os.path.join(OUT, "gimmick-1.5.bps")
-BPS2_OUT = os.path.join(OUT, "gimmick-1.5 (NES 2.0 header).bps")
+BPS2_OUT = os.path.join(OUT, "gimmick-1.5-nes2.bps")
 # The two common dumps of Gimmick! (Japan) differ only in their header.
 HEADER_INES = bytes.fromhex("4e45531a101050400000000000000000")   # file CRC32 EEB6B362
 HEADER_NES2 = bytes.fromhex("4e45531a101050480000000000000001")   # file CRC32 EE8879D5
