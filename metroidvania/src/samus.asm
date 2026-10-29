@@ -1019,8 +1019,10 @@ MoveSamusLeft:
         bcs @walk
         jsr ScrollLeft1
         bcc @moved
+        jsr SamusScreenX        ; it can't scroll (the level's start, a boss): walk
 @walk:
-        cmp #$08 + 8            ; the screen's left edge, as for Simon
+        cmp #$08 + 2            ; the screen's edges are Simon's ($98CB, $98E9):
+                                ; he stops short of $08 and $F0
         bcc @blocked
 @moved:
         lda SamusXLo
@@ -1049,8 +1051,9 @@ MoveSamusRight:
         bcc @walk
         jsr ScrollRight1
         bcc @moved
+        jsr SamusScreenX
 @walk:
-        cmp #$F0 - 8
+        cmp #$F0 - 1
         bcs @blocked
 @moved:
         inc SamusXLo

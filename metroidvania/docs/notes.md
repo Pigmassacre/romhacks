@@ -28,6 +28,8 @@ Simon's handlers are dispatched at `$9369` by `$046C`: 0 walk, 1 jump, 2 whip, 3
 
 On the stairs Castlevania moves Simon a pixel every other frame. Through a door (mode 8) it hides him (pose 0) while the screen scrolls to the door and the door opens (parts 0 and 1), walks him through it (part 2), and then the screen carries him along, standing. The status bar stays up through all of it, as in modes 7 to `$0B`, where `$F87D` splits the screen.
 
+Where the screen can't scroll (a stage's ends, a boss), Simon walks on it, between screen x `$09` and `$EF` (`$98CB`, `$98E9`); a stage's exit can be as far right as `$F0`, give or take 2 (stage 1's is).
+
 Castlevania takes Simon's x in the level (`$41:$40`) to be the scroll plus `$80`, unless `$3C` bit 2 is set; then it is the scroll plus his screen x. Metroid's camera leaves Samus anywhere between `$71` and `$8F`, so before handing over to the stairs the hack sets that bit unless she is at `$80`.
 
 ### Collision
