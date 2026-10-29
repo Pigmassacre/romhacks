@@ -1,0 +1,7 @@
+*.nes
+Mesen
+out/
+/ref/
+__pycache__/
+*.pyc
+tools/asm6
