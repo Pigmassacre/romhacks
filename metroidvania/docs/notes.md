@@ -34,7 +34,7 @@ Castlevania takes Simon's x in the level (`$41:$40`) to be the scroll plus `$80`
 
 `$E6BB` tests each object against Simon (within `$5F` of his y) unless he is hurt, dead or invincible (`$5B`), takes 8, 12 or 16 off `$45` (of `$40`), and calls `$96C1`, which turns him towards the enemy and starts action 5. The hack keeps `$45` at `$20` and turns each change into Metroid's energy (`src/cv.asm`).
 
-Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type (`$17` for a thrown one) and a type (`$0584`) below 6. A dagger (type 0) that hits becomes AI `$32`, a spark, which is also what Castlevania turns objects into when they leave the screen (`$EA72`).
+Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type (`$17` for a thrown one) and a type (`$0584`) below 6. After its AI, every object's pose is animated by `$F1DB` from its pose table (`$04C0`), timed by `$0488`; bit 7 there turns that off, as for items. A shot's dagger sets it, or the spark of the last hit in that slot goes on animating, drawn over the next shot. A dagger (type 0) that hits becomes AI `$32`, a spark, which is also what Castlevania turns objects into when they leave the screen (`$EA72`).
 
 ### Breakable blocks
 

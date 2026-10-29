@@ -183,8 +183,11 @@ CvShotSync:
         sta ObjVXSub+$14,x
         sta ObjVY+$14,x
         sta ObjVYSub+$14,x
+        sta ObjPoseStep+$14,x
         lda #1
         sta ObjAction+$14,x     ; already thrown: the AI only applies its speed
+        lda #$80                ; no pose animation ($F1DB): the slot may still
+        sta ObjPoseTimer+$14,x  ; hold the spark of the last hit, and drew it
         lda #$FF
         sta ObjLastHit+$14,x
 @rts:

@@ -51,6 +51,8 @@ ObjVX           = $03FC
 ObjVXSub        = $0418
 ObjAI           = $0434     ; AI type; 0 = empty slot
 ObjFacing       = $0450     ; 1 = facing left
+ObjPoseTimer    = $0488     ; frames to the next pose; bit 7: no pose animation
+ObjPoseStep     = $04A4     ; step in the pose animation
 ObjAction       = $046C     ; Simon: 0 walk, 1 jump, 2 whip, 3 crouch, 4 stairs, 5 hurt,
                             ; 6 walk to the stairs, 7 fall, 8 dead, 9 land
 ObjLastHit      = $04DC     ; subweapons: the object they last hit
