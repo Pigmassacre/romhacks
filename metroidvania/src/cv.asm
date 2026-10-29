@@ -257,3 +257,6 @@ CvMaxScreen:
 
 CvMinScreen:
         jmp $D025
+
+CvLoadColumn:
+        jmp $D196

@@ -2,8 +2,10 @@
 -- its screen (Castlevania checks that in Simon's walking code; the hack at
 -- every pixel Samus scrolls), and her shots wear its health ($01A9) down
 -- to nothing. She gets there through the walls (the hack's debug flag),
--- flying at y $70.
-local phase, t0, hp0 = "warp", 0, 0
+-- flying at y $70. In the fight no enemies come (the hall's zombies once
+-- did: Samus scrolled past the edge where Castlevania replaces their
+-- generator).
+local phase, t0, hp0, zombies = "warp", 0, 0, 0
 loadstate_raw("castle", function()
   w(0x28, 3); w(0x29, 3); w(0x118, 0); w(0x117, 0x10); w(0x45, 0); w(0x2A, 9)
 end)
@@ -32,8 +34,12 @@ FRAME = function(f)
     if r(0x28) ~= 3 then check(false, "the screen locks for the boss"); done() end
   end
   if phase == "fight" then
+    for i = 4, 0x13 do
+      if r(0x434 + i) == 0x01 then zombies = zombies + 1 end
+    end
     if r(0x1A9) == 0 then
       check(hp0 == 0x40, "the boss started with full health")
+      check(zombies == 0, string.format("no zombies in the fight (%d slot-frames had one)", zombies))
       check(true, string.format("the boss is beaten, in %d frames", f - t0))
       shot("beaten"); done()
     end

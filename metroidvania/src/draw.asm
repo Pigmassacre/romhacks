@@ -18,8 +18,12 @@ DrawAll:
         rts                     ; the title: slot 0 is the bat (carry clear)
 @game:
         jsr HideStatusSprites
-        lda GameMode
+        lda GameMode            ; play, a door, walking in (as the status bar)
         cmp #5
+        beq @hud
+        cmp #8
+        beq @hud
+        cmp #$0A
         beq @hud
         lda #$F8                ; no HUD: sprites 1-7 hidden as well
         ldx #4 * 6
@@ -53,7 +57,8 @@ DrawAll:
         and #HS_SAMUS
         bne @samus
         jsr FollowSimon
-        jmp @draw
+        bcc @draw
+        jmp @shots              ; hidden, as Simon is
 @samus:
         lda SamusXLo
         sec
@@ -66,7 +71,7 @@ DrawAll:
 @draw:
         lda SamusAnimFrame
         jsr DrawFrame
-        ; the shots
+@shots:
         lda #0
         sta DrawDir
         ldx #2
@@ -90,7 +95,11 @@ DrawAll:
         rts
 
 ; Castlevania is moving Simon (walking in, through a door, up stairs):
-; Samus is where he is, running while he moves.
+; Samus is where he is, running while he moves. Carry set: she is hidden.
+; Castlevania moves Simon up stairs a pixel every other frame, so she only
+; stands still once he has been still for two frames.
+FollowStill     = SamusJumpDsp  ; frames Simon has not moved (Samus's own is not current)
+
 FollowSimon:
         lda ObjX
         sta DrawX
@@ -115,8 +124,19 @@ FollowSimon:
         bne @notGate
         lda #ObjFrame_SamusFront
         sta SamusAnimFrame
+        clc
         rts
 @notGate:
+        lda GameMode
+        cmp #8
+        bne @shown
+        lda GameModeAux
+        cmp #2
+        beq @shown              ; walking through it
+        bcs @stand              ; after it, the scroll carries her: standing, as Simon
+        sec                     ; at a door: hidden, as Simon is, while the screen
+        rts                     ; scrolls to it and it opens
+@shown:
         lda ObjX
         cmp FollowX
         bne @moved
@@ -128,6 +148,9 @@ FollowSimon:
         sta FollowX
         lda ObjY
         sta FollowY
+        lda #0
+        sta FollowStill
+@run:
         lda SamusAnimReset
         cmp #ObjAnim_SamusRun
         beq @anim
@@ -135,13 +158,26 @@ FollowSimon:
         jsr SetSamusAnim
 @anim:
         lda #3
-        jmp UpdateObjAnim
+        ldx ObjAction
+        cpx #4
+        bne @delay
+        lda #6                  ; on the stairs: slower, as Simon climbs
+@delay:
+        jsr UpdateObjAnim
+        clc
+        rts
 @still:
+        lda FollowStill
+        cmp #2
+        bcs @stand
+        inc FollowStill
+        bcc @run
+@stand:
         lda #ObjAnim_SamusStand
         sta SamusAnimReset
         lda #ObjFrame_SamusStand
         sta SamusAnimFrame
-@rts:
+        clc
         rts
 
 ; Draw Metroid frame A at DrawX, DrawY (screen), facing left when DrawDir

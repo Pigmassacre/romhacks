@@ -464,12 +464,17 @@ Bank0_BgGfx:
         lda HackState
         and #~HS_SPLIT
         sta HackState
-        lda GameMode
-        cmp #5
+        lda GameMode            ; where Castlevania splits for the status bar
+        cmp #8                  ; (and so does Bank6_Split): a door,
+        beq @inPlay
+        cmp #$0A                ; walking in,
+        beq @inPlay
+        cmp #5                  ; and play
         bne @ctrl
         lda GameModeAux
         cmp #6
         bne @ctrl
+@inPlay:
         lda $1F
         bne @ctrl
         lda HackState

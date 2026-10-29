@@ -14,6 +14,7 @@ INPUT = function(f)
   return {}
 end
 FRAME = function(f)
+  w(0x5B, 0x40)                                   -- the hall's zombies don't knock her away
   local a = r(0x46C)
   if phase == "past" and (a == 6 or a == 4) then passed = false end
   if phase == "past" and x() < 0x4F0 then phase = "back" end

@@ -64,8 +64,10 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `shots` | Shooting through zombies and candles: shots hit, and the daggers under them never get a sprite (Castlevania's hit flame used to show on every other shot) |
 | `damage` | A zombie takes 12 energy, with Metroid's knockback and invincibility |
 | `stairs` | Up pressed at the foot of the stairs climbs them, drawn on the steps, to the stage exit; walking past with Up held does not |
+| `door` | Up the hall's last stairs, running, and through the door into stage 2 as Castlevania shows Simon: hidden while the screen scrolls to the door, walking through it, with the HUD up throughout |
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |
-| `boss` | The screen locks for the Phantom Bat, and Samus's shots beat it |
+| `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
+| `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
 | `death` | Samus explodes; on the last life, the Game Over screen has its font |
 | `title` | The title screen is still Castlevania's |

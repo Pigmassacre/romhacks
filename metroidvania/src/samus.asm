@@ -1093,10 +1093,25 @@ ScrollRight1:
         dec ScrollDelta
         lda #1
         sta MoveDir
+        jsr LoadColumn
         clc
         rts
 @no:
         sec
+        rts
+
+; Castlevania loads each 64 pixel column's enemy generator and candles as it
+; scrolls into view ($D196, by MoveDir), when a frame ends with the scroll on
+; a column's edge ($F5EA). Simon scrolls a pixel a frame and never misses
+; one; Samus can scroll two and step over an edge (and the zombies of the
+; hall before the Phantom Bat came on into its fight), so the edges are
+; looked for at every pixel. Castlevania doesn't load a column twice.
+LoadColumn:
+        lda ScrollLo
+        and #$3F
+        bne @rts
+        jmp CvLoadColumn
+@rts:
         rts
 
 ; Castlevania's StrangeCode19 ($9967), from Simon's walking code: the screen
@@ -1152,6 +1167,7 @@ ScrollLeft1:
         inc ScrollDelta
         lda #2
         sta MoveDir
+        jsr LoadColumn
         clc
         rts
 @no:
@@ -1437,7 +1453,8 @@ SearchOpenSamusProjectileSlot:
         iny
         cpy #3
         bne @loop
-        rts                     ; Z clear
+        tya                     ; none: Z clear (cpy left it set)
+        rts
 @found:
         lda MissileToggle
         beq @rts
