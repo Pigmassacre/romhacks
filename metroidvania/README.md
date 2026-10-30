@@ -18,7 +18,7 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 
 - **Samus moves as in Metroid.** Running, turning, jumping and spin jumping, aiming up, the morph ball, being knocked back: Metroid's code, ported, with its numbers. A test plays the same inputs in both games and checks that Samus's position, animation frame and shots match frame by frame.
 - **Her weapons.** B fires the power beam, short as at the start of Metroid. Castlevania's whip upgrade gives her the Long Beam. Select arms missiles, and missiles are Castlevania's hearts: each one costs a heart.
-- **Metroid's HUD.** "EN", the energy and the missile count, in Metroid's font and colours. Castlevania's status bar is gone.
+- **Metroid's HUD.** "EN", the energy and the missile count, in Metroid's font and colours. Above them, what Castlevania's status bar told: the time, under the "TIME" of Metroid's escape countdown, and in a boss fight, the boss's health beside an energy tank.
 - **Metroid's energy.** 99 at most. Castlevania's hits take one and a half energy per point of Simon's health, so it takes as many hits to die as before; a pork chop gives energy back, and clearing a stage fills it up. Run out and Samus explodes as in Metroid.
 - **Metroid's sounds** for jumping, shooting, missiles, rolling, steps, getting hit, the low energy beep and dying, taken from Metroid's sound engine.
 - **Metroid's camera.** The screen follows Samus once she leaves the middle of it, as in Metroid.
@@ -27,7 +27,7 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 
 The morph ball is there from the start: Down rolls, Up or A stands up again where there is room.
 
-What doesn't carry over: Simon's subweapons. Their items still drop, but Samus can't throw them, and the double and triple shot items do nothing. The timer, score and lives still count, but nothing shows them; running out of time still kills.
+What doesn't carry over: Simon's subweapons. Their items still drop, but Samus can't throw them, and the double and triple shot items do nothing. The score and lives still count, but nothing shows them.
 
 ## Credits
 
@@ -60,7 +60,9 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | Test | What it checks |
 |---|---|
 | `physics` | Samus's position, animation frame and first shot match Metroid frame by frame, for 16 input sequences: jumps, runs, turns, the morph ball, beams, missiles, aiming up |
-| `hud` | The HUD's sprites and digits, the blank status bar, the HUD's colours ending at the split, and Castlevania's own sprites (1-8) left alone |
+| `hud` | The HUD's sprites and digits, no more on a line than a line can show, the blank status bar, the HUD's colours ending at the split, and Castlevania's own sprites (1-6) left alone |
+| `hudrows` | The HUD's time, which runs, and the boss's health, only while the screen is locked for a boss |
+| `hudflash` | The HUD keeps its colours on late frames and after long update buffers (it once flashed in Castlevania's) |
 | `split` | The status bar's last lines stay black: the HUD's palette change at the split never shows |
 | `shots` | Shooting through zombies and candles: shots hit, and the daggers under them never get a sprite (Castlevania's hit flame used to show on every other shot) |
 | `block` | A shot bursting on the hall's breakable block breaks it |
@@ -104,7 +106,7 @@ The source is `src/`. `tools/build.py` assembles `src/main.asm` with asm6; each 
 3. **Samus.** `src/samus.asm` is Metroid's Samus code: its handlers, its animation, its acceleration and per-pixel movement. Where Metroid looks up its room, she looks up Castlevania's collision map (8x8 cells, like Metroid's), and where Metroid scrolls, she moves Castlevania's scroll. Her shots (`src/bullets.asm`) each hold one of Castlevania's three subweapon slots as an unmoving dagger, so Castlevania's own collision code hurts enemies and breaks candles with them.
 4. **Castlevania around her** (`src/cv.asm`). Every frame Samus writes her position into Simon's variables, which Castlevania's enemies, items, stage exits and stairs use. For the stairs, walking in and dying, Castlevania moves Simon and Samus follows. Castlevania's damage arrives as changes to Simon's health, which is kept at a constant value and turned into Metroid's energy.
 5. **Graphics.** `tools/samus_gfx.py` converts Samus's frames from Metroid's 8x8 sprites to Castlevania's 8x16 ones: it decodes each frame as Metroid draws it, pairs sprites into 8x16, and stores each distinct pair (and its mirror image) once. The pairs go over Simon's tiles in the sprite pattern table, and the rest over the status bar's font, which the hack copies back for the Game Over screen.
-6. **The HUD** (`src/hud.asm`) is 7 sprites over the blanked status bar. Its digits are drawn into the pattern table when they change. Metroid's HUD colours go in sprite palette 2 at the top of the screen, and Castlevania's come back at the status bar split, on its last blank lines.
+6. **The HUD** (`src/hud.asm`) is 10 sprites over the blanked status bar, in four rows, no line showing more than 8 of them. Its digits are drawn into the pattern table when they change. Metroid's HUD colours go in sprite palette 2 at the top of the screen, and Castlevania's come back at the status bar split, on its last blank lines.
 7. **Sounds** (`src/sfx.asm`) are Metroid's APU writes, played back after Castlevania's music each frame; while one plays, Castlevania's writes to that channel go to an unused register.
 
 `docs/notes.md` has what was learnt about both ROMs along the way: the RAM, the hooks, Castlevania's object slots and actions, its collision map and loader, and the timing of the split.

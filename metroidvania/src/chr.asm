@@ -28,9 +28,11 @@ ChrLoaded:
         jmp $C102
 @load:
         lda #$FF                ; the HUD's digit tiles: redraw them
-        sta HudShown
-        sta HudShown+1
-        sta HudShown+2
+        ldx #5
+@shown:
+        sta HudShown,x
+        dex
+        bpl @shown
         lda GameMode            ; the intro, play and the demo
         cmp #2
         beq PutSamusChr
@@ -58,10 +60,12 @@ RestoreSamusChr:
         lda GameModeAux
         cmp #1
         bne @rts
-        lda $FF                 ; increment by 1
-        and #~$04
+        lda $FF                 ; increment by 1, and no NMI: this may run late
+        and #$78
         sta $2000
-        jmp PutSamusChr
+        jsr PutSamusChr
+        lda $FF
+        sta $2000
 @rts:
         rts
 

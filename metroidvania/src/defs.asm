@@ -29,6 +29,7 @@ StunTimer       = $47
 BossLock        = $48
 ScrollDelta     = $49       ; how far objects move this frame because of scrolling
 Invincible      = $5B       ; i-frames: enemies don't touch Simon while nonzero
+BossHP          = $01A9     ; 0-$40
 SimonHeight     = $5F       ; half height, for enemy contact: $0C standing, $0A crouched
 WhipLevel       = $70
 Hearts          = $71
@@ -136,7 +137,6 @@ SamusXHi        = $0123
 SamusY          = $0124
 LastHP          = $0125     ; SimonHP as the hack last left it
 HackState       = $0126     ; see HS_* below
-HudShown        = $0127     ; 3 bytes: what the HUD's digit columns show
 ColXLo          = $012B     ; collision point
 ColXHi          = $012C
 ColY            = $012D
@@ -167,7 +167,7 @@ BulY            = $07EA
 BulDie          = $07ED     ; frames left for a short beam
 
 ; At the bottom of the stack page: the stack has not been found to reach
-; below $01DC, even with the hack's calls.
+; below $01D9, even with the hack's calls.
 SfxPtrLo        = $01B2     ; 4 streams each: where the effect is (0 = idle),
 SfxPtrHi        = $01B6     ; and frames to wait before its next writes
 SfxWait         = $01BA
@@ -175,6 +175,8 @@ HackDepth       = $01BE     ; hack routines running (FarCall); the NMI's sound
                             ; skips the hack's part while one is
 SfxSaveX        = $01BF
 DebugFlags      = $01C0     ; for the tests: bit 7, Samus goes through walls
+HudShown        = $01C1     ; 6 bytes: what the HUD's digit columns show
+HudNew          = $01C7     ; 6 bytes: what they should show
 LastHearts      = $07F0     ; Hearts last frame, for the missile pickup sound
 
 ; Castlevania's scratch bytes; the hack uses them the same way, as temporaries

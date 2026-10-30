@@ -12,7 +12,7 @@ The whole game runs in the NMI (`$C052`); the main loop only stirs a random numb
 
 ### RAM the hack uses
 
-Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D9`, so the hack uses `$01B2-$01C0` only. `tests/t_ramguard.lua` checks both.
+Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D9`, so the hack uses `$01B2-$01CC` only. `tests/t_ramguard.lua` checks both.
 
 ### Objects
 
@@ -34,7 +34,7 @@ Castlevania takes Simon's x in the level (`$41:$40`) to be the scroll plus `$80`
 
 ### Sprites
 
-The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touches sprites 0-16. Castlevania draws some things there itself: sprite 0 for the split; the moving platforms' objects in slots `$17-$1A` (two sprites each, 1-8, `$A5ED`), Dracula's head (3-4), the gate walk-in (1-6, `$C52F`), the climb between stages (1-6, `$86E2`); the status bar's subweapon box (7-14, `$A17D`, when a stage or a floor loads) and icon (15-16, `$A113`). `$CB81` clears 5-16. The hack keeps the box's sprites off the screen, drops the icon, and puts the HUD in 9-15. Sprite tile pair `$00` is blank, and some of Castlevania's own sprites rest on it to hide.
+The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touches sprites 0-16. Castlevania draws some things there itself: sprite 0 for the split; the moving platforms' objects in slots `$17-$1A` (two sprites each, 1-8, `$A5ED`), Dracula's head (3-4), the gate walk-in (1-6, `$C52F`), the climb between stages (1-6, `$86E2`); the status bar's subweapon box (7-14, `$A17D`, when a stage or a floor loads) and icon (15-16, `$A113`). `$CB81` clears 5-16. The hack keeps the box's sprites off the screen, drops the icon, and puts the HUD in 7-16. (The platforms' and treasures' slots are taken from `$17` on, so sprites 7-8, for slot `$1A`, need three more of them about.) Sprite tile pair `$00` is blank, and some of Castlevania's own sprites rest on it to hide.
 
 ### Crushers
 
@@ -70,9 +70,9 @@ Items and dropped weapons are drawn with background-table tiles (odd tile number
 
 ### The status bar split
 
-Sprite 0 (`$C13B`) sits on the status bar; `$F87D` waits for its hit, waits 221 cycles more, and writes the scroll, at about line 40. Both waits give up after 256 tries, so the game doesn't hang without a hit. Every status bar write goes through the update buffer at `$0700` (entries: increment, address, data, `$FF`; a `$FF` followed by a byte of 3 or more is a literal `$FF`). `ClearSpriteUpdateList` (`$CCEE`), at the end of each NMI, writes a 0 at the buffer's end and moves past it.
+Sprite 0 (`$C13B`) sits on the status bar; `$F87D` waits for its hit, waits 221 cycles more, and writes the scroll, at about line 40. Both waits give up after 256 tries, so the game doesn't hang without a hit. Every status bar write goes through the update buffer at `$0700` (entries: increment, address, data, `$FF`; a `$FF` followed by a byte of 3 or more is a literal `$FF`). `ClearSpriteUpdateList` (`$CCEE`), at the end of each NMI, writes a 0 at the buffer's end and moves past it, so `$20` is one past that 0.
 
-The hack blanks rows 0-5 of both name tables, puts one opaque pixel at row 5, column 1, and covers it with sprite 0 in black (palette 3's colour 3 is `$0F`), so the hit happens at line 40. Wherever Castlevania splits in play (play, doors, walking in, climbing to the next stage, a stage's end), Metroid's HUD shows and the hack does the split itself (`Bank6_Split`): Castlevania's loop looks for the hit only every 17 cycles, which moves everything after it by up to 50 dots; the hack's looks every 11. Then, with rendering off from the end of line 43, it writes palette 2 back, sets the PPU's address to line 45, and turns rendering on in line 44's horizontal blank, so line 45 is fetched whole. While rendering is off the PPU shows the colour its address points at; the 42 dots in which that is a palette entry being written fall in line 43's horizontal blank, and after the last write the address points at `$3F1C`, which is black. Turning rendering on in the middle of a line instead shows stale background pixels there. `tests/t_split.lua` checks the lines stay black.
+The hack blanks rows 0-5 of both name tables, puts one opaque pixel at row 5, column 1, and covers it with sprite 0 in black (palette 3's colour 3 is `$0F`), so the hit happens at line 40. Wherever Castlevania splits in play (play, doors, walking in, climbing to the next stage, a stage's end), Metroid's HUD shows and the hack does the split itself (`Bank6_Split`): Castlevania's loop looks for the hit only every 17 cycles, which moves everything after it by up to 50 dots; the hack's looks every 11. Then, with rendering off from the end of line 43, it writes palette 2 back, sets the PPU's address to line 45, and turns rendering on in line 44's horizontal blank, so line 45 is fetched whole. While rendering is off the PPU shows the colour its address points at; the 42 dots in which that is a palette entry being written fall in line 43's horizontal blank, and after the last write the address points at `$3F1C`, which is black. Turning rendering on in the middle of a line instead shows stale background pixels there. `tests/t_split.lua` checks the lines stay black. A late frame ($1B set) doesn't flush the buffer, where the HUD's colours go in, and calls `$F87D` directly: the hack's late frame (`Bank6_LateFrame`) writes them itself and uses its own split, or the HUD flashes in Castlevania's colours whenever the game runs late. Before a long buffer (a column of a stage is `$9D` bytes) the colours go in first: after it they would be past the vertical blank.
 
 ### Sound
 
@@ -96,11 +96,11 @@ Metroid's main loop sometimes takes more than a frame; then Samus doesn't move t
 
 `ObjFramePtrTable` (`$860B`), `ObjPlacePtrTable` (`$86DF`) and `ObjectAnimIndexTbl` (`$8572`) are in bank 1 (and each area bank). A frame is a header (flips, palette, placement table), the radii, then tiles with control bytes: `$FC` move, `$FD` new attributes, `$FE` skip a place, `$FF` end. The sprites have the priority bit set, which the hack drops: Castlevania's backgrounds are opaque where Metroid's are not. Samus's graphics are bank 6 `$8000` (tiles `$00-$99`), the HUD's digits bank 6 `$B4C0` (tiles `$A0-$A9`).
 
-Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's and the explosion's, 65 of the 69 the hack has (pair $00 stays blank).
+Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's and the explosion's, 68 of the 69 the hack has (pair $00 stays blank).
 
 ### HUD and palettes
 
-`DisplayHUD` draws 10 sprites: "EN" and ".." at y `$21`, the energy digits beside them, the missile and its count at y `$2B`, energy tanks at y `$17`. Samus's palette is sprite palette 0, `0F 16 19 27`; with missiles armed its colour 2 is `$2C`. The HUD's is palette 1, `0F 12 30 21`.
+`DisplayHUD` draws 10 sprites: "EN" and ".." at y `$21`, the energy digits beside them, the missile and its count at y `$2B`, energy tanks at y `$17` (tiles `$6E` empty, `$6F` full). In the escape, the missile row shows the time instead: tiles `$58-$59`, "TIME", in the HUD's colours, and three digits. The hack has both, so the time gets a row of its own. Samus's palette is sprite palette 0, `0F 16 19 27`; with missiles armed its colour 2 is `$2C`. The HUD's is palette 1, `0F 12 30 21`.
 
 ### Sound effects
 

@@ -21,6 +21,7 @@ DrawAll:
         cmp #4
         bcs @notTitle
         jsr NewGame             ; the title
+        jsr HideHud             ; (the demo left it up)
         clc
         rts
 @notTitle:

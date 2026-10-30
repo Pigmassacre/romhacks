@@ -213,6 +213,35 @@ Bank6_Split:
         sta $2001
         rts
 
+; A late frame: the game hasn't finished the last one, so the update buffer
+; isn't flushed, and with it the HUD's colours don't go in. The split put
+; Castlevania's back last frame: without this, the HUD flashes in them
+; whenever the game runs late.
+Bank6_LateFrame:
+        lda $FE                 ; as Castlevania's late frame ($C0C0)
+        ldx $1F
+        beq @mask
+        lda #0
+@mask:
+        sta $2001
+        bit HackState
+        bvc @split
+        lda $2002
+        lda #$3F
+        sta $2006
+        lda #$19
+        sta $2006
+        lda #$12                ; Metroid's HUD colours (see HudColours, bank 0)
+        sta $2007
+        lda #$30
+        sta $2007
+        lda #$21
+        sta $2007
+@split:
+        jsr Bank6_Split
+        jsr $C11F               ; UpdateScreenScrolling
+        jmp $C1CF               ; SwitchBank_Restore
+
 ; Simon's actions: 0 walk, 1 jump, 2 whip, 3 crouch, 4 stairs, 5 hurt,
 ; 6 to the stairs, 7 fall, 8 dead, 9 land. Stairs and dying stay
 ; Castlevania's, with Samus following Simon; the rest are Samus's.
@@ -291,7 +320,7 @@ Bank6_Simon:
         ldx #HACK_CHR
         jmp FarCall
 
-;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 9-15 are the HUD's)
+;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 7-16 are the HUD's)
         rts
 
 ;@ seg $06 $A1B0 $A1D0 the status bar: the subweapon box's sprites, off the screen
@@ -302,6 +331,15 @@ Bank6_Simon:
         nop
         nop
         nop
+
+;@ seg $0F $C0C0 $C0CE NMI: a late frame
+; (Replaces PPUMASK, the status bar split and the scroll, in Bank6_LateFrame,
+; and leaves the sound as it was. A late NMI can land in any bank.)
+        ldy #6
+        jsr $C1D8               ; SwitchBank, not remembered: the bank goes back after
+        jsr Bank6_LateFrame
+        jsr $C0D7
+        jmp $C0B9
 
 ;@ seg $0F $C097 $C09A NMI: music
         jsr Bank0_Music
@@ -386,6 +424,11 @@ Bank0_SfxChan:
 ; anything written there is written as blank tiles. Then the dot that
 ; sprite 0 hits, and Samus's colours in sprite palette 0.
 Bank0_BgGfx:
+        lda $20                 ; how long the buffer is (see Bank0_Colours)
+        cmp #BUFFER_LONG
+        bcc @flush
+        jsr Bank0_Colours
+@flush:
         ldy #$00
 @entry:
         ldx $0700,y
@@ -452,7 +495,26 @@ Bank0_BgGfx:
 @done:
         lda #$00
         sta $0700
+        lda $20
+        cmp #BUFFER_LONG
+        bcs @ctrl
+        jsr Bank0_Colours
+@ctrl:
+        lda #$00
         sta $20
+        lda $FF
+        sta $2000
+        rts
+
+; The dot sprite 0 hits, Samus's colours in sprite palette 0, and the HUD's
+; in palette 2 if Bank6_Split will put Castlevania's back: every frame, as
+; the split does that every frame. After Castlevania's buffer, which may
+; write palettes; but a long one (a stage loading writes $CF bytes, a column
+; of a stage $9D) runs past the vertical blank, and with the screen off the
+; PPU shows the colour its address points at: palette writes there would
+; show as a line. So before a long one, which holds no palettes.
+BUFFER_LONG = $80
+Bank0_Colours:
         lda HackState
         and #~HS_SPLIT
         sta HackState
@@ -464,18 +526,15 @@ Bank0_BgGfx:
         cmp #$0F
         bcs @none
 @samus:
-        ; Not after a long buffer (a stage loading writes $CF bytes): this
-        ; would be past the vertical blank, and with the screen off the PPU
-        ; shows the colour its address points at, so palette writes would
-        ; show as a line. The colours stay in the PPU meanwhile.
-        cpy #$80
-        bcs @none
         lda $FE
         and #$18
         bne @colours
 @none:
-        jmp @ctrl
+        rts
 @colours:
+        lda $FF                 ; increment by 1 (the buffer's last entry may
+        and #$18                ; have been by 32)
+        sta $2000
         lda $2002
         lda GameMode            ; (the shaft has no status bar)
         cmp #$0E
@@ -505,26 +564,26 @@ Bank0_BgGfx:
         lda GameModeAux
         cmp #1
         beq @inPlay
-        bne @ctrl
+        bne @rts
 @notDemo:
         cmp #5                  ; play,
         bne @notPlay
         lda GameModeAux
         cmp #6
         beq @inPlay
-        bne @ctrl
+        bne @rts
 @notPlay:
         cmp #8                  ; doors, walking in, climbing to the next stage,
-        bcc @ctrl
+        bcc @rts
         cmp #$0C
         bcc @inPlay
-        bne @ctrl
+        bne @rts
         lda GameModeAux         ; and a stage's end, up to part 8
         cmp #8
-        bcs @ctrl
+        bcs @rts
 @inPlay:
         lda $1F
-        bne @ctrl
+        bne @rts
         lda HackState
         ora #HS_SPLIT
         sta HackState
@@ -539,9 +598,7 @@ Bank0_BgGfx:
         inx
         cpx #3
         bne @hud
-@ctrl:
-        lda $FF
-        sta $2000
+@rts:
         rts
 
 ; Metroid's Samus (its sprite palette 0), and its HUD (palette 1, here 2)

@@ -66,9 +66,9 @@ SPRITE_PAIRS = (list(range(0x02, 0x40, 2)) + list(range(0x46, 0x50, 2)) +
 # The status bar font, $1D00-$1FDF, as sprite tile numbers (odd: $1000 table).
 # $FE-$FF stay: they are sprite 0's.
 FONT_PAIRS = list(range(0xD1, 0xFE, 2))
-# HUD sprites (see src/hud.asm): E, N and the missile's two halves are fixed;
-# the three digit columns are composed at run time.
-HUD_PAIRS = 7
+# HUD sprites (see src/hud.asm): TI over E, ME over N and the missile's two
+# halves are fixed; the six digit columns are composed at run time.
+HUD_PAIRS = 10
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -269,8 +269,8 @@ def build(met_prg, outdir):
         explode.append(pairs[data])
 
     sprite_chr = [(t, d) for d, t in pairs.items() if t % 2 == 0]
-    for k, t in enumerate((0x76, 0x7F)):
-        sprite_chr.append((SPRITE_PAIRS[k], hud_tile(met, t) + BLANK))
+    for k, (top, bottom) in enumerate(((0x58, 0x76), (0x59, 0x7F))):
+        sprite_chr.append((SPRITE_PAIRS[k], hud_tile(met, top) + hud_tile(met, bottom)))
     for k, t in enumerate((0x5E, 0x5F)):
         sprite_chr.append((SPRITE_PAIRS[2 + k], met.tile(t) + BLANK))
     font_chr = sorted((t, d) for d, t in pairs.items() if t % 2 == 1)
@@ -284,12 +284,13 @@ def build(met_prg, outdir):
         for k, (t, d) in enumerate(font_chr):
             assert t == FONT_PAIRS[k]
             hexrows(f, d)
-        f.write("\n; HUD glyphs for the digit columns, 16 bytes each: 0-9, \"..\", blank.\n")
+        f.write("\n; HUD glyphs for the digit columns, 16 bytes each: 0-9, \"..\", blank, a\n; full energy tank.\n")
         f.write("GlyphTable:\n")
-        glyphs = [hud_tile(met, 0xA0 + d) for d in range(10)] + [hud_tile(met, 0x3A), BLANK]
+        glyphs = [hud_tile(met, 0xA0 + d) for d in range(10)] + [hud_tile(met, 0x3A), BLANK, hud_tile(met, 0x6F)]
         for g in glyphs:
-            # the update buffer reads $FF as the end of a write
-            assert 0xFF not in g
+            # the update buffer reads $FF as the end of a write, unless a
+            # byte of 3 or more follows it
+            assert g[-1] != 0xFF and all(g[k + 1] >= 3 for k in range(15) if g[k] == 0xFF)
             hexrows(f, g)
         for k in range(HUD_PAIRS):
             f.write("HudTile%d = $%02X\n" % (k, SPRITE_PAIRS[k]))
