@@ -1,16 +1,20 @@
 -- Metroid's HUD: EN, the energy and the missile count (hearts) as sprites
--- 1-7, its digits drawn into the pattern table; Castlevania's status bar
+-- 9-15, its digits drawn into the pattern table; Castlevania's status bar
 -- blank, and sprite palette 2 in Metroid's HUD colours above the split.
 loadstate_raw("castle", function() w(0x118, 0x05); w(0x117, 0x70); w(0x71, 42) end)
 FRAME = function(f)
+  -- sprites 1-8 are Castlevania's own (the moving platforms, Dracula's
+  -- head): the HUD leaves them alone
+  if f == 20 then w(0x20C, 0x80) end
   if f == 40 then
+    check(r(0x20C) == 0x80, "sprite 3 left alone")
     shot("hud")
-    -- sprites 1-5: the columns, at Metroid's x positions
+    -- sprites 9-13: the columns, at Metroid's x positions
     local xs = {0x18, 0x20, 0x28, 0x30, 0x38}
     for i = 1, 5 do
-      check(emu.read(i * 4 + 3, emu.memType.nesSpriteRam) == xs[i], string.format("HUD column %d at x=%02x", i, xs[i]))
+      check(emu.read((8 + i) * 4 + 3, emu.memType.nesSpriteRam) == xs[i], string.format("HUD column %d at x=%02x", i, xs[i]))
     end
-    check(emu.read(4, emu.memType.nesSpriteRam) == 0x19, "HUD at y=$19")
+    check(emu.read(9 * 4, emu.memType.nesSpriteRam) == 0x19, "HUD at y=$19")
     -- 57 energy and 042 missiles: the tens column shows 5 over 4, the ones 7 over 2
     check(r(0x128) == 0x54 and r(0x129) == 0x72, string.format("digit columns show 5/4 and 7/2 (%02x %02x)", r(0x128), r(0x129)))
     -- the status bar is blank: no tile but the blank and the dot in rows 0-5

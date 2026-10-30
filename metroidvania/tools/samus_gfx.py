@@ -58,8 +58,10 @@ FRAME_NAMES = {
     0x68: "MissileExplode1", 0x69: "MissileExplode2",
 }
 
-# Sprite tiles that only Simon and the whip use (even = top of a pair).
-SPRITE_PAIRS = (list(range(0x00, 0x40, 2)) + list(range(0x46, 0x50, 2)) +
+# Sprite tiles that only Simon and the whip use (even = top of a pair). Pair
+# $00 is blank, and stays blank: Castlevania leaves some of its own sprites
+# (Dracula's head, 1-8) on it to hide them.
+SPRITE_PAIRS = (list(range(0x02, 0x40, 2)) + list(range(0x46, 0x50, 2)) +
                 list(range(0x52, 0x60, 2)) + list(range(0x6A, 0x70, 2)))
 # The status bar font, $1D00-$1FDF, as sprite tile numbers (odd: $1000 table).
 # $FE-$FF stay: they are sprite 0's.

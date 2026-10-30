@@ -285,8 +285,12 @@ Bank6_Simon:
         ldx #HACK_CHR
         jmp FarCall
 
-;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 15-16 are the HUD's)
+;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 9-15 are the HUD's)
         rts
+
+;@ seg $06 $A1B0 $A1D0 the status bar: the subweapon box's sprites, off the screen
+        .db $F8,$FB,$03,$80, $F8,$FD,$03,$88, $F8,$FD,$03,$90, $F8,$FB,$43,$98
+        .db $F8,$9D,$03,$80, $F8,$FD,$03,$88, $F8,$FD,$03,$90, $F8,$9D,$43,$98
 
 ;@ seg $0F $E734 $E737 Simon touches an enemy: no "ugh" (Samus has her own)
         nop
@@ -465,15 +469,21 @@ Bank0_BgGfx:
         and #~HS_SPLIT
         sta HackState
         lda GameMode            ; where Castlevania splits for the status bar
-        cmp #8                  ; (and so does Bank6_Split): a door,
-        beq @inPlay
-        cmp #$0A                ; walking in,
-        beq @inPlay
-        cmp #5                  ; and play
-        bne @ctrl
+        cmp #5                  ; (and so does Bank6_Split): play,
+        bne @notPlay
         lda GameModeAux
         cmp #6
+        beq @inPlay
         bne @ctrl
+@notPlay:
+        cmp #8                  ; doors, walking in, climbing to the next stage,
+        bcc @ctrl
+        cmp #$0C
+        bcc @inPlay
+        bne @ctrl
+        lda GameModeAux         ; and a stage's end, up to part 8
+        cmp #8
+        bcs @ctrl
 @inPlay:
         lda $1F
         bne @ctrl

@@ -20,7 +20,7 @@ Over the attract demos and long stretches of play, Castlevania never writes `$01
 
 Enemies come from six generators (`$0166`, with their x on the screen in `$0172` and side in `$0160`), and candles are objects; both are loaded a 64 pixel column at a time as the screen scrolls (`$D196`, the column ahead by `$3C`). `$F5EA` does that once a frame, when the frame ends with the scroll on a column's edge, which Simon, scrolling a pixel a frame, always does. Samus can scroll two pixels a frame and step over an edge; the column is then never loaded, and its generator not replaced: the hall's zombies went on coming in the Phantom Bat's room. The hack loads the column at every pixel it scrolls onto an edge; `$D196` doesn't load one twice.
 
-The boss lock (`$9967`, from Simon's walking code) locks the screen when it scrolls to exactly the boss's screen (`$FC5E`: floor and screen); Samus can scroll 2 pixels a frame, so the hack checks at every pixel.
+The boss lock (`$9967`, from Simon's moving code, every frame) locks the screen when it is at exactly the boss's screen (`$FC5E`: floor and screen), whichever way it scrolled there: Medusa, Death and Dracula wait at their stages' left ends. Samus can scroll 2 pixels a frame, so the hack checks every frame and at every pixel.
 
 Simon's handlers are dispatched at `$9369` by `$046C`: 0 walk, 1 jump, 2 whip, 3 crouch, 4 on the stairs, 5 hurt, 6 walking to the stairs, 7 falling, 8 dead, 9 landing. Before that, every frame, `$9363` checks the water in stages 2 and 10. The hack takes over at `$9366` and leaves 4, 6 and 8 to Castlevania.
 
@@ -31,6 +31,10 @@ On the stairs Castlevania moves Simon a pixel every other frame. Through a door 
 Where the screen can't scroll (a stage's ends, a boss), Simon walks on it, between screen x `$09` and `$EF` (`$98CB`, `$98E9`); a stage's exit can be as far right as `$F0`, give or take 2 (stage 1's is).
 
 Castlevania takes Simon's x in the level (`$41:$40`) to be the scroll plus `$80`, unless `$3C` bit 2 is set; then it is the scroll plus his screen x. Metroid's camera leaves Samus anywhere between `$71` and `$8F`, so before handing over to the stairs the hack sets that bit unless she is at `$80`.
+
+### Sprites
+
+The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touches sprites 0-16. Castlevania draws some things there itself: sprite 0 for the split; the moving platforms' objects in slots `$17-$1A` (two sprites each, 1-8, `$A5ED`), Dracula's head (3-4), the gate walk-in (1-6, `$C52F`), the climb between stages (1-6, `$86E2`); the status bar's subweapon box (7-14, `$A17D`, when a stage or a floor loads) and icon (15-16, `$A113`). `$CB81` clears 5-16. The hack keeps the box's sprites off the screen, drops the icon, and puts the HUD in 9-15. Sprite tile pair `$00` is blank, and some of Castlevania's own sprites rest on it to hide.
 
 ### Collision
 
@@ -56,7 +60,7 @@ Items and dropped weapons are drawn with background-table tiles (odd tile number
 
 Sprite 0 (`$C13B`) sits on the status bar; `$F87D` waits for its hit, waits 221 cycles more, and writes the scroll, at about line 40. Both waits give up after 256 tries, so the game doesn't hang without a hit. Every status bar write goes through the update buffer at `$0700` (entries: increment, address, data, `$FF`; a `$FF` followed by a byte of 3 or more is a literal `$FF`). `ClearSpriteUpdateList` (`$CCEE`), at the end of each NMI, writes a 0 at the buffer's end and moves past it.
 
-The hack blanks rows 0-5 of both name tables, puts one opaque pixel at row 5, column 1, and covers it with sprite 0 in black (palette 3's colour 3 is `$0F`), so the hit happens at line 40. In play, through doors and walking in (where Metroid's HUD shows too), it does the split itself (`Bank6_Split`): Castlevania's loop looks for the hit only every 17 cycles, which moves everything after it by up to 50 dots; the hack's looks every 11. Then, with rendering off from the end of line 43, it writes palette 2 back, sets the PPU's address to line 45, and turns rendering on in line 44's horizontal blank, so line 45 is fetched whole. While rendering is off the PPU shows the colour its address points at; the 42 dots in which that is a palette entry being written fall in line 43's horizontal blank, and after the last write the address points at `$3F1C`, which is black. Turning rendering on in the middle of a line instead shows stale background pixels there. `tests/t_split.lua` checks the lines stay black.
+The hack blanks rows 0-5 of both name tables, puts one opaque pixel at row 5, column 1, and covers it with sprite 0 in black (palette 3's colour 3 is `$0F`), so the hit happens at line 40. Wherever Castlevania splits in play (play, doors, walking in, climbing to the next stage, a stage's end), Metroid's HUD shows and the hack does the split itself (`Bank6_Split`): Castlevania's loop looks for the hit only every 17 cycles, which moves everything after it by up to 50 dots; the hack's looks every 11. Then, with rendering off from the end of line 43, it writes palette 2 back, sets the PPU's address to line 45, and turns rendering on in line 44's horizontal blank, so line 45 is fetched whole. While rendering is off the PPU shows the colour its address points at; the 42 dots in which that is a palette entry being written fall in line 43's horizontal blank, and after the last write the address points at `$3F1C`, which is black. Turning rendering on in the middle of a line instead shows stale background pixels there. `tests/t_split.lua` checks the lines stay black.
 
 ### Sound
 
@@ -80,7 +84,7 @@ Metroid's main loop sometimes takes more than a frame; then Samus doesn't move t
 
 `ObjFramePtrTable` (`$860B`), `ObjPlacePtrTable` (`$86DF`) and `ObjectAnimIndexTbl` (`$8572`) are in bank 1 (and each area bank). A frame is a header (flips, palette, placement table), the radii, then tiles with control bytes: `$FC` move, `$FD` new attributes, `$FE` skip a place, `$FF` end. The sprites have the priority bit set, which the hack drops: Castlevania's backgrounds are opaque where Metroid's are not. Samus's graphics are bank 6 `$8000` (tiles `$00-$99`), the HUD's digits bank 6 `$B4C0` (tiles `$A0-$A9`).
 
-Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's and the explosion's, 65 of the 70 the hack has.
+Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's and the explosion's, 65 of the 69 the hack has (pair $00 stays blank).
 
 ### HUD and palettes
 

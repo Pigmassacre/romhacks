@@ -59,7 +59,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | Test | What it checks |
 |---|---|
 | `physics` | Samus's position, animation frame and first shot match Metroid frame by frame, for 16 input sequences: jumps, runs, turns, the morph ball, beams, missiles, aiming up |
-| `hud` | The HUD's sprites and digits, the blank status bar, the HUD's colours ending at the split |
+| `hud` | The HUD's sprites and digits, the blank status bar, the HUD's colours ending at the split, and Castlevania's own sprites (1-8) left alone |
 | `split` | The status bar's last lines stay black: the HUD's palette change at the split never shows |
 | `shots` | Shooting through zombies and candles: shots hit, and the daggers under them never get a sprite (Castlevania's hit flame used to show on every other shot) |
 | `damage` | A zombie takes 12 energy, with Metroid's knockback and invincibility |
@@ -67,6 +67,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `door` | Up the hall's last stairs, running, and through the door into stage 2 as Castlevania shows Simon: hidden while the screen scrolls to the door, walking through it, with the HUD up throughout |
 | `edges` | Where the screen can't scroll, Samus walks on it to Simon's edges: back along stage 4's middle floor to its stairs, and into the left half of a locked boss screen |
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |
+| `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
 | `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |

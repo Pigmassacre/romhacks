@@ -17,25 +17,26 @@ DrawAll:
         bcs @game
         rts                     ; the title: slot 0 is the bat (carry clear)
 @game:
-        jsr HideStatusSprites
-        lda GameMode            ; play, a door, walking in (as the status bar)
-        cmp #5
+        jsr Sprite0
+        lda GameMode            ; where Castlevania has its status bar: play
+        cmp #5                  ; (not while a stage or a floor loads),
+        bne @notPlay
+        lda GameModeAux
+        cmp #6
         beq @hud
+        bne @hideHudMode
+@notPlay:
+        cmp #8                  ; doors, walking in, climbing to the next stage,
+        bcc @hideHudMode
+        cmp #$0C
+        bcc @hud
+        bne @hideHudMode
+        lda GameModeAux         ; and a stage's end, until the screen goes dark
         cmp #8
-        beq @hud
-        cmp #$0A
-        beq @hud
-        lda #$F8                ; no HUD: sprites 1-7 hidden as well
-        ldx #4 * 6
-        ; (every frame: cheap enough, and there is no HUD to draw)
-@hideHud:
-        sta $0204,x
-        dex
-        dex
-        dex
-        dex
-        bpl @hideHud
-        bmi @noHud
+        bcc @hud
+@hideHudMode:
+        jsr HideHud             ; (every frame: cheap enough, with no HUD to draw)
+        jmp @noHud
 @hud:
         jsr DrawHud
 @noHud:

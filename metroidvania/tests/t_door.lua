@@ -8,10 +8,11 @@ local phase, t0 = "back", 0
 local climb, stand, frames, hidden, shown, hud, still, walk, walkhid = 0, 0, {}, 0, 0, 0, 0, 0, 0
 local function x() return r(0x122) + 256 * r(0x123) end
 -- (Sprite RAM shows the frame before: a frame at each change of step
--- doesn't count.) Samus's sprites are the only ones with Simon's tiles ($00-$6F), past the HUD's (1-7)
+-- doesn't count.) Samus's sprites are the only ones with Simon's tiles ($00-$6F), from sprite 17 on (0-16 are
+-- sprite 0's, Castlevania's own and the HUD's)
 local function samus_sprites()
   local n = 0
-  for i = 8, 63 do
+  for i = 17, 63 do
     local y = emu.read(i * 4, emu.memType.nesSpriteRam)
     local t = emu.read(i * 4 + 1, emu.memType.nesSpriteRam)
     if y < 0xEF and t < 0x70 then n = n + 1 end
@@ -46,7 +47,7 @@ FRAME = function(f)
       if samus_sprites() == 0 then walkhid = walkhid + 1 end
     end
     if aux == 5 and r(0x103) ~= 0x08 then still = still + 1 end
-    if emu.read(4, emu.memType.nesSpriteRam) == 0x19 then hud = hud + 1 end
+    if emu.read(9 * 4, emu.memType.nesSpriteRam) == 0x19 then hud = hud + 1 end
     if phase ~= "door" then phase = "door"; t0 = f end
     if f == t0 + 60 then shot("door") end
   end

@@ -100,6 +100,7 @@ SamusFrame:
         and #~(HS_KILL | HS_GROUND)
         sta HackState
         jsr SamusUpdate
+        jsr CheckBossLock
         ; hearts are missiles: Metroid's sound for picking them up
         lda Hearts
         cmp LastHearts

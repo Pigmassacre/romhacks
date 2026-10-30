@@ -15,21 +15,14 @@ HUD_Y = $21 - 8             ; Metroid's energy row is at $21; 8 higher, the HUD 
                             ; over the status bar, above the split (see Bank6_Split)
 HUD_PAL = $02               ; see SetHudColours
 
-; Castlevania's status bar sprites (the subweapon box): hidden.
-HideStatusSprites:
-        lda FrameCounter        ; nothing else writes them: every 8th frame will do
-        and #$07
-        bne Sprite0
-        lda #$F8
-        ldx #4 * 7
-@hide:
-        sta $0204,x             ; sprites 8-16 (1-7 are the HUD's, or hidden too)
-        inx
-        inx
-        inx
-        inx
-        cpx #$44 - 4
-        bne @hide
+; The HUD's sprites, 9-15. Castlevania's sprite allocator leaves sprites
+; 0-16 alone; of those, it draws the moving platforms (stages 4, 5 and 10),
+; Dracula's head and the gate's walk-in in 1-8 itself, and its status bar's
+; subweapon box and icon in 7-16: the box only when a stage or a floor
+; loads ($A17D, its y kept off the screen, see main.asm), the icon not at
+; all (main.asm). Loading also clears 5-16 ($CB81).
+HUD_OAM = $0224
+
 ; Sprite 0, which Castlevania sets again each frame: the dot over the status
 ; bar's dot pixel, in black (palette 3).
 Sprite0:
@@ -44,13 +37,24 @@ Sprite0:
         rts
 
 DrawHud:
-        lda FrameCounter
-        and #$07
-        bne @digitsMaybe
+        ldx #2                  ; a digit column not drawn since the stage's
+@new:                           ; graphics loaded: no HUD until it is
+        lda HudShown,x
+        cmp #$FF
+        beq @hide
+        dex
+        bpl @new
+        lda HUD_OAM             ; loading a stage or a floor clears or covers
+        cmp #HUD_Y              ; them: put them back whenever they are gone
+        bne @oam
+        lda HUD_OAM + 6 * 4
+        cmp #HUD_Y + 8
+        beq @digitsMaybe
+@oam:
         ldx #7 * 4 - 1
 @spr:
         lda HudOam,x
-        sta $0204,x
+        sta HUD_OAM,x
         dex
         bpl @spr
 @digitsMaybe:
@@ -59,6 +63,8 @@ DrawHud:
         and #$03
         beq @digits
         rts
+@hide:
+        jsr HideHud
 @digits:
         ; the digit columns
         jsr HudDigits
@@ -132,14 +138,16 @@ HudDigits:
 
 ; X = column 0-2, A = what it shows: queue its 32 bytes.
 HudColumn:
-        sta HudShown,x
         ldy $20                 ; the update buffer's end
+        pha
         tya
         clc
         adc #36
         bcs @full
         cmp #$C0
-        bcs @full               ; no room this frame
+        bcs @full               ; no room this frame: next frame
+        pla
+        sta HudShown,x
         lda #1
         sta $0700,y
         lda #0
@@ -166,8 +174,7 @@ HudColumn:
         sty $20
         rts
 @full:
-        lda #$FF                ; try again next frame
-        sta HudShown,x
+        pla
         rts
 ; A = glyph: its 16 bytes at $0703,y on
 @glyph:
@@ -187,6 +194,19 @@ HudColumn:
         dec DrawCount
         bne @byte
         ldx Temp3
+        rts
+
+; The HUD's sprites off the screen.
+HideHud:
+        lda #$F8
+        ldx #6 * 4
+@hide:
+        sta HUD_OAM,x
+        dex
+        dex
+        dex
+        dex
+        bpl @hide
         rts
 
 ; The digit columns' tile addresses (pattern table 0)

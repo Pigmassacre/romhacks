@@ -1091,8 +1091,8 @@ ScrollRight1:
         inc ScrollLo
         bne @hi
         inc ScrollHi
-        jsr CheckBossLock
 @hi:
+        jsr CheckBossLock
         dec ScrollDelta
         lda #1
         sta MoveDir
@@ -1117,14 +1117,17 @@ LoadColumn:
 @rts:
         rts
 
-; Castlevania's StrangeCode19 ($9967), from Simon's walking code: the screen
-; locks for the boss when it scrolls to exactly the boss's screen (the
-; table at $FC5E: floor in the high nibble, screen in the low one). Simon
-; scrolls a pixel a frame; Samus is checked at every pixel, so she can't
-; scroll past it.
+; Castlevania's StrangeCode19 ($9967), from Simon's moving code, every
+; frame: the screen locks for the boss when it is at exactly the boss's
+; screen (the table at $FC5E: floor in the high nibble, screen in the low
+; one), whichever way it got there. Simon scrolls a pixel a frame; Samus is
+; checked every frame and at every pixel she scrolls, so she can't scroll
+; past it.
 BossScreens = $FC5E
 CheckBossLock:
         lda BossLock
+        bne @rts
+        lda ScrollLo
         bne @rts
         ldx CurrentStage
         lda BossScreens,x
@@ -1167,6 +1170,7 @@ ScrollLeft1:
         dec ScrollHi
 @lo:
         dec ScrollLo
+        jsr CheckBossLock
         inc ScrollDelta
         lda #2
         sta MoveDir
