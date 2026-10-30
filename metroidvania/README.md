@@ -26,7 +26,7 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 
 The morph ball is there from the start: Down rolls, Up or A stands up again where there is room.
 
-What doesn't carry over: Simon's subweapons. Their items still drop, but Samus can't throw them, and the double and triple shot items do nothing. The timer, score and lives still count, but nothing shows them.
+What doesn't carry over: Simon's subweapons. Their items still drop, but Samus can't throw them, and the double and triple shot items do nothing. The timer, score and lives still count, but nothing shows them; running out of time still kills.
 
 ## Credits
 
@@ -75,6 +75,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
 | `death` | Samus explodes; on the last life, the Game Over screen has its font |
 | `load` | The screen stays black while a stage loads (the hack's palette writes once showed there as a line) |
+| `timeout` | Running out of time kills Samus wherever she is (she once lived on until she took the stairs) |
 | `title` | The title screen is still Castlevania's |
 | `ramguard` | Castlevania never writes the hack's RAM (run it against the original: `python3 tests/run.py --rom "Castlevania I.nes" ramguard`), and with the hack the stack stays clear of it |
 

@@ -269,6 +269,8 @@ Bank6_Simon:
         beq @alive
         jmp $A1E5               ; KillSimon
 @alive:
+        jsr $9A1D               ; out of time: KillSimon, as Simon's handlers check
+        bcs @rts
         jsr $9F7A               ; at a stage's exit?
         bcc @rts
         jmp $9397               ; as Simon's walking handler does
