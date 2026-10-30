@@ -3,7 +3,9 @@
 -- off the middle, and Castlevania then moves her on the screen and not the
 -- screen, so she came off the top of stage 1's last stairs already at the
 -- door's place on the screen, with the screen short of the door: it opened
--- in the middle of the screen. The door waits for the screen.
+-- in the middle of the screen. The screen now keeps up on the stairs
+-- (t_stairlong), and the door waits for the screen; here she's put back at
+-- that place, off the stairs, to see it wait.
 local function x() return r(0x122) + 256 * r(0x123) end
 local function scroll() return r(0x2E) + 256 * r(0x2F) end
 local phase, atTop, startAt, doorAt = "back", nil, nil, nil
@@ -25,7 +27,9 @@ FRAME = function(f)
   if phase == "forth" and x() >= 0x50C then phase = "up"; startAt = sx end
   if phase == "up" and (a == 6 or a == 4) then phase = "climb" end
   if phase == "climb" and a == 0 and r(0x354) < 0x70 then
-    phase = "right"; atTop = sx
+    phase = "right"
+    local put = scroll() + 0xF2; w(0x122, put % 256); w(0x123, put // 256)   -- where the stairs once left her
+    atTop = 0xF2
     log(string.format("started the stairs at screen x %02x, off them at %02x, scroll %04x", startAt, sx, scroll()))
   end
   if mode == 8 and not doorAt then

@@ -96,6 +96,7 @@ SamusFrame:
         lda #0
         sta ScrollDelta
         sta MoveDir
+        sta StairDir
         lda HackState
         and #~(HS_KILL | HS_GROUND)
         sta HackState
@@ -270,6 +271,12 @@ CheckFall:
 ; Hit on the stairs, Simon stays on them, stunned ($96C1): the hit is taken
 ; off Samus's energy now. Carry set if that kills her.
 CvFrame:
+        lda StairDir            ; as it was before StairCamera
+        beq @dir
+        sta MoveDir
+        lda #0
+        sta StairDir
+@dir:
         lda HackState
         and #~HS_SAMUS
         sta HackState
@@ -311,6 +318,48 @@ CvFrame:
         beq @rts                ; (carry set)
 @alive:
         clc
+@rts:
+        rts
+
+; Started away from the middle of the screen (MoveDir bit 2), Simon moves on
+; the screen, not the screen: he only ever does that at a stage's ends, where
+; it stops him. Samus's camera leaves her off the middle anywhere, and a long
+; staircase took her off the edge of the screen: her x wrapped round, and the
+; stairs with it. So the screen catches up, a pixel a frame, until Castlevania
+; takes over at the middle. For the rest of this frame MoveDir says the screen
+; moved, for the objects' sake; it goes back before Castlevania next looks.
+StairCamera:
+        lda ObjAction
+        cmp #4
+        bne @rts
+        lda GameMode
+        cmp #5
+        bne @rts
+        lda GameModeAux
+        cmp #6
+        bne @rts
+        lda MoveDir
+        and #4
+        beq @rts
+        lda MoveDir
+        sta Temp3
+        lda #0
+        sta ScrollDelta
+        lda ObjX
+        cmp #$80
+        beq @rts
+        bcc @left
+        jsr ScrollRight1
+        bcs @rts
+        dec ObjX
+        bcc @moved              ; (always: ScrollRight1 left it clear)
+@left:
+        jsr ScrollLeft1
+        bcs @rts
+        inc ObjX
+@moved:
+        lda Temp3
+        sta StairDir
 @rts:
         rts
 

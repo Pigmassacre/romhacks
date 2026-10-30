@@ -53,11 +53,9 @@ Above y $30 counts as solid, so a jump from a high floor is cut short: from y $5
 
 Stage 14's floor 1 only scrolls left of screen 4 above y $60 ($D037): its lower room is closed, and the way on is along the top, and on down four more stairs to the exit at the far left.
 
-### The camera after stairs
+### The camera on stairs
 
-On the stairs Castlevania moves Simon on the screen if MoveDir bit 2 is set, as the hack sets it unless Samus is at $80. She comes off them up to $F0, and Metroid's camera, which only moves as she does, would leave her there. Outside $71-$8F the screen catches up a pixel a frame, within the stage's limits and the boss lock.
-
-### What Simon's handlers leave behind
+On the stairs Castlevania moves Simon on the screen if MoveDir bit 2 is set, as the hack sets it unless Samus is at `$80`, and only clears the bit once he crosses `$80`. Going away from the middle, a long staircase took her off the screen's edge and her x wrapped. So on the stairs (`StairCamera`) the screen catches up a pixel a frame until she is at `$80`, within the stage's limits; MoveDir says the screen moved for the rest of that frame, so objects move with it, and goes back before Castlevania looks again. Off the stairs, outside $71-$8F, the screen catches up the same way.
 
 The hack replaces Simon's handlers, but other code still reads their variables. A hit sets `$054C` to 4 for his knockback ($96DC), and his hurt handler counts it down ($97FE). The climb between stages 10 and 11 (mode `$0B`, the only one) calls `$962D`, which with `$054C` set takes the stairs' way out ($95E4), and that changes floor when Simon's y crosses $D0: she came into stage 11 at floor 255 and fell through the ground. It only showed with hits turned on, in a run through the whole game. The hack clears it every frame.
 

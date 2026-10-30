@@ -138,6 +138,7 @@ SamusXHi        = $0123
 SamusY          = $0124
 LastHP          = $0125     ; SimonHP as the hack last left it
 HackState       = $0126     ; see HS_* below
+StairDir        = $0127     ; on the stairs: MoveDir while the screen catches up (0 none)
 ColXLo          = $012B     ; collision point
 ColXHi          = $012C
 ColY            = $012D

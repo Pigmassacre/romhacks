@@ -266,7 +266,9 @@ Bank6_Simon:
         jmp $A1E5               ; KillSimon: hit on the stairs, out of energy
 @cvMoves:
         lda ObjAction
-        jmp $9369               ; Castlevania's dispatch
+        jsr $9369               ; Castlevania's dispatch
+        ldx #HACK_STAIRCAM
+        jmp FarCall
 @samus:
         ; stairs: up or down pressed on the ground, where Simon could climb.
         ; Only a new press: Samus aims up with it held, and that shouldn't
@@ -740,8 +742,9 @@ HACK_CV = 4
 HACK_RESET = 6
 HACK_CHR = 8
 HACK_SFX = 10
+HACK_STAIRCAM = 12
 HackTable:
-        .dw DrawAll-1, SamusFrame-1, CvFrame-1, HackReset-1, ChrLoaded-1, SfxUpdate-1
+        .dw DrawAll-1, SamusFrame-1, CvFrame-1, HackReset-1, ChrLoaded-1, SfxUpdate-1, StairCamera-1
 
 .include "draw.asm"
 .include "samus.asm"
