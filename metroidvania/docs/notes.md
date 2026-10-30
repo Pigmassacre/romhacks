@@ -36,6 +36,10 @@ Castlevania takes Simon's x in the level (`$41:$40`) to be the scroll plus `$80`
 
 The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touches sprites 0-16. Castlevania draws some things there itself: sprite 0 for the split; the moving platforms' objects in slots `$17-$1A` (two sprites each, 1-8, `$A5ED`), Dracula's head (3-4), the gate walk-in (1-6, `$C52F`), the climb between stages (1-6, `$86E2`); the status bar's subweapon box (7-14, `$A17D`, when a stage or a floor loads) and icon (15-16, `$A113`). `$CB81` clears 5-16. The hack keeps the box's sprites off the screen, drops the icon, and puts the HUD in 9-15. Sprite tile pair `$00` is blank, and some of Castlevania's own sprites rest on it to hide.
 
+### Hits on the stairs
+
+Hit on the stairs, Simon stays on them: `$96C1` only stuns him (`$47`) and makes him invincible (`$5B`). With his health at 0 the stairs handler (`$9586`) drops him off them; below 0 it doesn't notice. The hack turns each hit into energy as it lands (it used to wait until Samus was off the stairs, and three hits read as a refill), and kills Simon itself when that empties her energy.
+
 ### Collision
 
 `$F9A0` (fixed bank): `$10` = y, `$13:$12` = x in the level, returns `$14` = the 2-bit collision value of that 8x8 cell, 0 for empty. The map is at `$05A0`: two screens of 22 rows of 8 bytes, four cells a byte, for y from `$30` to `$DF`. Points above or below that are empty.

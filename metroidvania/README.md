@@ -64,6 +64,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `shots` | Shooting through zombies and candles: shots hit, and the daggers under them never get a sprite (Castlevania's hit flame used to show on every other shot) |
 | `damage` | A zombie takes 12 energy, with Metroid's knockback and invincibility |
 | `stairs` | Up pressed at the foot of the stairs climbs them, drawn on the steps, to the stage exit; walking past with Up held does not |
+| `stairhit` | Hits on the stairs come off Samus's energy as they land, she stays on the stairs, and running out of energy there kills her (three hits once read as a refill) |
 | `door` | Up the hall's last stairs, running, and through the door into stage 2 as Castlevania shows Simon: hidden while the screen scrolls to the door, walking through it, with the HUD up throughout |
 | `edges` | Where the screen can't scroll, Samus walks on it to Simon's edges: back along stage 4's middle floor to its stairs, and into the left half of a locked boss screen |
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |

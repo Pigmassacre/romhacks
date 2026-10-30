@@ -119,18 +119,9 @@ CheckCvDamage:
         jsr FillHealth
         jmp @done
 @notFull:
-        sec
-        sbc LastHP
-        beq @done
-        bcc @hurt
-        ; healed: A = units
-        jsr EnergyOf
-        jsr AddHealth
-        jsr SFX_EnergyPickup
-        jmp @done
-@hurt:
-        jsr TwosComplement
-        jsr EnergyOf
+        jsr CvHPChange
+        bcc @done
+        ; hurt: HealthChange set
         ; knocked away from the enemy: Castlevania turned Simon to face it
         ldx SamusDir
         lda ObjAction
@@ -149,6 +140,29 @@ CheckCvDamage:
 @done:
         lda #0
         sta ObjAction
+        rts
+
+; SimonHP against LastHP: a heal goes onto Samus's energy; a hurt (carry
+; set) is left in HealthChange. Hits that take SimonHP below 0 are hurts.
+CvHPChange:
+        lda SimonHP
+        bmi @hurt
+        sec
+        sbc LastHP
+        beq @none
+        bcc @hurt
+        jsr EnergyOf            ; healed: A = units
+        jsr AddHealth
+        jsr SFX_EnergyPickup
+@none:
+        clc
+        rts
+@hurt:
+        lda LastHP
+        sec
+        sbc SimonHP
+        jsr EnergyOf
+        sec
         rts
 
 ; A = SimonHP units -> HealthChange, 1.5 energy per unit, in BCD.
@@ -237,6 +251,8 @@ CheckFall:
         rts
 
 ; Castlevania moves Simon itself (stairs, walking in, dying): Samus follows.
+; Hit on the stairs, Simon stays on them, stunned ($96C1): the hit is taken
+; off Samus's energy now. Carry set if that kills her.
 CvFrame:
         lda HackState
         and #~HS_SAMUS
@@ -251,6 +267,23 @@ CvFrame:
         lda ObjFacing
         and #1
         sta SamusDir
+        lda ObjAction
+        cmp #4
+        bne @alive
+        jsr CvHPChange
+        bcc @same
+        jsr SubtractHealth
+        jsr SFX_SamusHit
+@same:
+        lda #CV_HP
+        sta SimonHP
+        sta LastHP
+        lda SamusStatus
+        cmp #sa_Dead
+        beq @rts                ; (carry set)
+@alive:
+        clc
+@rts:
         rts
 
 CvMaxScreen:

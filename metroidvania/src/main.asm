@@ -226,6 +226,9 @@ Bank6_Simon:
 @cv:
         ldx #HACK_CV
         jsr FarCall
+        bcc @cvMoves
+        jmp $A1E5               ; KillSimon: hit on the stairs, out of energy
+@cvMoves:
         lda ObjAction
         jmp $9369               ; Castlevania's dispatch
 @samus:
