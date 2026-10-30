@@ -32,7 +32,14 @@ DrawAll:
         clc
         rts
 @game:
+        cmp #$0E                ; down the shaft: no status bar, no sprite 0
+        bne @split
+        lda #$F8
+        sta $0200
+        bne @sprite0
+@split:
         jsr Sprite0
+@sprite0:
         jsr InPlay              ; where Castlevania has its status bar: play
         beq @hud                ; (not while a stage or a floor loads),
         lda GameMode

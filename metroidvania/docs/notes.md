@@ -50,7 +50,7 @@ Slot 0 is Simon from the walk to the gate on, and in the attract demo (mode 2, w
 
 ### Collision
 
-`$F9A0` (fixed bank): `$10` = y, `$13:$12` = x in the level, returns `$14` = the 2-bit collision value of that 8x8 cell, 0 for empty. The map is at `$05A0`: two screens of 22 rows of 8 bytes, four cells a byte, for y from `$30` to `$DF`. Points above or below that are empty.
+`$F9A0` (fixed bank): `$10` = y, `$13:$12` = x in the level, returns `$14` = the 2-bit collision value of that 8x8 cell, 0 for empty. The map is at `$05A0`: two screens of 22 rows of 8 bytes, four cells a byte, for y from `$30` to `$DF`. Points above or below that are empty. Samus jumps far higher than Simon, so the hack takes points above the playfield as solid, unless they are below her middle: after the mummies Castlevania drops Simon down a shaft (mode `$0E`) into stage 10 at y 0, and he falls into the playfield from above it.
 
 ### Damage
 

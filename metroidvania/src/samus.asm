@@ -1416,13 +1416,20 @@ CellsSpanned:
         rts
 
 ; Z clear if the 8x8 cell at ColXHi:ColXLo, ColY is solid. Above the
-; playfield counts as solid, below it as empty.
+; playfield counts as solid (Samus jumps far higher than Simon, and mustn't
+; leave it), below it as empty. Except below her middle: then she is above
+; the playfield herself, coming in from the top (down the shaft into stage
+; 10, where Castlevania drops Simon in at y 0), and falls in.
 SolidCell:
         lda DebugFlags
         bmi @empty
         lda ColY
         cmp #$30
+        bcs @field
+        cmp SamusY
+        bcs @empty
         bcc @solid
+@field:
         cmp #$E0
         bcs @empty
         sta $10

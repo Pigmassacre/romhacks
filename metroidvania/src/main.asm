@@ -405,6 +405,8 @@ Bank0_BgGfx:
         cmp #$C0
         bcs @addr
         lda GameMode
+        cmp #$0E                ; not down the shaft into stage 10, nor in the
+        bcs @addr               ; ending: no status bar there
         cmp #4
         bcs @blank
         cmp #2                  ; the attract demo, played by Samus
@@ -475,12 +477,16 @@ Bank0_BgGfx:
         jmp @ctrl
 @colours:
         lda $2002
+        lda GameMode            ; (the shaft has no status bar)
+        cmp #$0E
+        beq @noDot
         lda #>STATUS_DOT
         sta $2006
         lda #<STATUS_DOT
         sta $2006
         lda #TILE_DOT
         sta $2007
+@noDot:
         lda #$3F
         sta $2006
         lda #$11

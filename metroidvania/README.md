@@ -72,6 +72,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `door` | Up the hall's last stairs, running, and through the door into stage 2 as Castlevania shows Simon: hidden while the screen scrolls to the door, walking through it, with the HUD up throughout |
 | `edges` | Where the screen can't scroll, Samus walks on it to Simon's edges: back along stage 4's middle floor to its stairs, and into the left half of a locked boss screen |
 | `blink` | Samus blinks while enemies can't touch her, as Simon does: the invisibility potion used to show nothing |
+| `shaft` | After the mummies, Samus falls down the shaft into stage 10, lands and walks on (she once came in stuck at the top, and died) |
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |
 | `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
