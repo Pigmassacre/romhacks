@@ -35,7 +35,7 @@ def run(name, rom):
     if os.path.exists(log):
         os.remove(log)
     try:
-        subprocess.run([MESEN, "--testRunner", rom, script], cwd=REPO, timeout=900,
+        subprocess.run([MESEN, "--testRunner", "--timeout=850", rom, script], cwd=REPO, timeout=900,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return False, "timeout"

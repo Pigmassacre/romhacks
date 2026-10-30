@@ -1360,6 +1360,9 @@ PlatformStages:
         .db 0,0,0,0,1,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0
 
 ; Standing on a platform, Samus moves with it (before her own movement).
+; Sideways only her lower half meets walls: stage 10's platform carries Simon
+; under a rock that leaves less than Samus's height above it (his head never
+; meets walls), and she would be scraped off into the water.
 RidePlatform:
         ldx RideSlot
         beq @rts
@@ -1383,13 +1386,25 @@ RidePlatform:
         sec
         sbc RideLastX
         beq @rts
-        bmi @left
         sta MoveCount
+        lda SamusY
+        pha
+        lda SamusRadiusY
+        pha
+        clc
+        adc SamusY
+        sec
+        sbc #8
+        sta SamusY
+        lda #8
+        sta SamusRadiusY
+        lda MoveCount
+        bmi @left
 @right:
         jsr MoveSamusRight
         dec MoveCount
         bne @right
-        rts
+        beq @done
 @left:
         eor #$FF
         clc
@@ -1399,6 +1414,11 @@ RidePlatform:
         jsr MoveSamusLeft
         dec MoveCount
         bne @leftLoop
+@done:
+        pla
+        sta SamusRadiusY
+        pla
+        sta SamusY
 @rts:
         rts
 

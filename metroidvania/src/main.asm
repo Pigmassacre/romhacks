@@ -301,9 +301,32 @@ Bank6_Simon:
 @alive:
         jsr $9A1D               ; out of time: KillSimon, as Simon's handlers check
         bcs @rts
-        jsr $9F7A               ; at a stage's exit?
+        jsr Bank6_AtExit
         bcc @rts
         jmp $9397               ; as Simon's walking handler does
+@rts:
+        rts
+
+; At a stage's exit? Castlevania's window ($9F7A) is 4 pixels back from the
+; exit and 3 on, and where a wall is behind the exit (stages 7, 8 and 13) Samus
+; stops at 4 on: jumping up to the door, she would land against the wall
+; beside it, and stand there. So 2 pixels more, towards the wall.
+Bank6_AtExit:
+        jsr $9F7A
+        bcs @rts
+        lda ObjX
+        pha
+        cmp #$80
+        bcs @right
+        adc #2
+        bcc @try                ; (always)
+@right:
+        sbc #2
+@try:
+        sta ObjX
+        jsr $9F7A
+        pla                     ; keeps the carry
+        sta ObjX
 @rts:
         rts
 

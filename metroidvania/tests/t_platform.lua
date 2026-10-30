@@ -1,8 +1,7 @@
 -- Castlevania's moving platforms (stage 10 has them over water): Samus can
 -- stand on one and is carried along. She is flown over the water (through
 -- walls, the hack's debug flag) until one is on the screen, then put above
--- it while it moves left (moving right, it carries her into a rock), and
--- dropped.
+-- it while it moves left, and dropped. (t_platrock has it moving right.)
 local phase, t0, rode, x0, px0, lastpx = "warp", 0, 0, 0, 0, 0
 loadstate_raw("castle", function()
   w(0x28, 0x0A); w(0x29, 0x0A); w(0x118, 0); w(0x117, 0x10); w(0x45, 0); w(0x2A, 9)

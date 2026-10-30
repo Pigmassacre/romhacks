@@ -32,6 +32,7 @@ Invincible      = $5B       ; i-frames: enemies don't touch Simon while nonzero
 BossHP          = $01A9     ; 0-$40
 SimonHeight     = $5F       ; half height, for enemy contact: $0C standing, $0A crouched
 WhipLevel       = $70
+WhipFlash       = $7E       ; frames left of the stop after a whip upgrade
 Hearts          = $71
 Multiplier      = $64
 PadPressed      = $F5

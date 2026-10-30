@@ -58,7 +58,13 @@ DrawAll:
 @hud:
         jsr DrawHud
 @noHud:
-        lda #0
+        ; a whip upgrade stops the game a moment and flashes Simon through the
+        ; palettes ($FAEF): Samus too, or it just looks like a hang
+        lda WhipFlash
+        beq @attr
+        lda ObjPal
+        and #3
+@attr:
         sta DrawAttr
         jsr InPlay              ; Samus's own handlers only run in play
         beq @inPlay
