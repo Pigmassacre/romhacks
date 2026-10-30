@@ -271,7 +271,12 @@ CvFrame:
         cmp #4
         beq @stairs
         cmp #6
+        beq @stairs
+        cmp #8
         bne @alive
+        jsr ClearShots          ; dying
+        clc
+        rts
 @stairs:
         jsr StairShots
         lda ObjAction

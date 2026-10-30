@@ -73,6 +73,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |
 | `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
+| `shotsgone` | Shots end when Castlevania takes over for good (dying, doors, a stage's end): they once hung in the air through a death |
 | `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
 | `death` | Samus explodes; on the last life, the Game Over screen has its font, and continuing gives Samus her tiles back |

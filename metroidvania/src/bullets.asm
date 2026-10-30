@@ -162,6 +162,24 @@ FreeCvShot:
         sta ObjAI+$14,x
         rts
 
+; Castlevania takes over for good (dying, doors, a stage's end): nothing
+; moves the shots any more, so they end, with their daggers.
+ClearShots:
+        ldx #2
+@shot:
+        lda BulStatus,x
+        beq @next
+        lda #0
+        sta BulStatus,x
+        lda ObjAI+$14,x
+        cmp #CV_SHOT_AI
+        bne @next
+        jsr FreeCvShot
+@next:
+        dex
+        bpl @shot
+        rts
+
 ; Shot X's dagger: on screen where the shot is.
 CvShotSync:
         lda BulStatus,x

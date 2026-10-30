@@ -54,6 +54,7 @@ DrawAll:
         sta DrawAttr
         jsr InPlay              ; Samus's own handlers only run in play
         beq @inPlay
+        jsr ClearShots
         lda HackState
         and #~HS_SAMUS
         sta HackState
