@@ -33,7 +33,7 @@ ChrLoaded:
         sta HudShown+2
         lda GameMode            ; the intro, play and the demo
         cmp #2
-        beq @samus
+        beq PutSamusChr
         cmp #4
         bcc @noSamus
         cmp #6
@@ -43,8 +43,6 @@ ChrLoaded:
         and #~HS_FONT
         sta HackState
         rts
-@samus:
-        jmp PutSamusChr
 
 ; After a continue: the Game Over screen put the font back (RestoreFont),
 ; and a continue doesn't load the stage's graphics again. While the stage
