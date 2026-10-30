@@ -30,7 +30,9 @@ STAIRS = {
 EXITS = { [1] = {0, 0x60, 0xF0}, [2] = {1, 0x60, 0xF0}, [4] = {1, 0x60, 0x17}, [5] = {1, 0x80, 0x17},
   [7] = {1, 0x90, 0xE8}, [8] = {1, 0x70, 0xE8}, [10] = {0, 0x40, 0xD0}, [11] = {0, 0xB0, 0xF2},
   [13] = {1, 0xB0, 0xE8}, [14] = {1, 0xB0, 0x1C}, [17] = {1, 0x70, 0x10} }
--- the stairs (in STAIRS) that take Samus to the exit's floor
+-- the stairs (in STAIRS) that take Samus to the exit's floor. (Stage 14's
+-- don't lead to its exit: they come out where a wall is between Samus and
+-- it, and Simon too stops at that wall.)
 UP = { [4] = 3, [5] = 1, [7] = 1, [8] = 3, [13] = 1, [14] = 5, [17] = 3 }
 local stage = tonumber(os.getenv("EX_FROM") or "1")
 local last = tonumber(os.getenv("EX_TO") or "17")
