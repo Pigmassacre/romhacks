@@ -9,23 +9,32 @@
 OamPos          = $04
 OamLeft         = $07
 
-; Carry set if slot 0 is Samus (from the intro on), and she is drawn.
+; Carry set if slot 0 is Samus and the hack draws it: Castlevania's sprite
+; loop then starts at slot 1. Clear where slot 0 is something else: the
+; title's bat, the castle falling in the ending.
 DrawAll:
         jsr RestoreFont
         lda GameMode
+        cmp #2
+        beq @game               ; the attract demo: Samus plays it
         cmp #4
-        bcs @game
-        rts                     ; the title: slot 0 is the bat (carry clear)
+        bcs @notTitle
+        jsr NewGame             ; the title
+        clc
+        rts
+@notTitle:
+        cmp #$0F
+        bcc @game
+        lda #$F8                ; the ending: no status bar, so no sprite 0
+        sta $0200
+        jsr HideHud
+        clc
+        rts
 @game:
         jsr Sprite0
-        lda GameMode            ; where Castlevania has its status bar: play
-        cmp #5                  ; (not while a stage or a floor loads),
-        bne @notPlay
-        lda GameModeAux
-        cmp #6
-        beq @hud
-        bne @hideHudMode
-@notPlay:
+        jsr InPlay              ; where Castlevania has its status bar: play
+        beq @hud                ; (not while a stage or a floor loads),
+        lda GameMode
         cmp #8                  ; doors, walking in, climbing to the next stage,
         bcc @hideHudMode
         cmp #$0C
@@ -42,14 +51,8 @@ DrawAll:
 @noHud:
         lda #0
         sta DrawAttr
-        ; Samus's own handlers only run in play (mode 5, part 6)
-        lda GameMode
-        cmp #5
-        bne @cv
-        lda GameModeAux
-        cmp #6
+        jsr InPlay              ; Samus's own handlers only run in play
         beq @inPlay
-@cv:
         lda HackState
         and #~HS_SAMUS
         sta HackState
@@ -102,6 +105,33 @@ DrawAll:
         dex
         bpl @shot
         sec
+        rts
+
+; Z set in play: mode 5, part 6, or the attract demo (mode 2, part 1).
+InPlay:
+        lda GameMode
+        cmp #2
+        beq @demo
+        cmp #5
+        bne @rts
+        lda GameModeAux
+        cmp #6
+@rts:
+        rts
+@demo:
+        lda GameModeAux
+        cmp #1
+        rts
+
+; On the title: whatever the demo or the last game left, Samus starts the
+; next one afresh (ImportSimon does the rest).
+NewGame:
+        jsr FillHealth
+        lda #0
+        sta MissileToggle
+        lda HackState
+        and #~HS_SAMUS
+        sta HackState
         rts
 
 ; Castlevania is moving Simon (walking in, through a door, up stairs):

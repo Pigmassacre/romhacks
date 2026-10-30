@@ -22,6 +22,7 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 - **Metroid's energy.** 99 at most. Castlevania's hits take one and a half energy per point of Simon's health, so it takes as many hits to die as before; a pork chop gives energy back, and clearing a stage fills it up. Run out and Samus explodes as in Metroid.
 - **Metroid's sounds** for jumping, shooting, missiles, rolling, steps, getting hit, the low energy beep and dying, taken from Metroid's sound engine.
 - **Metroid's camera.** The screen follows Samus once she leaves the middle of it, as in Metroid.
+- **The attract demo** is played by Samus, from Simon's recorded inputs.
 - **Castlevania everywhere else.** Pressing Up or Down at the foot or top of stairs climbs them (holding Up is aiming, so walking past stairs with it held does not). Moving platforms carry her. Shots break candles, hurt enemies and bosses, and break the breakable walls. Stage exits, doors, items and deaths are Castlevania's.
 
 The morph ball is there from the start: Down rolls, Up or A stands up again where there is room.
@@ -76,7 +77,9 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `death` | Samus explodes; on the last life, the Game Over screen has its font |
 | `load` | The screen stays black while a stage loads (the hack's palette writes once showed there as a line) |
 | `timeout` | Running out of time kills Samus wherever she is (she once lived on until she took the stairs) |
-| `title` | The title screen is still Castlevania's |
+| `title` | The title screen is still Castlevania's: its bat flies and lands on the castle (the hack once covered the end of its path, and the attract demo never came) |
+| `demo` | Samus plays the attract demo, with the HUD, and the title gives her full energy back for the next game |
+| `ending` | The ending is Castlevania's: the castle falling (object slot 0, which in play is Simon) in its own colours, no Samus and no status bar |
 | `ramguard` | Castlevania never writes the hack's RAM (run it against the original: `python3 tests/run.py --rom "Castlevania I.nes" ramguard`), and with the hack the stack stays clear of it |
 
 `boss` and `platform` warp to their stages and fly Samus there through the walls (a debug flag in the hack's RAM, `DebugFlags`, which only the tests set).

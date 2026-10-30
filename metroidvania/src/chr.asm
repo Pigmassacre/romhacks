@@ -31,11 +31,19 @@ ChrLoaded:
         sta HudShown
         sta HudShown+1
         sta HudShown+2
-        lda GameMode
+        lda GameMode            ; the intro, play and the demo
+        cmp #2
+        beq @samus
         cmp #4
-        bcc @rts
+        bcc @noSamus
         cmp #6
-        bcs @rts
+        bcc @samus
+@noSamus:
+        lda HackState           ; the font is Castlevania's
+        and #~HS_FONT
+        sta HackState
+        rts
+@samus:
         lda #>FontChrAddr
         ldx #<FontChrAddr
         jsr PpuAddr

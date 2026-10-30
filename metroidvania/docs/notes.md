@@ -40,6 +40,10 @@ The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touc
 
 Hit on the stairs, Simon stays on them: `$96C1` only stuns him (`$47`) and makes him invincible (`$5B`). With his health at 0 the stairs handler (`$9586`) drops him off them; below 0 it doesn't notice. The hack turns each hit into energy as it lands (it used to wait until Samus was off the stairs, and three hits read as a refill), and kills Simon itself when that empties her energy.
 
+### Slot 0 outside play
+
+Slot 0 is Simon from the walk to the gate on, and in the attract demo (mode 2, which Castlevania plays with Simon's handlers and recorded inputs, so Samus plays it). On the title it is the bat, which flies along a path at `$BA17` ended by the `$FF` at `$BA3B` (the title moves on to the demo when the bat lands); in the ending (mode `$0F`) it is the castle falling, in sprite palette 0. The hack draws slot 0 only where it is Samus, and leaves palette 0 and sprite 0 alone in the ending.
+
 ### Collision
 
 `$F9A0` (fixed bank): `$10` = y, `$13:$12` = x in the level, returns `$14` = the 2-bit collision value of that 8x8 cell, 0 for empty. The map is at `$05A0`: two screens of 22 rows of 8 bytes, four cells a byte, for y from `$30` to `$DF`. Points above or below that are empty.

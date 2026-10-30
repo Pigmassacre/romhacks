@@ -48,7 +48,8 @@ ResetHook:
 ;@ seg $0F $C08A $C08D NMI: status bar split
         jsr Bank6_Split
 
-;@ seg $06 $BA3B $C000 bank 6: hooks
+;@ seg $06 $BA3C $C000 bank 6: hooks
+; (from $BA3C: the $FF at $BA3B ends the title bat's path, $BA17)
 ; Castlevania's breakable blocks break when the whip hits them, at frame 9
 ; of Simon's attack (StrangeCode13, $A825). The whip reaches $18 ahead of
 ; Simon, so a shot is put there, Simon $18 behind it facing right, and the
@@ -379,7 +380,7 @@ Bank0_SfxChan:
         rts
 
 ; Draw Samus first, then let the object loop start at slot 1: slot 0 (Simon)
-; is drawn by the hack.
+; is drawn by the hack, unless it is something else (DrawAll).
 ; Castlevania's update buffer, flushed at the start of each NMI, with the
 ; status bar (rows 0-5 of both name tables) kept blank outside the title:
 ; anything written there is written as blank tiles. Then the dot that
@@ -406,6 +407,8 @@ Bank0_BgGfx:
         lda GameMode
         cmp #4
         bcs @blank
+        cmp #2                  ; the attract demo, played by Samus
+        beq @blank
 @addr:
         iny
         lda $0700,y
@@ -451,18 +454,26 @@ Bank0_BgGfx:
         lda HackState
         and #~HS_SPLIT
         sta HackState
-        lda GameMode
+        lda GameMode            ; in play and the demo, not on the title or in
+        cmp #2                  ; the ending (where slot 0 is the castle, in
+        beq @samus              ; sprite palette 0)
         cmp #4
-        bcc @ctrl
+        bcc @none
+        cmp #$0F
+        bcs @none
+@samus:
         ; Not after a long buffer (a stage loading writes $CF bytes): this
         ; would be past the vertical blank, and with the screen off the PPU
         ; shows the colour its address points at, so palette writes would
         ; show as a line. The colours stay in the PPU meanwhile.
         cpy #$80
-        bcs @ctrl
+        bcs @none
         lda $FE
         and #$18
-        beq @ctrl
+        bne @colours
+@none:
+        jmp @ctrl
+@colours:
         lda $2002
         lda #>STATUS_DOT
         sta $2006
@@ -483,7 +494,14 @@ Bank0_BgGfx:
         sta $2007
         ; the HUD's colours, if Bank6_Split will put Castlevania's back
         lda GameMode            ; where Castlevania splits for the status bar
-        cmp #5                  ; (and so does Bank6_Split): play,
+        cmp #2                  ; (and so does Bank6_Split): the demo,
+        bne @notDemo
+        lda GameModeAux
+        cmp #1
+        beq @inPlay
+        bne @ctrl
+@notDemo:
+        cmp #5                  ; play,
         bne @notPlay
         lda GameModeAux
         cmp #6
@@ -533,7 +551,8 @@ Bank0_Sprites:
         sta $04
         ldx #HACK_DRAW
         jsr FarCall
-        lda #1
+        lda #0                  ; slot 0 drawn by the hack (carry): start at 1
+        rol
         sta $05
         rts
 
