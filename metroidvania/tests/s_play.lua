@@ -110,7 +110,7 @@ local function walk(d, t)
   elseif riding and grounded and d ~= 0 then
     -- on a platform: stay on it until the next ground comes within reach
     go = 0
-    if (px - riding[1]) * d < 0 and F % 6 == 0 then go = d end     -- edge along it
+    if (px - riding[1]) * d < 0 and F % 8 < 4 then go = d end     -- edge along it
     local head = cell(px - d * 8, y - 0x18) == 0 and cell(px, y - 0x18) == 0 and cell(px + d * 8, y - 0x18) == 0 and cell(px + d * 16, y - 0x18) == 0
     if head and gap(px, feet, d) <= 46 then jump = 24; jwait = 8; go = d end
     for _, p in ipairs(platforms()) do
