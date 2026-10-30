@@ -443,9 +443,21 @@ Bank0_BgGfx:
         lda #$00
         sta $0700
         sta $20
+        lda HackState
+        and #~HS_SPLIT
+        sta HackState
         lda GameMode
         cmp #4
         bcc @ctrl
+        ; Not after a long buffer (a stage loading writes $CF bytes): this
+        ; would be past the vertical blank, and with the screen off the PPU
+        ; shows the colour its address points at, so palette writes would
+        ; show as a line. The colours stay in the PPU meanwhile.
+        cpy #$80
+        bcs @ctrl
+        lda $FE
+        and #$18
+        beq @ctrl
         lda $2002
         lda #>STATUS_DOT
         sta $2006
@@ -465,9 +477,6 @@ Bank0_BgGfx:
         lda SamusColours+2
         sta $2007
         ; the HUD's colours, if Bank6_Split will put Castlevania's back
-        lda HackState
-        and #~HS_SPLIT
-        sta HackState
         lda GameMode            ; where Castlevania splits for the status bar
         cmp #5                  ; (and so does Bank6_Split): play,
         bne @notPlay

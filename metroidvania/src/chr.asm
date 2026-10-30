@@ -13,7 +13,10 @@ FONT_ADDR = $1D00
 FONT_SIZE = $0300
 CvFont = $BD00              ; a copy of Castlevania's font (bank 3 $BC08), see main.asm
 
-; X = HACK_CHR, jumped to from the loader's end.
+; X = HACK_CHR, jumped to from the loader's end. The loader turned the NMI
+; off ($C132); $C102 turns it back on, so it comes last: Castlevania's game
+; runs in the NMI, and an NMI in the middle of these writes would turn the
+; screen on and move the PPU's address under them.
 ChrLoaded:
         ; FarCall puts back the bank it found: make that bank 6, which the
         ; loader would have mapped. On the stack: the return into HackEntry,
@@ -21,7 +24,9 @@ ChrLoaded:
         tsx
         lda #6
         sta $0105,x
-        jsr $C102
+        jsr @load
+        jmp $C102
+@load:
         lda #$FF                ; the HUD's digit tiles: redraw them
         sta HudShown
         sta HudShown+1

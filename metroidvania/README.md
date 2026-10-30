@@ -72,6 +72,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
 | `death` | Samus explodes; on the last life, the Game Over screen has its font |
+| `load` | The screen stays black while a stage loads (the hack's palette writes once showed there as a line) |
 | `title` | The title screen is still Castlevania's |
 | `ramguard` | Castlevania never writes the hack's RAM (run it against the original: `python3 tests/run.py --rom "Castlevania I.nes" ramguard`), and with the hack the stack stays clear of it |
 

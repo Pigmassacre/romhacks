@@ -144,6 +144,20 @@ FollowSimon:
         lda ObjY
         cmp FollowY
         beq @still
+        ldx ObjAction           ; straight down, not on the stairs: falling
+        cpx #4                  ; (down the shaft into stage 10), in the air
+        beq @moved
+        cpx #6
+        beq @moved
+        sta FollowY
+        lda #0
+        sta FollowStill
+        lda #ObjAnim_SamusJump
+        sta SamusAnimReset
+        lda #ObjFrame_SamusJump
+        sta SamusAnimFrame
+        clc
+        rts
 @moved:
         lda ObjX
         sta FollowX
