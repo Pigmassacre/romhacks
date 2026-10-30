@@ -88,6 +88,8 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 
 `boss` and `platform` warp to their stages and fly Samus there through the walls (a debug flag in the hack's RAM, `DebugFlags`, which only the tests set).
 
+Four sweeps go through the whole game, for looking over rather than passing: `tour` (every stage, with screenshots), `allstairs` (every staircase, up and down), `exits` (every stage's exit) and `bosses` (every boss, then the stage's end), each with `python3 tests/run.py <name>` and logging where Samus ends up.
+
 `tests/s_bench.lua` and `tests/s_hot.lua` are measurements rather than tests: how much of each frame the game takes, and where the hack spends its time (`python3 tests/run.py bench`).
 
 The reference for `physics` is `tests/ref/physics.txt`, recorded in Metroid with `python3 tools/lua.py tools/record_physics.lua Metroid.nes`. The sound effects in `src/sfxdata.asm` come from `python3 tools/lua.py tools/record_sfx.lua Metroid.nes` and `python3 tools/sfx_data.py`.
