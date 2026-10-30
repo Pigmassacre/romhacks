@@ -269,6 +269,13 @@ CvFrame:
         sta SamusDir
         lda ObjAction
         cmp #4
+        beq @stairs
+        cmp #6
+        bne @alive
+@stairs:
+        jsr StairShots
+        lda ObjAction
+        cmp #4
         bne @alive
         jsr CvHPChange
         bcc @same
@@ -283,6 +290,23 @@ CvFrame:
         beq @rts                ; (carry set)
 @alive:
         clc
+@rts:
+        rts
+
+; On the stairs (and walking to them) B would start Simon's whip, drawn
+; with Samus's tiles: it fires her beam forwards instead, and her shots
+; keep moving.
+StairShots:
+        jsr ReadJoy
+        lda PadPressed
+        and #~BTN_B
+        sta PadPressed
+        jsr UpdateSamusProjectiles
+        jsr CheckMissileToggle
+        lda Joy1Change
+        and #BTN_B
+        beq @rts
+        jmp FireSamusProjectileForwards
 @rts:
         rts
 

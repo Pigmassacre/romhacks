@@ -23,7 +23,7 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 - **Metroid's sounds** for jumping, shooting, missiles, rolling, steps, getting hit, the low energy beep and dying, taken from Metroid's sound engine.
 - **Metroid's camera.** The screen follows Samus once she leaves the middle of it, as in Metroid.
 - **The attract demo** is played by Samus, from Simon's recorded inputs.
-- **Castlevania everywhere else.** Pressing Up or Down at the foot or top of stairs climbs them (holding Up is aiming, so walking past stairs with it held does not). Moving platforms carry her. Shots break candles, hurt enemies and bosses, and break the breakable walls. Stage exits, doors, items and deaths are Castlevania's.
+- **Castlevania everywhere else.** Pressing Up or Down at the foot or top of stairs climbs them (holding Up is aiming, so walking past stairs with it held does not), and B fires forwards from them. Moving platforms carry her. Shots break candles, hurt enemies and bosses, and break the breakable walls. Stage exits, doors, items and deaths are Castlevania's.
 
 The morph ball is there from the start: Down rolls, Up or A stands up again where there is room.
 
@@ -66,6 +66,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `damage` | A zombie takes 12 energy, with Metroid's knockback and invincibility |
 | `stairs` | Up pressed at the foot of the stairs climbs them, drawn on the steps, to the stage exit; walking past with Up held does not |
 | `stairhit` | Hits on the stairs come off Samus's energy as they land, she stays on the stairs, and running out of energy there kills her (three hits once read as a refill) |
+| `stairshot` | On the stairs B fires Samus's beam (it once started Simon's whip, drawn with her tiles), and shots in flight keep moving |
 | `door` | Up the hall's last stairs, running, and through the door into stage 2 as Castlevania shows Simon: hidden while the screen scrolls to the door, walking through it, with the HUD up throughout |
 | `edges` | Where the screen can't scroll, Samus walks on it to Simon's edges: back along stage 4's middle floor to its stairs, and into the left half of a locked boss screen |
 | `blink` | Samus blinks while enemies can't touch her, as Simon does: the invisibility potion used to show nothing |
