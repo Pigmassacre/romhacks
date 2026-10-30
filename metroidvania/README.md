@@ -83,6 +83,8 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `hitclimb` | After a hit, the climb from stage 10 to 11 still works (it once went wrong after any hit since stage 8's stairs: she came in at floor 255, and fell through the ground) |
 | `hole` | She walks over the one-cell hole stairs make in a floor (coming off stage 7's first stairs, she once fell through it, to her death) |
 | `camera` | Off the middle of the screen, as the stairs leave her, the screen catches up a pixel a frame |
+| `doorscroll` | Off the stairs far over on the screen, the door waits for the screen to reach the stage's end |
+| `splitline` | With a crowd making frames late, the screen comes back on after the split on the same line every frame, so the picture stays put |
 | `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
 | `pause` | Start stops everything: she, the time and the HUD stay as they were, and no button does anything |

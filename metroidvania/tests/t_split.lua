@@ -1,13 +1,10 @@
 -- The status bar's last lines, under the HUD (y 42-47), stay black: the
 -- palette change at the split doesn't show, whatever the timing of sprite 0.
--- Frames right after a late one don't count: their NMI starts late, so its
--- split lands wherever it lands (Castlevania's own does too).
-local bad, frames, lateAt = 0, 0, -10
-emu.addMemoryCallback(function() lateAt = F end, emu.callbackType.exec, 0xC0C0, 0xC0C0)
+local bad, frames = 0, 0
 loadstate_raw("castle")
 INPUT = function(f) local p = f % 60; return {right = p < 40, b = p % 6 == 0, a = p > 45 and p < 50} end
 FRAME = function(f)
-  if f % 7 == 0 and f > 10 and f > lateAt + 2 then
+  if f % 7 == 0 and f > 10 then
     frames = frames + 1
     -- emu.getScreenBuffer: 256x240 ARGB
     local buf = emu.getScreenBuffer()

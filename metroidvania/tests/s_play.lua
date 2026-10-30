@@ -5,6 +5,9 @@
 --
 --   PLAY_FROM=n  start at stage n, from the savestate an earlier run left
 --                (out/test/play_<n>.mss)
+--   PLAY_WARP=1  with PLAY_FROM: warp there from the castle savestate instead
+--   PLAY_DELAY=n with PLAY_WARP: wait n frames first (the moving platforms'
+--                timing decides whether its jumps land)
 --   PLAY_TO=n    stop after stage n
 --   PLAY_HONEST=1  no help at all: hits hurt, and dying costs a life
 --   PLAY_HITS=1    hits land and knock her back, but energy and lives are topped up
@@ -268,12 +271,26 @@ local function fail(msg)
   done()
 end
 
-if first > 1 then
+local warped, warpwait = false, tonumber(os.getenv("PLAY_DELAY") or "0")
+if os.getenv("PLAY_WARP") then
+  loadstate_raw("castle", function()
+    w(0x28, first); w(0x29, first); w(0x118, 0); w(0x117, 0x10); w(0x45, 0); w(0x2A, 9)
+    phase = "warp"
+  end)
+elseif first > 1 then
   loadstate_raw(string.format("play_%d", first), function() phase = "wait" end)
 end
 
 FRAME = function(f)
   local mode = r(0x18)
+  if phase == "warp" then
+    if mode == 6 then warped = true end
+    if warped and playing() and r(0x28) == first and (r(0x126) & 1) == 1 then
+      if warpwait == 0 then phase = "wait" end
+      warpwait = warpwait - 1
+    end
+    return
+  end
   local cheat = not HONEST
   if os.getenv("PLAY_HITS") then
     cheat = false

@@ -39,7 +39,7 @@ DrawAll:
         sta $0200
         bne @sprite0
 @split:
-        jsr Sprite0
+        jsr $C13F               ; sprite 0 (main.asm)
 @sprite0:
         jsr InPlay              ; where Castlevania has its status bar: play
         beq @hud                ; (not while a stage or a floor loads),

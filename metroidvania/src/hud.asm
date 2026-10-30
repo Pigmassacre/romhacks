@@ -36,19 +36,6 @@ GLYPH_TANK = $0C
 HUD_OAM = $021C
 HUD_SPRITES = 10
 
-; Sprite 0, which Castlevania sets again each frame: the dot over the status
-; bar's dot pixel, in black (palette 3).
-Sprite0:
-        lda #(STATUS_DOT & $3E0) / 4 - 1
-        sta $0200
-        lda #$FF
-        sta $0201
-        lda #$03
-        sta $0202
-        lda #(STATUS_DOT & $1F) * 8
-        sta $0203
-        rts
-
 DrawHud:
         ldx #5                  ; a digit column not drawn since the stage's
 @new:                           ; graphics loaded: no HUD until it is

@@ -45,6 +45,12 @@ ResetHook:
 ; =============================================================================
         jmp Bank6_Simon
 
+;@ seg $0F $C13B $C13F sprite 0: over the dot (see chr.asm), in black (palette 3)
+; Bank6_Split and Castlevania's split both write this to sprite RAM. A late
+; frame's NMI can land after this frame's sprites, so it is what the next
+; frame's sprite 0 is.
+        .db (STATUS_DOT & $3E0) / 4 - 1, $FF, $03, (STATUS_DOT & $1F) * 8
+
 ;@ seg $0F $C08A $C08D NMI: status bar split
         jsr Bank6_Split
 
@@ -311,7 +317,14 @@ Bank6_Simon:
 ; exit and 3 on, and where a wall is behind the exit (stages 7, 8 and 13) Samus
 ; stops at 4 on: jumping up to the door, she would land against the wall
 ; beside it, and stand there. So 2 pixels more, towards the wall.
+;
+; The window is on the screen, not in the level: Simon only gets that far over
+; with the screen at the stage's end. Samus gets there sooner, off the stairs
+; with the screen behind her (see Bank6_Simon), and the door would open in the
+; middle of the screen. So not until the screen is there (RecentreCamera).
 Bank6_AtExit:
+        jsr Bank6_ScreenAtExit
+        bne @no
         jsr $9F7A
         bcs @rts
         ; Stage 10's exit is on the last of three staggered blocks. Simon's head
@@ -358,6 +371,35 @@ Bank6_AtExit:
         jsr $9F7A
         pla                     ; keeps the carry
         sta ObjX
+@rts:
+        rts
+@no:
+        clc
+        rts
+
+; Equal if the screen is as far as it goes towards this stage's exit, or locked
+; for a boss. The limits are the ones ScrollRight1 and ScrollLeft1 stop at.
+Bank6_ScreenAtExit:
+        lda BossLock
+        beq @free
+        lda #0
+        rts
+@free:
+        lda ScrollLo
+        bne @rts
+        lda CurrentStage
+        asl
+        tax
+        lda $FC13,x             ; the exit's x: in the right half, it's to the right
+        bmi @right
+        jsr $D025
+        clc
+        adc #1
+        cmp ScrollHi
+        rts
+@right:
+        jsr $D015
+        cmp ScrollHi
 @rts:
         rts
 
