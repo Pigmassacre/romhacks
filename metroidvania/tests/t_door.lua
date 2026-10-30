@@ -28,7 +28,7 @@ INPUT = function(f)
   return {}
 end
 FRAME = function(f)
-  w(0x5B, 0x40)                                   -- no zombies' hits
+  for i = 4, 0x13 do if r(0x434 + i) == 0x01 then w(0x434 + i, 0); w(0x31C + i, 0) end end   -- no zombies (invincible, she'd blink)
   local a, mode, aux = r(0x46C), r(0x18), r(0x19)
   if phase == "back" and x() < 0x50C then phase = "up" end
   if phase == "up" and (a == 6 or a == 4) then phase = "climb"; t0 = f end

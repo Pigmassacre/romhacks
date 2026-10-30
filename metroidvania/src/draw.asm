@@ -70,6 +70,15 @@ DrawAll:
         lda SamusDir
         sta DrawDir
 @draw:
+        ; while enemies can't touch her (after a hit, or the invisibility
+        ; potion), she blinks, as Simon does ($9BC2): on even frames, as
+        ; Metroid's own blink after a hit
+        lda Invincible
+        beq @shown
+        lda FrameCounter
+        and #$01
+        beq @shots
+@shown:
         lda SamusAnimFrame
         jsr DrawFrame
 @shots:
