@@ -226,6 +226,18 @@ SyncSimon:
         ora #HS_GROUND
         sta HackState
 @air:
+        ; in the air, Simon is jumping (action 1): Castlevania's crushers
+        ; ($8282) only hurt him then, and kill him otherwise
+        ldx #0
+        lda SamusAccelY
+        bne @jump
+        lda SamusStatus
+        cmp #sa_Jump
+        bne @action
+@jump:
+        inx
+@action:
+        stx ObjAction
         rts
 
 ; Dead, or fallen out of the level: Castlevania's death takes over.

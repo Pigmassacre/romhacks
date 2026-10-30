@@ -64,6 +64,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `split` | The status bar's last lines stay black: the HUD's palette change at the split never shows |
 | `shots` | Shooting through zombies and candles: shots hit, and the daggers under them never get a sprite (Castlevania's hit flame used to show on every other shot) |
 | `block` | A shot bursting on the hall's breakable block breaks it |
+| `crusher` | Stage 6's crushers only hurt Samus in the air, as they only hurt Simon jumping (they once killed her mid-jump) |
 | `damage` | A zombie takes 12 energy, with Metroid's knockback and invincibility |
 | `stairs` | Up pressed at the foot of the stairs climbs them, drawn on the steps, to the stage exit; walking past with Up held does not |
 | `stairhit` | Hits on the stairs come off Samus's energy as they land, she stays on the stairs, and running out of energy there kills her (three hits once read as a refill) |
