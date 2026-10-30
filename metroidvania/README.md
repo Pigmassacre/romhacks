@@ -76,8 +76,18 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `blink` | Samus blinks while enemies can't touch her, as Simon does: the invisibility potion used to show nothing |
 | `shaft` | After the mummies, Samus falls down the shaft into stage 10, lands and walks on (she once came in stuck at the top, and died) |
 | `platform` | Samus stands on one of stage 10's moving platforms and is carried along |
+| `platrock` | Stage 10's platform carries her under the rock that leaves less room than her height (she was once scraped off into the water) |
+| `stage10end` | The block before stage 10's exit counts as the exit, at its end: the blocks are staggered for Simon, too tight for Samus to climb |
+| `exitwall` | Landing against the wall beside a stage's exit opens the door (she once stood one pixel past it), and she comes out in the next stage |
+| `exitair` | Reaching stage 10's exit in mid-jump, she arrives on stage 11's floor |
+| `hitclimb` | After a hit, the climb from stage 10 to 11 still works (it once went wrong after any hit since stage 8's stairs: she came in at floor 255, and fell through the ground) |
+| `hole` | She walks over the one-cell hole stairs make in a floor (coming off stage 7's first stairs, she once fell through it, to her death) |
+| `camera` | Off the middle of the screen, as the stairs leave her, the screen catches up a pixel a frame |
 | `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
+| `pause` | Start stops everything: she, the time and the HUD stay as they were, and no button does anything |
+| `whipflash` | A whip upgrade stops the game a moment, and she flashes through the palettes as Simon does (she once just froze) |
+| `clear` | Clearing a stage fills her energy |
 | `shotsgone` | Shots end when Castlevania takes over for good (dying, doors, a stage's end): they once hung in the air through a death |
 | `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
@@ -87,9 +97,12 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `title` | The title screen is still Castlevania's: its bat flies and lands on the castle (the hack once covered the end of its path, and the attract demo never came) |
 | `demo` | Samus plays the attract demo, with the HUD, and the title gives her full energy back for the next game |
 | `ending` | The ending is Castlevania's: the castle falling (object slot 0, which in play is Simon) in its own colours, no Samus and no status bar |
+| `credits` | The credits' last line names the hero: Samus Aran |
 | `ramguard` | Castlevania never writes the hack's RAM (run it against the original: `python3 tests/run.py --rom "Castlevania I.nes" ramguard`), and with the hack the stack stays clear of it |
 
 `boss` and `platform` warp to their stages and fly Samus there through the walls (a debug flag in the hack's RAM, `DebugFlags`, which only the tests set).
+
+`tests/s_play.lua` (`python3 tests/run.py play`) plays the whole game with controller inputs alone, from the title through the ending and into the second quest: no warps, no flying. A bot walks each stage's route (`tests/play_routes.lua`), jumps, climbs stairs, rides platforms, shoots and fights the bosses, with hits turned off unless `PLAY_HONEST=1`. It logs each stage and leaves screenshots; `PLAY_FROM=n` starts again from the stage's savestate. `tests/s_maps.lua` writes every stage's collision map as text, for planning routes.
 
 Four sweeps go through the whole game, for looking over rather than passing: `tour` (every stage, with screenshots), `allstairs` (every staircase, up and down), `exits` (every stage's exit) and `bosses` (every boss, then the stage's end), each with `python3 tests/run.py <name>` and logging where Samus ends up.
 

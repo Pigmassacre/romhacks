@@ -314,6 +314,37 @@ Bank6_Simon:
 Bank6_AtExit:
         jsr $9F7A
         bcs @rts
+        ; Stage 10's exit is on the last of three staggered blocks. Simon's head
+        ; meets nothing and he jumps up them; each overhangs the one below by
+        ; too little for Samus, so the block before it counts too, at its end.
+        lda CurrentStage
+        cmp #10
+        bne @window
+        lda ScrollHi
+        cmp #5
+        bne @window
+        lda SimonY
+        sec
+        sbc #$7C
+        cmp #8
+        bcs @window
+        lda ObjX
+        cmp #$D8
+        bcc @window
+        pha
+        lda SimonY
+        pha
+        lda #$40
+        sta SimonY
+        lda #$D0
+        sta ObjX
+        jsr $9F7A
+        pla
+        sta SimonY
+        pla
+        sta ObjX
+        rts
+@window:
         lda ObjX
         pha
         cmp #$80
@@ -342,6 +373,9 @@ Bank6_AtExit:
 ;@ seg $0F $FD77 $FD7E CHR loader: end
         ldx #HACK_CHR
         jmp FarCall
+
+;@ seg $06 $9002 $9010 the credits: and the hero, Samus Aran (each letter a pair of tiles)
+        .db $54,$54,$84,$60,$78,$88,$84,$54,$60,$82,$60,$7A,$54,$54
 
 ;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 7-16 are the HUD's)
         rts

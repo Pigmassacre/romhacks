@@ -24,6 +24,7 @@ SamusUpdate:
         jsr GoSamusHandler
         jsr SubtractHealth
         jsr CheckMissileToggle
+        jsr RecentreCamera
         jmp SyncSimon
 
 ; ---- Input -------------------------------------------------------------------
@@ -1074,6 +1075,23 @@ SamusScreenX:
         sbc ScrollLo
         rts
 
+; Metroid's camera only moves when Samus does, so she stays where she is on
+; the screen. But Castlevania moves her on the screen, not the screen, up the
+; stairs: she comes off them as far over as $F0, with nothing to see ahead of
+; her, and a stage's exit (on the screen, at the last scroll) out of reach.
+; Outside the middle, the screen catches up a pixel a frame.
+RecentreCamera:
+        jsr SamusScreenX
+        cmp #$71
+        bcc @left
+        cmp #$8F + 1
+        bcc @rts
+        jmp ScrollRight1
+@left:
+        jmp ScrollLeft1
+@rts:
+        rts
+
 ; Scroll one pixel, as Castlevania's MovingRightA/MovingLeftA would with a
 ; speed of 1. Carry clear if it scrolled. The limits are the ones
 ; Castlevania's walking code checks ($9849-$9897): the stage's last screen
@@ -1197,9 +1215,44 @@ ObjectCheckMoveDown:
         lda #$00
         sec
         sbc SamusRadiusY
-        jmp ObjectCheckMoveVertical
+        jsr ObjectCheckMoveVertical
+        bcc @rts
+        ; The holes stairs make in a floor are one cell wide, and so is she:
+        ; right over one she would fall through (she once did, coming off stage
+        ; 7's first stairs, to her death), though Simon's feet are too far apart
+        ; to. With floor on both sides, it is floor.
+        lda ColY
+        and #$07
+        bne @free
+        lda SamusRadiusX
+        cmp #$04
+        bne @free
+        lda SamusXLo
+        sec
+        sbc #$0C
+        sta ColXLo
+        and #$07
+        bne @free
+        lda SamusXHi
+        sbc #0
+        sta ColXHi
+        jsr SolidCell
+        beq @free
+        lda ColXLo
+        clc
+        adc #$10
+        sta ColXLo
+        bcc @right
+        inc ColXHi
+@right:
+        jsr SolidCell
+        beq @free
 @ground:
         clc
+@rts:
+        rts
+@free:
+        sec
         rts
 
 ObjectCheckMoveVertical:

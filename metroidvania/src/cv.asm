@@ -138,8 +138,12 @@ CheckCvDamage:
         lda #$FF
         sta SamusKnockBomb
 @done:
+        ; a hit also sets this for Simon's knockback ($96DC), which counts it
+        ; down, and Samus has her own. Left set, the climb from stage 10 to 11
+        ; goes wrong ($964D): she came in at floor 255, and fell through it.
         lda #0
         sta ObjAction
+        sta $054C
         rts
 
 ; SimonHP against LastHP: a heal goes onto Samus's energy; a hurt (carry

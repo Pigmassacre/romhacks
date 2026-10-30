@@ -7,6 +7,7 @@
 --                (out/test/play_<n>.mss)
 --   PLAY_TO=n    stop after stage n
 --   PLAY_HONEST=1  no help at all: hits hurt, and dying costs a life
+--   PLAY_HITS=1    hits land and knock her back, but energy and lives are topped up
 -- Otherwise she can't be hurt, which is enough to show the way is open. The
 -- log has a line per stage and a screenshot per stretch (play_<stage>_<n>.png).
 
@@ -50,7 +51,7 @@ local function playing() return r(0x18) == 5 and r(0x19) == 6 end
 local function st() return string.format("act %d st %02x x %04x sx %02x y %02x scr %02x%02x mode %02x/%02x stage %d floor %d lock %d bosshp %02x en %x%02x lives %d time %x%02x", r(0x46C), r(0x100), x(), r(0x38C), r(0x124), r(0x2F), r(0x2E), r(0x18), r(0x19), r(0x28), r(0x46), r(0x48), r(0x1A9), r(0x118), r(0x117), r(0x2A), r(0x43), r(0x42)) end
 
 local stage, stepi, step, phase = nil, 1, nil, "title"
-local tStep = 0
+local tStep, quest2 = 0, false
 local tStage, lastx, still, jump, jwait, shots, deaths, hitsTaken, n = 0, 0, 0, 0, 0, 0, 0, 0, 0
 local lastEn, lastMode, onStair, fightT, hop = 0, -1, false, 0, 0
 local function route() return ROUTES[stage] or {} end
@@ -80,7 +81,7 @@ end
 -- the feet (above them by a jump, or below them).
 local function gap(px, feet, d)
   for w = 8, 200, 8 do
-    for y = feet - 0x28, 0xD8, 8 do
+    for y = feet - 0x18, math.min(feet + 0x18, 0xD8), 8 do
       if cell(px + d * w, y) ~= 0 and cell(px + d * w, y - 8) == 0 and cell(px + d * w, y - 16) == 0 then return w end
     end
   end
@@ -96,25 +97,44 @@ local function walk(d, t)
   local feet = y + 0x10
   local grounded = r(0x10B) == 0
   local go = d
-  local riding = grounded and r(0x12A) ~= 0
+  local riding
+  for _, p in ipairs(platforms()) do
+    if p[2] == y + r(0x101) and math.abs(p[1] - px) <= 21 then riding = p end
+  end
   if grounded and jump == 0 and jwait == 0 then aim = nil end
   if jump > 0 then
     jump = jump - 1
     t.a = true
   elseif jwait > 0 then
     jwait = jwait - 1
-  elseif riding and d ~= 0 then
+  elseif riding and grounded and d ~= 0 then
     -- on a platform: stay on it until the next ground comes within reach
     go = 0
-    if gap(px, feet, d) <= 32 then jump = 24; jwait = 8; go = d end
+    if (px - riding[1]) * d < 0 and F % 6 == 0 then go = d end     -- edge along it
+    local head = cell(px - d * 8, y - 0x18) == 0 and cell(px, y - 0x18) == 0 and cell(px + d * 8, y - 0x18) == 0 and cell(px + d * 16, y - 0x18) == 0
+    if head and gap(px, feet, d) <= 46 then jump = 24; jwait = 8; go = d end
+    for _, p in ipairs(platforms()) do
+      -- or the next platform
+      if p[3] ~= riding[3] and (p[1] - px) * d > 24 and (p[1] - px) * d < 72 then jump = 24; jwait = 8; go = d; aim = p[3] end
+    end
   elseif grounded and d ~= 0 then
     local wall = cell(px + d * 12, y) ~= 0 or cell(px + d * 12, y - 8) ~= 0 or cell(px + d * 12, y + 8) ~= 0
-    local pit = cell(px + d * 8, feet) == 0 and cell(px + d * 16, feet) == 0 and cell(px + d * 8, feet + 8) == 0
-    if wall or (still > 20 and not pit) then jump = (still > 60) and 12 or 24; jwait = 8
+    local pit = cell(px + d * 8, feet) == 0 and cell(px + d * 8, feet + 8) == 0
+    local widegap = not pit and (stage == 4 or stage == 5 or stage == 10)
+      and cell(px + d * 40, feet) == 0 and cell(px + d * 40, feet + 8) == 0 and gap(px + d * 32, feet, d) > REACH
+    if wall or (still > 20 and not pit and not widegap) then jump = (still > 60) and 12 or 24; jwait = 8
+    elseif widegap then
+      -- a wide gap coming: slow down, to stop at its edge
+      if F % 4 >= 2 and still < 2 then go = 0 end
     elseif pit then
       local w = gap(px, feet, d)
-      if os.getenv("PLAY_TRACE") then log(string.format("      pit at %04x: gap %d, %d platforms", px, w, #platforms())) end
+      if os.getenv("PLAY_TRACE") then log(string.format("      pit at %04x y %02x f%d: gap %d, %d platforms", px, y, r(0x46), w, #platforms())) end
+      local below = false
+      for yy = feet, 0xD8, 8 do if cell(px + d * 16, yy) ~= 0 then below = true end end
       if w <= REACH then jump = 24; jwait = 8
+      elseif below then
+        -- ground further down: step off
+      elseif not (stage == 4 or stage == 5 or stage == 10) then jump = 24; jwait = 8
       else
         -- too wide: wait for a platform to come within reach
         go = 0
@@ -122,7 +142,7 @@ local function walk(d, t)
           local near = (p[1] - px) * d
           if near > 24 and near < 56 + 16 and p[2] > feet - 0x28 then jump = 24; jwait = 8; go = d; aim = p[3] end
         end
-        if #platforms() == 0 and still > 60 then jump = 24; jwait = 8; go = d end
+        if #platforms() == 0 and still > 60 and stage ~= 10 then jump = 24; jwait = 8; go = d end   -- none coming: try it
       end
     end
   end
@@ -131,6 +151,14 @@ local function walk(d, t)
     local dx = r(0x2E) + 256 * r(0x2F) + r(0x38C + aim) - px
     go = 0
     if math.abs(dx) > 4 then go = dx > 0 and 1 or -1 end
+  end
+  -- stage 6's crushers kill: wait for them to lift, as anyone must
+  if stage == 6 and r(0x46) == 0 and go ~= 0 and grounded then
+    for i = 0, 2 do
+      local cx = r(0x150 + i) + 256 * r(0x153 + i) + 0x0A
+      local ahead = (cx - px) * go
+      if ahead > 8 and ahead < 44 and (r(0x156 + i) & 0x0F) > 1 then go = 0 end
+    end
   end
   if go > 0 then t.right = true elseif go < 0 then t.left = true end
   return t
@@ -180,12 +208,18 @@ INPUT = function(f)
     if a == 4 or a == 6 then return e[3] >= 2 and {down = true, b = t.b} or {up = true, b = t.b} end
     local d = stairx(e) - x()
     if r(0x124) ~= e[1] + 1 and r(0x10B) == 0 then return walk(d > 0 and 1 or -1, t) end
+    if r(0x10B) ~= 0 and r(0x124) < e[1] then
+      -- dropping to a stair's top: land on the floor beside it
+      if e[3] == 3 and d > -8 then return {left = true} end
+      if e[3] == 2 and d < 8 then return {right = true} end
+    end
     if math.abs(d) <= 2 and r(0x10B) == 0 then
       -- stand still, then a fresh press
       if r(0x108) == 0 and f % 16 < 8 then return e[3] >= 2 and {down = true} or {up = true} end
       return {}
     end
     if math.abs(d) <= 2 then return {} end
+    if math.abs(d) < 12 and r(0x10B) ~= 0 then return d > 0 and {right = true} or {left = true} end
     if math.abs(d) < 12 then
       -- tap, to stop on it
       if f % 8 >= 3 then return {} end
@@ -241,6 +275,10 @@ end
 FRAME = function(f)
   local mode = r(0x18)
   local cheat = not HONEST
+  if os.getenv("PLAY_HITS") then
+    cheat = false
+    if stage then w(0x118, 9); w(0x2A, 9) end
+  end
   if cheat and stage then w(0x5B, 0x40); w(0x118, 9) end
   if f > 900000 then fail("out of frames") end
 
@@ -270,16 +308,20 @@ FRAME = function(f)
   end
 
   if mode == 0x0F and phase ~= "ending" then
-    log(string.format("THE ENDING at frame %d, %d deaths", f, deaths)); shot("ending"); phase = "ending"; tStage = f
+    log(string.format("THE ENDING at frame %d, %d deaths", f, deaths)); shot("ending"); phase = "ending"; tStage = f; n = 0
   end
   if phase == "ending" then
-    if f == tStage + 600 then shot("ending2") end
+    if (f - tStage) % 300 == 299 then n = n + 1; shot(string.format("ending_%02d", n)) end
     if mode ~= 0x0F then
       log("after the ending: " .. st()); shot("afterending")
-      log("PASS"); done()
+      phase = "wait"; stage = nil; quest2 = true
     end
-    if f > tStage + 20000 then log("ending never finished: " .. st()); log("PASS"); done() end
+    if f > tStage + 20000 then log("the ending never finished: " .. st()); FAILS = FAILS + 1; done() end
     return
+  end
+  -- the second quest starts after the ending: a little of it
+  if quest2 and playing() and r(0x28) == 2 then
+    log("the second quest plays on: " .. st()); shot("quest2"); log("PASS"); done(); return
   end
 
   if not playing() or (r(0x126) & 1) == 0 then
@@ -295,7 +337,7 @@ FRAME = function(f)
   if phase == "wait" or r(0x28) ~= stage then
     if stage and r(0x28) ~= stage then
       log(string.format("=== stage %d done in %d frames: %s", stage, f - tStage, st()))
-      if stage >= last then log("PASS"); done() return end
+      if stage >= last and stage ~= 18 then log("PASS"); done() return end
     end
     if r(0x28) ~= stage then savestate(string.format("play_%d", r(0x28))) end
     beginStage()

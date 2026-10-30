@@ -24,7 +24,11 @@ FRAME = function(f)
   end
   if phase == "wall" and r(0x18) == 8 then
     check(true, string.format("the door opens, from x %02x", r(0x38C)))
+    phase = "door"
+  end
+  if phase == "door" and r(0x18) == 5 and r(0x19) == 6 and r(0x28) == 8 and (r(0x126) & 1) == 1 then
+    check(r(0x124) == 0x91 and r(0x46) == 0, string.format("and she comes out on stage 8's floor (y %02x, floor %d)", r(0x124), r(0x46)))
     done()
   end
-  if f > 1500 then check(false, string.format("the door opened (%s, mode %02x/%02x x %02x%02x y %02x sx %02x)", phase, r(0x18), r(0x19), r(0x123), r(0x122), r(0x124), r(0x38C))); done() end
+  if f > 3000 then check(false, string.format("the door opened (%s, mode %02x/%02x x %02x%02x y %02x sx %02x)", phase, r(0x18), r(0x19), r(0x123), r(0x122), r(0x124), r(0x38C))); done() end
 end

@@ -40,6 +40,27 @@ The sprite allocator fills sprite RAM from `$0244` (sprite 17) on and never touc
 
 Stage 6's lower floor has three crushers (`$014A` state, `$0150`/`$0153` x, `$014D` y, `$0156` how far down). Touching one kills Simon outright (`$8282`), unless he is jumping (action 1), when it only hurts him. The hack sets Simon's action to 1 while Samus is in the air.
 
+### Simon is thinner and shorter than he looks
+
+Simon's feet are two points, x - 4 and x + 4 ($9E80), and nothing tests his head against the map. Samus's edges are whole, as in Metroid, and that changes what a stage asks of her. Playing every stage for real (`tests/s_play.lua`) found these:
+
+- The holes stairs make in a floor are one cell wide. Samus's cells are x - 4 to x + 3, so right over one she falls through; Simon's feet can't. The hack calls it floor when she fits it exactly and there is floor on both sides.
+- Stage 10's second platform carries Simon under a rock with 24 pixels below it. Sideways, a platform now tests only her lower half against walls.
+- Stage 10's last blocks are staggered, each overhanging the one below by less than her height: she can't get from the second to the third. The block before the exit counts as the exit, at its end, on the last screen.
+- Stage 7, 8 and 13's exits (screen x $E8) have a wall at $F0, and she stops at $EC, one past Castlevania's window ($E4-$EB). Hers goes 2 further towards the wall.
+
+Above y $30 counts as solid, so a jump from a high floor is cut short: from y $50 she only rises $12 and comes down sooner. Stage 17's upper floor has a 32 pixel gap that takes a jump from the very edge.
+
+Stage 14's floor 1 only scrolls left of screen 4 above y $60 ($D037): its lower room is closed, and the way on is along the top, and on down four more stairs to the exit at the far left.
+
+### The camera after stairs
+
+On the stairs Castlevania moves Simon on the screen if MoveDir bit 2 is set, as the hack sets it unless Samus is at $80. She comes off them up to $F0, and Metroid's camera, which only moves as she does, would leave her there. Outside $71-$8F the screen catches up a pixel a frame, within the stage's limits and the boss lock.
+
+### What Simon's handlers leave behind
+
+The hack replaces Simon's handlers, but other code still reads their variables. A hit sets `$054C` to 4 for his knockback ($96DC), and his hurt handler counts it down ($97FE). The climb between stages 10 and 11 (mode `$0B`, the only one) calls `$962D`, which with `$054C` set takes the stairs' way out ($95E4), and that changes floor when Simon's y crosses $D0: she came into stage 11 at floor 255 and fell through the ground. It only showed with hits turned on, in a run through the whole game. The hack clears it every frame.
+
 ### Hits on the stairs
 
 Hit on the stairs, Simon stays on them: `$96C1` only stuns him (`$47`) and makes him invincible (`$5B`). With his health at 0 the stairs handler (`$9586`) drops him off them; below 0 it doesn't notice. The hack turns each hit into energy as it lands (it used to wait until Samus was off the stairs, and three hits read as a refill), and kills Simon itself when that empties her energy.
