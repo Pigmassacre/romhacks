@@ -60,7 +60,7 @@ Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type 
 
 ### The CHR loader and the font
 
-`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46-$4E`, `$52-$5E` and `$6A-$6E`. The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again.
+`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46-$4E`, `$52-$5E` and `$6A-$6E`. The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again, and a continue doesn't load the stage's graphics again either: the hack puts the font back for the Game Over screen, and Samus's tiles back while the continued stage loads (mode 5, part 1, when Castlevania's game turns the screen off for the rest of the frame).
 
 Items and dropped weapons are drawn with background-table tiles (odd tile numbers, in 8x16 mode).
 

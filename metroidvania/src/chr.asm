@@ -37,13 +37,39 @@ ChrLoaded:
         cmp #4
         bcc @noSamus
         cmp #6
-        bcc @samus
+        bcc PutSamusChr
 @noSamus:
         lda HackState           ; the font is Castlevania's
         and #~HS_FONT
         sta HackState
         rts
 @samus:
+        jmp PutSamusChr
+
+; After a continue: the Game Over screen put the font back (RestoreFont),
+; and a continue doesn't load the stage's graphics again. While the stage
+; loads (mode 5, part 1), Castlevania's game turns the screen off for the
+; rest of the frame, so Samus's tiles go back in then.
+RestoreSamusChr:
+        lda HackState
+        and #HS_FONT
+        bne @rts
+        lda GameMode
+        cmp #5
+        bne @rts
+        lda GameModeAux
+        cmp #1
+        bne @rts
+        lda $FF                 ; increment by 1
+        and #~$04
+        sta $2000
+        jmp PutSamusChr
+@rts:
+        rts
+
+; Samus's tile pairs over the font, the dot sprite 0 hits, and the status
+; bar blank. The screen must be off.
+PutSamusChr:
         lda #>FontChrAddr
         ldx #<FontChrAddr
         jsr PpuAddr

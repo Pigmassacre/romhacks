@@ -14,6 +14,7 @@ OamLeft         = $07
 ; title's bat, the castle falling in the ending.
 DrawAll:
         jsr RestoreFont
+        jsr RestoreSamusChr
         lda GameMode
         cmp #2
         beq @game               ; the attract demo: Samus plays it
