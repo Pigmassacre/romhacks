@@ -1,5 +1,6 @@
 -- World 8's end: stars wear Bowser down until he falls through the floor, the door appears, and it
--- leads to the princess and the end of the game. (His 34 hits are cut to one for the test.)
+-- leads to the princess and the end of the game, Yumetaro at her side in his own colours (it was
+-- once Mario, the one place he stayed). (Bowser's 34 hits are cut to one for the test.)
 local arrived, phase, n = false, "fight", 0
 local TX = 3140
 local function bowser() for i = 0, 4 do if rs("Level_ObjectID", i) == 0x18 and rs("Objects_State", i) ~= 0 then return i end end end
@@ -26,6 +27,12 @@ end
 FRAME = function(f)
   if phase == "ending" then
     if f % 400 == 0 then n = n + 1; shot(string.format("%02d", n)) end
+    if f - phase2 == 700 then
+      local tiles = {}
+      for a = 0x210, 0x21C, 4 do tiles[#tiles + 1] = string.format("%02x", r(a + 1)) end
+      check(rs("PatTable_BankSel", 2) == 0x50 and r(0x211) == 0x05 and r(0x215) == 0x15, "Yumetaro in the chamber: " .. table.concat(tiles, " "))
+      check(emu.read(0x11, emu.memType.nesPaletteRam) == 0x0B, "in his colours")
+    end
     if f - phase2 > 8000 then
       check(true, "the ending ran without stopping")
       done()

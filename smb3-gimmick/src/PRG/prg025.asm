@@ -1128,7 +1128,7 @@ EndSeq_PrincessChamber:
 EndSeq_Fade4:
 	vaddr $3F00
 	.byte $20, $0F, $0F, $30, $3C, $0F, $0C, $1C, $3B, $0F, $27, $30, $17, $0F, $12, $31
-	.byte $21, $0F, $16, $36, $0F, $0F, $36, $25, $07, $0F, $2A, $36, $0F, $0F, $00, $00, $00
+	.byte $21, $0F, $0B, $2A, $30, $0F, $36, $25, $07, $0F, $2A, $36, $0F, $0F, $00, $00, $00
 
 	; Terminator
 	.byte $00
@@ -1136,7 +1136,7 @@ EndSeq_Fade4:
 EndSeq_Fade3:
 	vaddr $3F00
 	.byte $20, $0F, $0F, $20, $2C, $0F, $0F, $0C, $2B, $0F, $17, $20, $07, $0F, $02, $21
-	.byte $11, $0F, $06, $26, $0F, $0F, $26, $15, $0F, $0F, $1A, $26, $0F, $0F, $0F, $0F, $0F
+	.byte $11, $0F, $0F, $1A, $20, $0F, $26, $15, $0F, $0F, $1A, $26, $0F, $0F, $0F, $0F, $0F
 
 	; Terminator
 	.byte $00
@@ -1144,7 +1144,7 @@ EndSeq_Fade3:
 EndSeq_Fade2:
 	vaddr $3F00
 	.byte $20, $0F, $0F, $10, $1C, $0F, $0F, $0F, $1B, $0F, $07, $10, $0F, $0F, $0F, $11
-	.byte $01, $0F, $0F, $16, $0F, $0F, $16, $05, $0F, $0F, $0A, $16, $0F, $0F, $0F, $0F, $0F
+	.byte $01, $0F, $0F, $0A, $10, $0F, $16, $05, $0F, $0F, $0A, $16, $0F, $0F, $0F, $0F, $0F
 
 	; Terminator
 	.byte $00
@@ -1152,7 +1152,7 @@ EndSeq_Fade2:
 EndSeq_Fade1:
 	vaddr $3F00
 	.byte $20, $0F, $0F, $00, $0C, $0F, $0F, $0F, $0B, $0F, $0F, $00, $0F, $0F, $0F, $01
-	.byte $0F, $0F, $0F, $06, $0F, $0F, $06, $0F, $0F, $0F, $0F, $06, $0F, $0F, $0F, $0F, $0F
+	.byte $0F, $0F, $0F, $0F, $00, $0F, $06, $0F, $0F, $0F, $0F, $06, $0F, $0F, $0F, $0F, $0F
 
 	; Terminator
 	.byte $00
