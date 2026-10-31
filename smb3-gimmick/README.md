@@ -4,6 +4,8 @@ Yumetaro, from Sunsoft's *Gimmick!*, in the worlds of *Super Mario Bros. 3*. He 
 
 You bring your own copy of Super Mario Bros. 3. The hack is a BPS patch.
 
+This hack is AI-assisted.
+
 ## Play it
 
 Download `smb3-gimmick.bps` from the [releases](https://github.com/Pigmassacre/romhacks/releases) page (the releases named SMB3 Gimmick) and apply it to your Super Mario Bros. 3 with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/). It is made for the original US release, not Revision A:

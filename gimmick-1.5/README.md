@@ -6,6 +6,8 @@ one is recalled.
 
 You bring your own copy of the Japanese *Gimmick!*. The hack is a small BPS patch.
 
+This hack is AI-assisted.
+
 ## What's new
 
 | | |

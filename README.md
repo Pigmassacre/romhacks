@@ -1,7 +1,7 @@
 # Romhacks
 
 NES romhacks, one per folder. Each folder is its own project, with its own README, build,
-tests and license.
+tests and license. All of these hacks are AI-assisted.
 
 | Hack | What it is | Get it |
 |---|---|---|

@@ -4,6 +4,8 @@ Samus, from Nintendo's *Metroid*, in Konami's *Castlevania*. She moves, jumps, r
 
 You bring your own copy of Castlevania. The hack is a BPS patch.
 
+This hack is AI-assisted.
+
 ## Play it
 
 Download `metroidvania.bps` from the [releases](https://github.com/Pigmassacre/romhacks/releases) page (the releases named Metroidvania) and apply it to your Castlevania with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/). It is made for the original US release:
