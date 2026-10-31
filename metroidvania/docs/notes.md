@@ -89,7 +89,7 @@ Items and dropped weapons are drawn with background-table tiles (odd tile number
 
 ### The title
 
-Castlevania draws its title with its update buffer, on the frame after mode 0 sets it up, and then keeps the screen off a few frames (`$1F`). While it does, `PutTitle` puts in what differs: 46 new tiles, in numbers the design no longer uses, 79 cells and the attributes. Tiles it already has keep their numbers, because the flashing PUSH START KEY writes those numbers to the name table itself. The big C's body is two sprite objects, slots 1 and 2, whose poses are set at `$AEC7` and `$AED6`. The tiles are all reloaded with each stage, so nothing carries over.
+Castlevania draws its title with its update buffer, on the frame after mode 0 sets it up, and then keeps the screen off a few frames (`$1F`). While it does, `PutTitle` puts in what differs: 48 new tiles, in numbers the design no longer uses, 163 cells and the attributes. Tiles it already has keep their numbers, because the flashing PUSH START KEY writes those numbers to the name table itself. The big C's body is two sprite objects, slots 1 and 2, whose poses are set at `$AEC7` and `$AED6`. The tiles are all reloaded with each stage, so nothing carries over.
 
 ### The status bar split
 

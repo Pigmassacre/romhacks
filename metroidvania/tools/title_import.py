@@ -38,7 +38,7 @@ def main():
     keep = {i: was[i] for i in range(960) if old[was[i]] == tiles[cells[i]]}
     used = set(keep.values())
     known = {}
-    for i in sorted(used):
+    for i in sorted(used | set(range(FONT, 256))):   # (the font's tiles all stay)
         known.setdefault(old[i], i)
     free = [i for i in sorted(set(was) - used) if i < FONT]
     new, final, changed = [], {}, []
