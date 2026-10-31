@@ -1,5 +1,5 @@
 -- Writes each area's tiles to out/test/map_<name>.txt, for planning routes: # solid, = solid from
--- above only, . air, and the level's objects listed. MAP_LEVELS=a,b,c picks areas.
+-- above only, . air, ~ water, and the level's objects. MAP_LEVELS=a,b,c picks areas.
 local names = {}
 for n in (os.getenv("MAP_LEVELS") or ""):gmatch("[^,]+") do names[#names + 1] = n end
 if #names == 0 then for _, l in ipairs(levels()) do names[#names + 1] = l.name end end
@@ -15,6 +15,7 @@ local function nextone()
   local top, all = {}, {}
   for q = 0, 3 do top[q] = r(S["Tile_AttrTable"] + q); all[q] = r(S["Tile_AttrTable"] + 4 + q) end
   local width = rs("Level_Width")
+  local idx = rs("Level_TilesetIdx")
   o:write(string.format("%s width %d vert %d start %d,%d\n", names[i], width, rs("Level_7Vertical"), px(), py()))
   for row = 0, 26 do
     local s = {}
@@ -22,10 +23,17 @@ local function nextone()
       for col = 0, 15 do
         local t = r(0x6000 + sc * 0x1B0 + row * 16 + col)
         local q = t >> 6
-        s[#s + 1] = t >= all[q] and "#" or t >= top[q] and "=" or "."
+        local c = t >= all[q] and "#" or t >= top[q] and "=" or "."
+        if c == "." and t >= r(S["Level_MinTileUWByQuad"] + idx * 4 + q) then c = "~" end
+        s[#s + 1] = c
       end
     end
     o:write(string.format("%2d ", row) .. table.concat(s) .. "\n")
+  end
+  for k = 0, 47 do
+    local id = rs("Level_Objects", 1 + k * 3)
+    if id == 0xFF then break end
+    o:write(string.format("obj %02x %d %d\n", id, rs("Level_Objects", 2 + k * 3), rs("Level_Objects", 3 + k * 3)))
   end
   o:close()
   F = 0
