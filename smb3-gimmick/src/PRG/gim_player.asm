@@ -139,6 +139,7 @@ Gim_RideRotate:
 
 	LDA <Player_HaltGame
 	ORA Player_IsDying
+	ORA Level_PipeMove
 	BNE Gim_RideRotateDone
 	LDA <Player_YVel
 	BMI Gim_RideRotateDone
