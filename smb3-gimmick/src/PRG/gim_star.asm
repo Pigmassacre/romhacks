@@ -350,7 +350,35 @@ Gim_StarGravity:
 	ADC Star_YHi
 	STA Star_YHi
 
+	; When an auto scroll moves the screen up and down things in the air go with it, as he and his fireballs do
+	LDA Level_AScrlConfig
+	BEQ Gim_StarNoScrollY
+	LDY #$00
+	LDA Level_ScrollDiffV
+	BPL Gim_StarScrollY
+	DEY
+Gim_StarScrollY:
+	ADD Star_Y
+	STA Star_Y
+	TYA
+	ADC Star_YHi
+	STA Star_YHi
+Gim_StarNoScrollY:
+
 	JSR Gim_StarFloors
+
+	; Below a fixed floor it's gone, wherever the scroll has the level
+	LDA Player_PartDetEn
+	BEQ Gim_StarNoFixedFloor
+	LDA Star_Y
+	SUB Level_VertScroll
+	TAX
+	LDA Star_YHi
+	SBC Level_VertScrollH
+	BNE Gim_StarNoFixedFloor
+	CPX #$D0
+	BGE Gim_StarGone
+Gim_StarNoFixedFloor:
 
 	LDA Level_7Vertical
 	BNE Gim_StarVertY
@@ -496,11 +524,15 @@ Gim_StarFloorsDown:
 	STA <Temp_Var2
 	JSR Gim_StarSetPoint
 	JSR Gim_StarSlopeAt
-	BCS Gim_StarSlopeLand
+	BCC Gim_StarSlopeNear1
+	JMP Gim_StarSlopeLand
+Gim_StarSlopeNear1:
 	LDA <Temp_Var11
 	BNE Gim_StarSlopeIn
 	JSR Gim_StarSlopeOver
-	BCS Gim_StarSlopeLand
+	BCC Gim_StarSlopeNear2
+	JMP Gim_StarSlopeLand
+Gim_StarSlopeNear2:
 	LDA <Temp_Var10
 	BEQ Gim_StarFloorsFlat
 	BNE Gim_StarSlopeBelow
@@ -519,7 +551,9 @@ Gim_StarSlopeBelow:
 	STA <Temp_Var2
 	JSR Gim_StarSetPoint
 	JSR Gim_StarSlopeAt
-	BCS Gim_StarSlopeLand
+	BCC Gim_StarSlopeNear3
+	JMP Gim_StarSlopeLand
+Gim_StarSlopeNear3:
 
 Gim_StarFloorsFlat:
 	LDA #16
@@ -535,6 +569,10 @@ Gim_StarFloorsFlat:
 	JSR Gim_StarFlatTop
 	BCC Gim_StarFloorsRTS
 Gim_StarFloorHit:
+	JSR Gim_FloorRow
+	BCC Gim_StarFloorTile
+	JMP Gim_StarFixedFloor
+Gim_StarFloorTile:
 	LDA <Temp_Var14
 	AND #$0F
 	CMP #8
@@ -546,6 +584,7 @@ Gim_StarFloorHit:
 	LDA <Temp_Var13
 	SBC #0
 	STA Star_YHi
+Gim_StarLanded:
 	LDA #$00
 	STA Star_YVel
 	STA Star_YFrac
@@ -553,6 +592,15 @@ Gim_StarFloorHit:
 	STA Star_Floor
 Gim_StarFloorsRTS:
 	RTS
+
+	; A fixed floor is where the screen shows it: its row counted down from the scroll
+Gim_StarFixedFloor:
+	ADD Level_VertScroll
+	STA Star_Y
+	LDA Level_VertScrollH
+	ADC #0
+	STA Star_YHi
+	JMP Gim_StarLanded
 
 	; A = surface height within the tile at Temp_Var13/14
 Gim_StarSlopeLand:
@@ -745,6 +793,12 @@ Gim_TileAt:
 	LDA Level_7Vertical
 	BNE Gim_TileVert
 
+	; In a room that scrolls up and down over a fixed floor, what's low on the screen is the level's bottom two rows
+	JSR Gim_FloorRow
+	BCC Gim_TileAnyRow
+	JMP Gim_TileFloorRow
+Gim_TileAnyRow:
+
 	LDA <Temp_Var13
 	BEQ Gim_TileRowOK
 	CMP #$01
@@ -796,6 +850,53 @@ Gim_TileQuad:
 Gim_TileAir:
 	LDA #$00
 	TAY
+	RTS
+
+	; A = row of the level's bottom screen
+Gim_TileFloorRow:
+	CMP #$B0
+	BGE Gim_TileAir
+	PHA
+	LDA <Temp_Var15
+	AND #$0F
+	ASL A
+	TAX
+	LDA Tile_Mem_Addr,X
+	STA <Map_Tile_AddrL
+	LDA Tile_Mem_Addr+1,X
+	ADC #1
+	STA <Map_Tile_AddrH
+	LDA <Temp_Var16
+	LSR A
+	LSR A
+	LSR A
+	LSR A
+	STA <Temp_Var12
+	PLA
+	ORA <Temp_Var12
+	TAY
+	LDA [Map_Tile_AddrL],Y
+	JMP Gim_TileQuad
+
+	; Carry set if the Y at Temp_Var13/14 is on the fixed floor of such a room, as Player_PartDetEn has it for him: A = its row
+Gim_FloorRow:
+	LDA Player_PartDetEn
+	BEQ Gim_FloorRowNo
+	LDA <Temp_Var14
+	SUB Level_VertScroll
+	TAX
+	LDA <Temp_Var13
+	SBC Level_VertScrollH
+	BNE Gim_FloorRowNo
+	TXA
+	CMP #160
+	BLT Gim_FloorRowNo
+	SBC #16
+	AND #$F0
+	SEC
+	RTS
+Gim_FloorRowNo:
+	CLC
 	RTS
 
 
