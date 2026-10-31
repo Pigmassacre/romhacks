@@ -7,7 +7,7 @@ INPUT = function(f)
   if phase == "title" then return {start = (f % 120) < 3 and f > 60} end
   if phase == "walk" or phase == "hall" then
     local i = {right = true}
-    if f % 40 < 3 then i.b = true end
+    if phase == "hall" and f % 40 < 3 then i.b = true end
     if f % 300 < 20 then i.a = true end
     return i
   end
@@ -16,7 +16,8 @@ end
 FRAME = function(f)
   if phase == "title" and r(0x18) == 5 then phase = "walk" end
   if phase == "walk" and r(0x28) == 1 and playing() then phase = "castle"; t0 = f end
-  if phase == "castle" and f == t0 + 20 then savestate("castle"); phase = "hall" end
+  -- (the tests start from here: no shot still in flight from the walk in)
+  if phase == "castle" and f >= t0 + 20 and r(0x7CF) + r(0x7D0) + r(0x7D1) == 0 then savestate("castle"); phase = "hall" end
   if phase == "hall" then
     local x = r(0x122) + 256 * r(0x123)
     if x == lastx and playing() then still = still + 1 else still = 0 end
