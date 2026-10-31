@@ -44,8 +44,29 @@ local function target()
   return card, foe
 end
 
+-- A door or pipe end near him: walk to it and go in
+local function findway()
+  if rs("Level_7Vertical") ~= 0 then return end
+  local c0, r0 = (px() + 8) // 16, (py() + 24) // 16
+  local best, bd
+  for row = math.max(r0 - 8, 0), math.min(r0 + 6, 26) do
+    for c = math.max(c0 - 14, 0), c0 + 14 do
+      local t = r(0x6000 + (c // 16) * 0x1B0 + row * 16 + c % 16)
+      if t == 0xAD or t == 0xAF or t == 0xB3 or t == 0xBD or t == 0x42 or t == 0x43 then
+        local d = math.abs(c - c0) + math.abs(row - r0)
+        if (not best or d < bd) and math.random(100) < 70 then best, bd = {c = c, r = row, t = t}, d end
+      end
+    end
+  end
+  return best
+end
+
 local function macro()
   local card, foe = target()
+  if math.random(100) <= 12 then
+    local way = findway()
+    if way then return {kind = "way", way = way} end
+  end
   if card and math.random(100) <= 40 then return {kind = "seek", x = card} end
   if foe and math.random(100) <= 25 then return {kind = "aim", i = foe} end
   if math.random(100) <= 25 then return "go" end
@@ -133,6 +154,30 @@ local function goInput()
   return t
 end
 
+local way
+local function wayInput()
+  way.t = way.t + 1
+  if way.t > 200 then way.done = true end
+  local w_ = way.w
+  local door = w_.t < 0x80
+  local tx = w_.c * 16 + (door and 0 or 8)
+  local dx = tx - px()
+  local t = {}
+  if math.abs(dx) > 3 then
+    if dx > 0 then t.right = true else t.left = true end
+    if rs("Player_InAir") == 0 and (px() == way.lx) then t.a = true end
+    way.lx = px()
+    if t.a or (rs("Player_InAir") ~= 0 and way.t % 40 < 20) then t.a = true end
+    return t
+  end
+  -- there: in by whichever way it faces
+  local above = r(0x6000 + (w_.c // 16) * 0x1B0 + (w_.r - 1) * 16 + w_.c % 16)
+  if door then t.up = true
+  elseif above < r(S["Tile_AttrTable"] + (above >> 6)) and py() + 32 <= w_.r * 16 + 4 then t.down = true
+  else t.up = true; t.a = way.t % 30 < 20 end
+  return t
+end
+
 -- Walk under the card and jump at it
 local seek
 local function seekInput()
@@ -188,9 +233,10 @@ startRun = function()
   if m == "ride" then ride = {t = 0, d = pick({"R", "R", "L"}), wait = pick({1, 4, 12, 30}), k = pick({12, 20, 28, 36, 48}), jh = pick({8, 14, 22, 40}), h = pick({10, 20, 34}), dj = pick({"R", "R", "L", ""}), any = math.random(100) < 25}; plan = "ride"
   elseif m == "go" then go = {t = 0, d = math.random(100) <= 85 and 1 or -1, hold = 0, max = pick({40, 80, 160}), done = false, seed = math.random(1 << 30)}; math.randomseed(go.seed); plan = "go"
   elseif type(m) == "table" and m.kind == "seek" then seek = {t = 0, x = m.x, max = pick({60, 120, 200}), w = pick({8, 16, 28}), done = false}; plan = "seek"
+  elseif type(m) == "table" and m.kind == "way" then way = {t = 0, w = m.way, done = false}; plan = "way"
   elseif type(m) == "table" and m.kind == "aim" then aim = {t = 0, i = m.i, up = math.random(100) < 30, done = false}; plan = "aim"
   else plan = m end
-  local scripted = plan == "ride" or plan == "go" or plan == "seek" or plan == "aim"
+  local scripted = type(plan) ~= "table"
   pi_, pleft, runFrames, extra = 1, (not scripted) and plan[1][2] or 0, 0, 0
   phase = "run"
   F = 0
@@ -214,6 +260,7 @@ local function planStr()
   if plan == "ride" then return string.format("ride %s w%d k%d jh%d h%d %s", ride.d, ride.wait, ride.k, ride.jh, ride.h, ride.dj) end
   if plan == "go" then return string.format("go %d %d", go.d, go.max) end
   if plan == "seek" then return "seek" end
+  if plan == "way" then return "way" end
   if plan == "aim" then return "aim" end
   local t = {}
   for _, p in ipairs(plan) do t[#t + 1] = p[1] .. ":" .. p[2] end
@@ -225,6 +272,7 @@ INPUT = function(f)
   if plan == "ride" then return rideInput() end
   if plan == "go" then return goInput() end
   if plan == "seek" then return seekInput() end
+  if plan == "way" then return wayInput() end
   if plan == "aim" then return aimInput() end
   local p = plan[pi_]
   if not p then return {} end
@@ -268,6 +316,7 @@ FRAME = function(f)
   local over
   if plan == "ride" then over = ride.done elseif plan == "go" then over = go.done
   elseif plan == "seek" then over = seek.done elseif plan == "aim" then over = aim.done
+  elseif plan == "way" then over = way.done
   else over = pi_ > #plan end
   -- wait for a pipe to finish, and for him to land: a place in the air is no place to start from
   local airborne = rs("Player_InAir") ~= 0 and rs("Player_InWater") == 0 and rs("Player_IsClimbing") == 0 and rs("Star_Ridden") == 0
