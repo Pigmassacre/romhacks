@@ -421,6 +421,21 @@ Bank6_ScreenAtExit:
 ;@ seg $06 $9002 $9010 the credits: and the hero, Samus Aran (each letter a pair of tiles)
         .db $54,$54,$84,$60,$78,$88,$84,$54,$60,$82,$60,$7A,$54,$54
 
+;@ seg $06 $A091 $A094 the status bar: no score
+; (Written every other frame, as blank tiles. With the time's, they were a
+; quarter of what fits in the vertical blank: see the notes on the split.)
+        nop
+        nop
+        nop
+;@ seg $06 $A0CD $A0D0 the status bar: no time and no health bar (the HUD has them)
+        jmp $A110
+;@ seg $06 $A237 $A23A the status bar: no boss's health bar (nor does it count, as ever)
+        nop
+        nop
+        nop
+;@ seg $06 $A2E8 $A2E9 the status bar: no double or triple shot icon
+        rts
+
 ;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 7-16 are the HUD's)
         rts
 
@@ -530,10 +545,49 @@ Bank0_BgGfx:
         bcc @flush
         jsr Bank0_Colours
 @flush:
-        ldy #$00
+        ; With the screen on for the split, only what fits in the vertical blank.
+        ; Past it the PPU's address isn't set for the picture, sprite 0's dot
+        ; isn't under it, the split gives up lines late, and the picture jumps.
+        lda BufStart
+        cmp $20
+        bcc @start
+        lda #0
+@start:
+        sta BufStart
+        tay
+        ldx #$FF
+        bit HackState           ; HS_SPLIT: from last frame, before Bank0_Colours
+        bvc @end
+        lda $20                 ; not if it's getting full: the hack's RAM is above it
+        cmp #BUFFER_FULL
+        bcs @end
+        tya
+        clc
+        adc #BUFFER_FITS
+        tax
+@end:
+        stx BufEnd
 @entry:
         ldx $0700,y
-        beq @done
+        bne @more
+        jmp @done
+@more:
+        cpy BufEnd
+        bcs @stop
+        lda BufEnd              ; (no limit)
+        cmp #$FF
+        beq @put1
+        lda $0701,y             ; tiles are a long entry: near the start
+        cmp #$20
+        bcs @put1
+        tya
+        sec
+        sbc BufStart
+        cmp #BUFFER_TILES
+        bcc @put1
+@stop:
+        jmp @later
+@put1:
         lda $FF
         and #$18
         ora $8007,x             ; the increment for this entry
@@ -571,7 +625,9 @@ Bank0_BgGfx:
 @ff:
         lda $0700,y
         cmp #$03
-        bcc @entry
+        bcs @ffput
+        jmp @entry
+@ffput:
         lda #$FF                ; $FF and a byte of 3 or more: a $FF, then that byte
         bne @put
 @blank:                         ; the status bar: blank tiles, the same count
@@ -591,11 +647,19 @@ Bank0_BgGfx:
 @bff:
         lda $0700,y
         cmp #$03
-        bcc @entry
         bcs @bput
+        jmp @entry
+@later:
+        sty BufStart            ; the rest next frame: Castlevania adds to it,
+        dec $20                 ; over the 0 that ended it ($CCEE)
+        jsr Bank0_Colours
+        lda $FF
+        sta $2000
+        rts
 @done:
         lda #$00
         sta $0700
+        sta BufStart
         lda $20
         cmp #BUFFER_LONG
         bcs @ctrl
@@ -615,6 +679,9 @@ Bank0_BgGfx:
 ; PPU shows the colour its address points at: palette writes there would
 ; show as a line. So before a long one, which holds no palettes.
 BUFFER_LONG = $80
+BUFFER_FULL = $80           ; the hack's RAM is at $CF, and a frame adds up to $4F
+BUFFER_TILES = $14
+BUFFER_FITS = $28           ; with an entry after it (measured: $46 in all is too much)
 Bank0_Colours:
         lda HackState
         and #~HS_SPLIT

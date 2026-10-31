@@ -86,6 +86,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `stairlong` | Down Dracula's stage's two-floor stairs, started off the middle of the screen: the screen keeps up, and she comes out on the other floor (she once ran off the screen's edge, and ended up on the stairs on floor 255) |
 | `doorscroll` | Off the stairs far over on the screen, the door waits for the screen to reach the stage's end |
 | `splitline` | With a crowd making frames late, the screen comes back on after the split on the same line every frame, so the picture stays put |
+| `bufsplit` | Moving through stage 6 and shooting: the update buffer fits the vertical blank, what doesn't waits a frame, and the picture stays put (127 frames in 2500 once jumped; a rare frame still can) |
 | `bosslock` | The screen locks for Medusa, at the left end of her stage, as Samus scrolls left onto her screen |
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
 | `pause` | Start stops everything: she, the time and the HUD stay as they were, and no button does anything |

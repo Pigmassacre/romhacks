@@ -17,6 +17,7 @@ local function flog(s) FL:write(s .. "\n"); FL:flush() end
 local src = io.open(REPO .. "/tests/s_exits.lua"):read("a")
 local STAIRS = load(src:match("STAIRS = (%b{})") and ("return " .. src:match("STAIRS = (%b{})")))()
 
+local EXITS = load("return " .. src:match("EXITS = (%b{})"))()
 local SCREEN0 = {[0]=0,0,0,0,0,1,0,0,1,0,0,0,0,1,0,0,1,0,1,0}
 local function cell(px, y)
   if y < 0x30 or y >= 0xE0 then return 0 end
@@ -47,16 +48,43 @@ end
 local nmis, lates = 0, 0
 emu.addMemoryCallback(function()
   nmis = nmis + 1
-  local s = emu.getState()
-  if s["cpu.sp"] < 0xD0 then finding("stack", string.format("sp %02x", s["cpu.sp"])) end
+  if nmis % 64 == 0 then
+    local s = emu.getState()
+    if s["cpu.sp"] < 0xD0 then finding("stack", string.format("sp %02x", s["cpu.sp"])) end
+  end
+  local n = r(0x20)
+  buflen = n
+  local y, ents = 0, {}
+  while r(0x700 + y) ~= 0 and #ents < 12 and y < 256 do
+    local inc, hi, lo = r(0x700 + y), r(0x701 + y), r(0x702 + y)
+    local yy, c = y + 3, 0
+    while yy < 300 do
+      local b = r(0x700 + yy % 256); yy = yy + 1
+      if b == 0xFF then
+        if r(0x700 + yy % 256) < 3 then break end
+      end
+      c = c + 1
+    end
+    ents[#ents + 1] = string.format("%02x@%02x%02x+%d", inc, hi, lo, c)
+    y = yy
+  end
+  bufents = table.concat(ents, " ")
+  if bufcheck then finding("bufover", string.format("buffer %02x start %02x [%s]", n, r(0x128), bufents)) end
+  if n >= 0xCF and r(0x18) == 5 and r(0x19) == 6 then finding("bufover", string.format("buffer %02x start %02x [%s]", n, r(0x128), bufents or "")) end
 end, emu.callbackType.exec, 0xC052, 0xC052)
+lastnmi = 0
 emu.addMemoryCallback(function(a) finding("ramexec", string.format("pc %04x", a)) end, emu.callbackType.exec, 0x0000, 0x1FFF)
-local splitSeen = false
+local splitstages = {}
+prevsplit = nil
 emu.addMemoryCallback(function(a, v)
-  local l = emu.getState()["ppu.scanline"]
-  if v ~= 0 and l >= 0 and l < 240 and (r(0x126) & 0x40) ~= 0 then
-    splitSeen = true
-    if l ~= 44 then finding("splitline", "line " .. l) end
+  if v ~= 0 and (r(0x126) & 0x40) ~= 0 and r(0x18) == 5 then
+    local l = emu.getState()["ppu.scanline"]
+    if l >= 0 and l < 240 and l ~= 44 then
+      finding("splitline", string.format("line %d, buffer %02x [%s], prev %s", l, buflen or 0, bufents or "", tostring(prevsplit)))
+      local ls = r(0x28)
+      splitstages[ls] = (splitstages[ls] or 0) + 1
+    end
+    prevsplit = l
   end
 end, emu.callbackType.write, 0x2001, 0x2001)
 
@@ -83,10 +111,12 @@ local function randomize(f)
   if math.random(1000) < 8 then t.start = true end
   held = t
   until_ = f + math.random(1, math.random(2, 60))
+  if r(0x22) ~= 0 and math.random(100) < 50 then held = {start = true}; until_ = f + 2 end
 end
 INPUT = function(f)
-  if phase ~= "play" then return {} end
-  if flying then return flyTo > x() and pad("R") or pad("L") end
+  if phase ~= "play" then return (r(0x22) ~= 0 and f % 8 == 0) and {start = true} or {} end
+  if r(0x18) == 0x0D then return {start = f % 60 < 3} end
+  if flying then local t = flyTo > x() and pad("R") or pad("L"); t.a = f % 16 < 2; t.b = f % 7 == 0; return t end
   return held
 end
 
@@ -94,6 +124,7 @@ local last = {}
 local still, inwall, hidden, modeSince, modeWas, nmiSeen = 0, 0, 0, 0, -1, 0
 local cleanSince = 0
 FRAME = function(f)
+  if false then flog(string.format("  .. f %d %s %s | hp %02x last %02x hs %02x inv5b %02x 1f %02x 22 %02x 4a %02x 54c %02x sim %02x pc-lastfc %02x stun %02x", f, phase, st(), r(0x45), r(0x125), r(0x126), r(0x5B), r(0x1F), r(0x22), r(0x4A), r(0x54C), r(0x1BE), r(0x1A), r(0x47))) end
   local mode, aux = r(0x18), r(0x19)
   local inplay = mode == 5 and aux == 6
   ringi = ringi + 1
@@ -117,7 +148,8 @@ FRAME = function(f)
   end
 
   -- the mode can change under her; the stage may move on by itself
-  if mode ~= modeWas then modeWas = mode; modeSince = f end
+  local mm = mode * 256 + aux
+  if mm ~= modeWas then modeWas = mm; modeSince = f end
   local limit = (mode == 0x0F) and 20000 or 2500
   if mode ~= 5 and f - modeSince > limit then finding("modestuck", string.format("mode %02x for %d frames", mode, f - modeSince)); warp(); return end
   if mode == 5 and aux ~= 6 and f - modeSince > 1500 and r(0x1A) == last.fc then finding("hang") end
@@ -129,13 +161,20 @@ FRAME = function(f)
     if stage > to then
       local keys = {}
       for k, v in pairs(counts) do keys[#keys + 1] = k .. "=" .. v end
-      flog("=== done: " .. total .. " findings: " .. table.concat(keys, " "))
+      local ss = {}
+      for k, v in pairs(splitstages) do ss[#ss + 1] = k .. ":" .. v end
+      flog("=== done: " .. total .. " findings: " .. table.concat(keys, " ") .. " | split by stage " .. table.concat(ss, " "))
       FL:close(); log("PASS"); done(); return
     end
     warp(); return
   end
 
-  if not inplay then cleanSince = f; last.x = nil; if flying then flying = false; w(0x1C0, 0) end return end
+  if not inplay then
+    cleanSince = f; last.x = nil
+    if flying then flying = false; w(0x1C0, 0) end
+    if f > until_ then randomize(f) end
+    return
+  end
   if r(0x28) ~= stage then stage = r(0x28); cleanSince = f; last.x = nil end   -- walked on
 
   -- flying: the tests' way of getting anywhere
@@ -154,7 +193,15 @@ FRAME = function(f)
 
   if f > until_ and r(0x1F) == 0 then
     local k = math.random(100)
-    if k <= 2 then
+    local e = EXITS[stage]
+    if k == 5 and e and e[1] == r(0x46) then
+      -- to the stage's end, with buttons going
+      flying = true; flyY = e[2] + 1 - 0x18
+      flyTo = (e[3] >= 0x80) and x() + 2000 or math.max(9, 0)
+      until_ = f + 500
+    elseif k == 6 and r(0x48) ~= 0 then
+      w(0x1A9, 1)
+    elseif k <= 2 then
       flying = true
       flyY = 0x38 + math.random(0, 18) * 8
       flyTo = math.max(8, x() + math.random(-500, 500))
@@ -202,6 +249,12 @@ FRAME = function(f)
   if not paused and last.sx == px and last.sy == py then
     still = still + 1
     if still == 900 then finding("stuck") end
+    if still >= 900 and still < 906 then
+      local c = emu.getState()
+      local b = {}
+      for i = 0, 15 do b[#b + 1] = string.format("%02x", r(0x100 + c["cpu.sp"] + 1 + i)) end
+      flog(string.format("   pc %04x sp %02x 1B %02x 1A %02x 20 %02x start %02x 18/19 %02x/%02x 7F %02x depth %02x bank %02x stack %s 1F %02x 22 %02x 7E %02x", c["cpu.pc"], c["cpu.sp"], r(0x1B), r(0x1A), r(0x20), r(0x128), r(0x18), r(0x19), r(0x7F), r(0x1BE), r(0x27), table.concat(b, " "), r(0x1F), r(0x22), r(0x7E)))
+    end
   else still = 0 end
   last.sx, last.sy = px, py
 
@@ -215,7 +268,7 @@ FRAME = function(f)
       local y, t = emu.read(i * 4, S), emu.read(i * 4 + 1, S)
       if y < 0xEF and t < 0x70 then n = n + 1 end
     end
-    if n == 0 and a ~= 8 and r(0x113) == 0 and r(0x5B) == 0 and py < 0xE0 then
+    if n == 0 and a ~= 8 and r(0x113) == 0 and r(0x5B) == 0 and py < 0xE0 and stat ~= 3 then
       hidden = hidden + 1
       if hidden == 12 then finding("invisible") end
     else hidden = 0 end
