@@ -248,6 +248,13 @@ Bank6_LateFrame:
 @split:
         jsr Bank6_Split
         jsr $C11F               ; UpdateScreenScrolling
+        ; Back to the bank it landed in. That's $27's, unless it landed in the
+        ; sound effect routine ($C1A7), which maps bank 0 without noting it.
+        lda $7F
+        beq @noted
+        ldy #0
+        jmp $C1D8
+@noted:
         jmp $C1CF               ; SwitchBank_Restore
 
 ; The rosary's flash writes a whole palette every other frame. With the
@@ -463,6 +470,15 @@ Bank6_ScreenAtExit:
 
 ;@ seg $0F $FA77 $FA7A the rosary's flash
         jsr Bank6_Flash
+
+;@ seg $0F $C1C2 $C1CD the sound effect routine: its end
+; Done with bank 0: "in the sound code" ends first, so that $7F set always means
+; bank 0, for a late frame to go back to (Bank6_LateFrame).
+        lda #$00
+        sta $7F
+        jsr $C1CF
+        ldy $07F5
+        rts
 
 ;@ seg $0F $C0C0 $C0CE NMI: a late frame
 ; (Replaces PPUMASK, the status bar split and the scroll, in Bank6_LateFrame,

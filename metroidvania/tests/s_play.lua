@@ -90,8 +90,16 @@ local function gap(px, feet, d)
   end
   return 999
 end
+-- A platform worth jumping for: on its way towards her, or close by. Jumped for
+-- on its way off, it's gone by the time she comes down.
+local platX = {}
+local function coming(p, px)
+  local away = platX[p[3]] and (p[1] - platX[p[3]]) * (p[1] - px) > 0
+  return not away or math.abs(p[1] - px) <= 32
+end
 local REACH = 56         -- a running jump, with room to spare
 local aim                -- the platform she jumped for
+local dropTo             -- where she is stepping down to
 
 -- Walking towards d (1 right, -1 left), jumping what is in the way.
 local function walk(d, t)
@@ -105,6 +113,7 @@ local function walk(d, t)
     if p[2] == y + r(0x101) and math.abs(p[1] - px) <= 21 then riding = p end
   end
   if grounded and jump == 0 and jwait == 0 then aim = nil end
+  if grounded then dropTo = nil end
   if jump > 0 then
     jump = jump - 1
     t.a = true
@@ -118,11 +127,12 @@ local function walk(d, t)
     if head and gap(px, feet, d) <= 46 then jump = 24; jwait = 8; go = d end
     for _, p in ipairs(platforms()) do
       -- or the next platform
-      if p[3] ~= riding[3] and (p[1] - px) * d > 24 and (p[1] - px) * d < 72 then jump = 24; jwait = 8; go = d; aim = p[3] end
+      if p[3] ~= riding[3] and (p[1] - px) * d > 24 and (p[1] - px) * d < 72 and coming(p, px) then jump = 24; jwait = 8; go = d; aim = p[3] end
     end
   elseif grounded and d ~= 0 then
     local wall = cell(px + d * 12, y) ~= 0 or cell(px + d * 12, y - 8) ~= 0 or cell(px + d * 12, y + 8) ~= 0
-    local pit = cell(px + d * 8, feet) == 0 and cell(px + d * 8, feet + 8) == 0
+    -- (as late as she can: from 8 pixels back, a 32 pixel gap is a near thing)
+    local pit = cell(px + d * 5, feet) == 0 and cell(px + d * 5, feet + 8) == 0
     local widegap = not pit and (stage == 4 or stage == 5 or stage == 10)
       and cell(px + d * 40, feet) == 0 and cell(px + d * 40, feet + 8) == 0 and gap(px + d * 32, feet, d) > REACH
     if wall or (still > 20 and not pit and not widegap) then jump = (still > 60) and 12 or 24; jwait = 8
@@ -135,19 +145,26 @@ local function walk(d, t)
       local below = false
       for yy = feet, 0xD8, 8 do if cell(px + d * 16, yy) ~= 0 then below = true end end
       if w <= REACH then jump = 24; jwait = 8
-      elseif below then
-        -- ground further down: step off
+      elseif below and stage ~= 5 then
+        -- ground further down: step off, and come down on it (stage 5's only
+        -- leads away from its exit: the platforms are the way)
+        dropTo = px + d * 16
       elseif not (stage == 4 or stage == 5 or stage == 10) then jump = 24; jwait = 8
       else
         -- too wide: wait for a platform to come within reach
         go = 0
         for _, p in ipairs(platforms()) do
           local near = (p[1] - px) * d
-          if near > 24 and near < 56 + 16 and p[2] > feet - 0x28 then jump = 24; jwait = 8; go = d; aim = p[3] end
+          if near > 24 and near < 56 + 16 and p[2] > feet - 0x28 and coming(p, px) then jump = 24; jwait = 8; go = d; aim = p[3] end
         end
-        if #platforms() == 0 and still > 60 and stage ~= 10 then jump = 24; jwait = 8; go = d end   -- none coming: try it
+        if (#platforms() == 0 or stage == 4) and still > 60 and stage ~= 10 then jump = 24; jwait = 8; go = d end   -- none coming: try it
       end
     end
+  end
+  if F % 4 == 0 then for _, p in ipairs(platforms()) do platX[p[3]] = p[1] end end
+  if dropTo and not grounded then
+    go = 0
+    if math.abs(dropTo - px) > 2 then go = dropTo > px and 1 or -1 end
   end
   if aim and not grounded then
     -- in the air: steer for it
@@ -265,6 +282,12 @@ end
 
 local function fail(msg)
   dumptrace()
+  local c = emu.getState()
+  local b, u = {}, {}
+  for i = 0, 15 do b[#b + 1] = string.format("%02x", r(0x100 + c["cpu.sp"] + 1 + i)) end
+  for i = 0, 33 do u[#u + 1] = string.format("%02x", r(0x7CF + i)) end
+  log(string.format("  cpu: pc %04x sp %02x a %02x x %02x y %02x, $1B %02x, bank %02x, depth %02x, buffer %02x from %02x, stack %s", c["cpu.pc"], c["cpu.sp"], c["cpu.a"], c["cpu.x"], c["cpu.y"], r(0x1B), r(0x27), r(0x1BE), r(0x20), r(0x128), table.concat(b, " ")))
+  log("  shots: " .. table.concat(u, " "))
   log("STUCK " .. msg .. ": " .. st())
   shot(string.format("stuck_%02d", stage or 0))
   FAILS = FAILS + 1

@@ -8,7 +8,7 @@ Working notes from making Metroidvania: what was found in Castlevania (USA) and 
 
 UNROM: 8 banks of 16 KB, bank 7 fixed at `$C000`. `SwitchBank` (`$C1D6`) maps bank Y by writing to `$C000,Y`, where bytes `$C000-$C007` hold 0-7 (so there is no bus conflict), and remembers it in `$27`.
 
-The whole game runs in the NMI (`$C052`); the main loop only stirs a random number. In order: OAM DMA, the update buffer (`$800A`, bank 0), PPUMASK, the status bar split (`$F87D`), the scroll, the music (`$838A`, bank 0), the controllers, the game logic (`$C1E4`, bank 6), the sprites (`$8052`, bank 0). If the logic overruns, the next NMI finds `$1B` set and only does PPUMASK, the split, the scroll and the music (if `$7F`, "in the sound code", is clear), and then returns into the interrupted code. Its music path maps bank 0 and then maps `$27` back, so `$27` has to be right whenever the hack's bank is in.
+The whole game runs in the NMI (`$C052`); the main loop only stirs a random number. In order: OAM DMA, the update buffer (`$800A`, bank 0), PPUMASK, the status bar split (`$F87D`), the scroll, the music (`$838A`, bank 0), the controllers, the game logic (`$C1E4`, bank 6), the sprites (`$8052`, bank 0). If the logic overruns, the next NMI finds `$1B` set and only does PPUMASK, the split, the scroll and the music (if `$7F`, "in the sound code", is clear), and then returns into the interrupted code. Its music path maps bank 0 and then maps `$27` back, so `$27` has to be right whenever the hack's bank is in. The sound effect routine (`$C1A7`) maps bank 0 without noting it in `$27`, with `$7F` set: a late frame that lands there has to go back to bank 0, not `$27`'s, or the CPU runs off into data and stops (`tests/t_latesfx.lua`).
 
 ### RAM the hack uses
 
