@@ -147,6 +147,10 @@ Gim_StarInput:
 	CMP #GIM_STUNTIME
 	BGE Gim_StarReleased
 
+	; The star's sprites draw the shoe while he's in it
+	LDA Player_Kuribo
+	BNE Gim_StarReleased
+
 	LDA <Pad_Holding
 	AND #PAD_B
 	BEQ Gim_StarReleased
