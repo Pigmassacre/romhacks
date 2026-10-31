@@ -66,7 +66,13 @@ DrawHud:
 @hide:
         jsr HideHud
 @digits:
-        ; the digit columns
+        ; the digit columns, unless the update buffer is busy: they can wait,
+        ; and what doesn't fit in the vertical blank moves the picture
+        lda $20
+        cmp #BUFFER_BUSY
+        bcc @room
+        rts
+@room:
         jsr HudDigits
         ldx #5
 @col:

@@ -146,7 +146,9 @@ Bank6_Split:
         bvs @clear
 @cleared:
         ldx #0
-        ldy #2                  ; 512 tries of 11 cycles: past line 40
+        ldy #3                  ; 768 tries of 11 cycles: past line 40, even from
+                                ; the top of a vertical blank (after a black frame,
+                                ; no hit is left to wait out)
 @hit:
         bit $2002
         bvs @hitNow
@@ -247,6 +249,17 @@ Bank6_LateFrame:
         jsr Bank6_Split
         jsr $C11F               ; UpdateScreenScrolling
         jmp $C1CF               ; SwitchBank_Restore
+
+; The rosary's flash writes a whole palette every other frame. With the
+; screen scrolling, that backs up the update buffer (see Bank0_BgGfx): no flash
+; this time if there is plenty to write already.
+Bank6_Flash:
+        lda $20
+        cmp #BUFFER_BUSY
+        bcs @rts
+        jmp $FA8E
+@rts:
+        rts
 
 ; Simon's actions: 0 walk, 1 jump, 2 whip, 3 crouch, 4 stairs, 5 hurt,
 ; 6 to the stairs, 7 fall, 8 dead, 9 land. Stairs and dying stay
@@ -447,6 +460,9 @@ Bank6_ScreenAtExit:
         nop
         nop
         nop
+
+;@ seg $0F $FA77 $FA7A the rosary's flash
+        jsr Bank6_Flash
 
 ;@ seg $0F $C0C0 $C0CE NMI: a late frame
 ; (Replaces PPUMASK, the status bar split and the scroll, in Bank6_LateFrame,
@@ -679,8 +695,9 @@ Bank0_BgGfx:
 ; PPU shows the colour its address points at: palette writes there would
 ; show as a line. So before a long one, which holds no palettes.
 BUFFER_LONG = $80
-BUFFER_FULL = $80           ; the hack's RAM is at $CF, and a frame adds up to $4F
+BUFFER_FULL = $A0           ; the hack's RAM is at $CF, and a busy frame adds up to $29
 BUFFER_TILES = $14
+BUFFER_BUSY = $20           ; the rosary's flash and the HUD's digits wait
 BUFFER_FITS = $28           ; with an entry after it (measured: $46 in all is too much)
 Bank0_Colours:
         lda HackState

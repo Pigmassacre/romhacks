@@ -3,8 +3,6 @@
 -- back on too late for the top of the picture and sprite 0, the split gave up
 -- lines late, and the picture jumped, 127 times here. The status bar's blank
 -- tiles aren't written any more, and what doesn't fit waits for the next frame.
--- When even that backs up towards the hack's RAM, it all goes at once, so a
--- rare frame can still jump.
 local way = "L"
 local function x() return r(0x122) + 256 * r(0x123) end
 local bad, on, blank, phase, t0, died = 0, 0, 0, "warp", 0, false
@@ -34,7 +32,7 @@ FRAME = function(f)
   if phase == "fly" and x() < 0x170 then phase = "watch"; t0 = f end
   if phase == "watch" and f == t0 + 2500 then
     check(on > 2000, string.format("the split seen (%d frames)", on))
-    check(bad <= 8, string.format("the screen came on in time, but for a rare frame (%d times not)", bad))
+    check(bad == 0, string.format("the screen always came on in time (%d times not)", bad))
     done()
   end
   if f > 6000 then check(false, "got there: " .. phase); done() end

@@ -78,7 +78,7 @@ emu.addMemoryCallback(function(a, v)
   if v ~= 0 and (r(0x126) & 0x40) ~= 0 and r(0x18) == 5 then
     local l = emu.getState()["ppu.scanline"]
     if l >= 0 and l < 240 and l ~= 44 then
-      finding("splitline", string.format("line %d, buffer %02x [%s], prev %s", l, buflen or 0, bufents or "", tostring(prevsplit)))
+      finding("splitline", string.format("line %d, buffer %02x [%s], prev %s flash %02x", l, buflen or 0, bufents or "", tostring(prevsplit), r(0x15D)))
       local ls = r(0x28)
       splitstages[ls] = (splitstages[ls] or 0) + 1
     end
