@@ -245,7 +245,8 @@ FRAME = function(f)
   -- stuck: pressing things, going nowhere, with room to
   if not paused and last.sx == px and last.sy == py then
     still = still + 1
-    if still == 900 then finding("stuck") end
+    if still == 900 then finding(r(0x1A) == last.stuckfc and "frozen" or "stuck") end
+    if still == 800 then last.stuckfc = r(0x1A) end
     if still >= 900 and still < 906 then
       local c = emu.getState()
       local b = {}
