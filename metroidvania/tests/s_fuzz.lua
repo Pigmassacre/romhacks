@@ -69,10 +69,8 @@ emu.addMemoryCallback(function()
     y = yy
   end
   bufents = table.concat(ents, " ")
-  if bufcheck then finding("bufover", string.format("buffer %02x start %02x [%s]", n, r(0x128), bufents)) end
   if n >= 0xCF and r(0x18) == 5 and r(0x19) == 6 then finding("bufover", string.format("buffer %02x start %02x [%s]", n, r(0x128), bufents or "")) end
 end, emu.callbackType.exec, 0xC052, 0xC052)
-lastnmi = 0
 emu.addMemoryCallback(function(a) finding("ramexec", string.format("pc %04x", a)) end, emu.callbackType.exec, 0x0000, 0x1FFF)
 local splitstages = {}
 prevsplit = nil
@@ -124,7 +122,6 @@ local last = {}
 local still, inwall, hidden, modeSince, modeWas, nmiSeen = 0, 0, 0, 0, -1, 0
 local cleanSince = 0
 FRAME = function(f)
-  if false then flog(string.format("  .. f %d %s %s | hp %02x last %02x hs %02x inv5b %02x 1f %02x 22 %02x 4a %02x 54c %02x sim %02x pc-lastfc %02x stun %02x", f, phase, st(), r(0x45), r(0x125), r(0x126), r(0x5B), r(0x1F), r(0x22), r(0x4A), r(0x54C), r(0x1BE), r(0x1A), r(0x47))) end
   local mode, aux = r(0x18), r(0x19)
   local inplay = mode == 5 and aux == 6
   ringi = ringi + 1
@@ -134,7 +131,7 @@ FRAME = function(f)
   end
   if mode == 0x0D then return end
 
-  if nmis == nmiSeen and f > 5 then finding("nonmi") end
+  if nmis == nmiSeen and f > 5 and mode == 5 and aux == 6 then finding("nonmi") end
   nmiSeen = nmis
 
   if phase == "warp" then
@@ -227,7 +224,7 @@ FRAME = function(f)
   local a, stat, px, py, scr = r(0x46C), r(0x100), x(), r(0x124), scroll()
   if last.x then
     if math.abs(px - last.x) > 5 then finding("xjump", string.format("%04x to %04x", last.x, px)) end
-    if math.abs(py - last.y) > 12 then finding("yjump", string.format("%02x to %02x", last.y, py)) end
+    if math.abs(py - last.y) > 14 and a ~= 8 then finding("yjump", string.format("%02x to %02x", last.y, py)) end
     if math.abs(scr - last.scr) > 4 then finding("scrolljump", string.format("%04x to %04x", last.scr, scr)) end
   end
   last.x, last.y, last.scr = px, py, scr

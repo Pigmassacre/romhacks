@@ -81,7 +81,6 @@ FRAME = function(f)
     if f > t0 + 3000 then log("couldn't walk in: " .. st()); phase = "next" end
   end
   if phase == "land" and f == t0 + 25 then phase = "press"; t0 = f; maxds, maxdx, maxoff, lx, ls, climbed = 0, 0, 0, x(), scroll(), false; runs = runs + 1 end
-  if phase == "press" and os.getenv("ST_TRACE") and (f-t0)%6==0 and f-t0<400 then log(string.format("  %d %s dir %02x sy %02x cvx %02x%02x", f-t0, st(), r(0x3C), r(0x354), r(0x41), r(0x40))) end
   if phase == "press" then
     local a, m = r(0x46C), r(0x18)
     if a == 4 then climbed = true end
