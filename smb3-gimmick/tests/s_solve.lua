@@ -7,6 +7,7 @@
 --   SOLVE_LEVELS=a,b,c  the levels (default: every area of out/levels.txt)
 --   SOLVE_FRAMES=n      frames to spend on each level
 --   SOLVE_SEED=n        the random sequence
+--   SOLVE_RIDES=n       percent of tries that ride a star, for levels with walls to get over
 local names = {}
 for n in (os.getenv("SOLVE_LEVELS") or ""):gmatch("[^,]+") do names[#names + 1] = n end
 if #names == 0 then for _, l in ipairs(levels()) do names[#names + 1] = l.name end end
@@ -61,7 +62,9 @@ local function findway()
   return best
 end
 
+local RIDES = tonumber(os.getenv("SOLVE_RIDES") or "0")
 local function macro()
+  if math.random(100) <= RIDES then return "ride" end
   local card, foe = target()
   if math.random(100) <= 12 then
     local way = findway()
