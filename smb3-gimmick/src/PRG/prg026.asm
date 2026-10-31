@@ -895,27 +895,27 @@ InvItem_PerPowerUp_Disp:
 	; See also PRG027 InitPals_Per_MapPUp
 InvItem_PerPowerUp_Palette:
 	; Mario
-	.byte $16, $36, $0F, $FF	; "Empty Slot" (shouldn't ever be used)
-	.byte $16, $36, $0F, $FF	; Super Mushroom 
-	.byte $27, $36, $16, $FF	; Fire Flower
-	.byte $16, $36, $0F, $FF	; Leaf
-	.byte $2A, $36, $0F, $FF	; Frog Suit
-	.byte $17, $36, $0F, $FF	; Tanooki Suit
-	.byte $30, $36, $0F, $FF	; Hammer Suit
+	.byte $0B, $2A, $30, $FF	; "Empty Slot" (shouldn't ever be used)
+	.byte $0B, $2A, $30, $FF	; Super Mushroom 
+	.byte $0B, $2A, $30, $FF	; Fire Flower
+	.byte $0B, $2A, $30, $FF	; Leaf
+	.byte $0B, $2A, $30, $FF	; Frog Suit
+	.byte $0B, $2A, $30, $FF	; Tanooki Suit
+	.byte $0B, $2A, $30, $FF	; Hammer Suit
 	.byte $30, $36, $0F, $FF	; Judgems Cloud
-	.byte $16, $36, $0F, $FF	; P-Wing
+	.byte $0B, $2A, $30, $FF	; P-Wing
 
 InvItem_PerPowerUp_Palette2:
 	; Luigi
-	.byte $1A, $36, $0F, $FF	; "Empty Slot" (shouldn't ever be used)
-	.byte $1A, $36, $0F, $FF	; Super Mushroom
-	.byte $27, $36, $16, $FF	; Fire Flower
-	.byte $1A, $36, $0F, $FF	; Leaf
-	.byte $2A, $36, $0F, $FF	; Frog Suit
-	.byte $17, $36, $0F, $FF	; Tanooki Suit
-	.byte $30, $36, $0F, $FF	; Hammer Suit
+	.byte $0B, $2A, $30, $FF	; "Empty Slot" (shouldn't ever be used)
+	.byte $0B, $2A, $30, $FF	; Super Mushroom
+	.byte $0B, $2A, $30, $FF	; Fire Flower
+	.byte $0B, $2A, $30, $FF	; Leaf
+	.byte $0B, $2A, $30, $FF	; Frog Suit
+	.byte $0B, $2A, $30, $FF	; Tanooki Suit
+	.byte $0B, $2A, $30, $FF	; Hammer Suit
 	.byte $30, $36, $0F, $FF	; Judgems Cloud
-	.byte $1A, $36, $0F		; P-Wing (note lack of 4th byte)
+	.byte $0B, $2A, $30		; P-Wing (note lack of 4th byte)
 
 
 Inv_UseItem_Powerup:
@@ -961,17 +961,18 @@ PRG026_A5D9:
 
 	LDA InvItem_PerPowerUp_Disp,X	; Store proper power-up to display -> A
 	LDX Player_Current	 	; X = Player_Current
-	STA Map_Power_Disp	 	; Power-up to display -> Map_Power_Disp
 
 	CMP #$07
-	BEQ PRG026_A60B	 		; If Map_Power_Disp = $07 (Judgem's Cloud), jump to PRG026_A60B (does NOT update Player's map power!)
+	BNE PRG026_GimItem	 	; If not Judgem's Cloud, jump to PRG026_GimItem
+	STA Map_Power_Disp	 	; Power-up to display -> Map_Power_Disp
+	JMP PRG026_A60B
 
-	CMP #$08	 
-	BNE PRG026_A608	 		; If Map_Power_Disp <> $08 (P-Wing), jump to PRG026_A608
-	LDA #$03	 		; For P-Wing, "Map Power Up" is set as Leaf
-
-PRG026_A608:
-	STA World_Map_Power,X	 	; Update appropriate player's "Map Power Up"
+PRG026_GimItem:
+	; Yumetaro wears no suits: a power-up from the inventory raises his health instead
+	LDA Gim_MaxHealth,X
+	CMP #GIM_HEALTHCAP
+	BGE PRG026_A60B
+	INC Gim_MaxHealth,X
 
 PRG026_A60B:
 	LDA #$14	 
@@ -3217,6 +3218,15 @@ PRG026_B242:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	; Shows Yumetaro's health: glowing '>' per health point, dark '>' up to max, last point blinks
 StatusBar_Fill_PowerMT:
+	LDX Player_Current
+	LDA Gim_MaxHealth,X
+	STA <Temp_Var14
+
+	; Health is full at the start of every level, and it's that the map shows
+	STA <Temp_Var15
+	LDA Level_Tileset
+	BEQ PRG026_HealthShown
+
 	LDA Gim_Health
 	STA <Temp_Var15
 	CMP #$02
@@ -3233,7 +3243,7 @@ PRG026_B25C:
 	CPY <Temp_Var15
 	BLT PRG026_B267
 	LDA #$ef
-	CPY Gim_MaxHealth
+	CPY <Temp_Var14
 	BLT PRG026_B267
 	LDA #$fe
 PRG026_B267:
@@ -3243,9 +3253,8 @@ PRG026_B267:
 	BNE PRG026_B25C
 
 	LDA #$3c
-	STA StatusBar_PMT,Y	; Store left half [P] tile as decided
-	INX		 	; X++
-	TXA		 	; A =X
+	STA StatusBar_PMT,Y	; Store left half of the dark [P] tile
+	LDA #$3d
 	STA StatusBar_PMT+1,Y	; And the right half
 
 PRG026_B292:

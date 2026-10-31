@@ -30,18 +30,20 @@ Gim_PowerUp:
 	BLT Gim_PowerUpRTS
 	BEQ Gim_PowerUpHeal
 
-	LDA Gim_MaxHealth
+	LDX Player_Current
+	LDA Gim_MaxHealth,X
 	CMP #GIM_HEALTHCAP
 	BGE Gim_PowerUpFull
-	INC Gim_MaxHealth
+	INC Gim_MaxHealth,X
 Gim_PowerUpFull:
-	LDA Gim_MaxHealth
+	LDA Gim_MaxHealth,X
 	STA Gim_Health
 	RTS
 
 Gim_PowerUpHeal:
+	LDX Player_Current
 	LDA Gim_Health
-	CMP Gim_MaxHealth
+	CMP Gim_MaxHealth,X
 	BGE Gim_PowerUpRTS
 	INC Gim_Health
 Gim_PowerUpRTS:
@@ -78,12 +80,53 @@ Gim_StandOnEnemy:
 	LDA <Player_XHi
 	ADC <Temp_Var2
 	STA <Player_XHi
+	LDA <Temp_Var2
+	JSR Gim_RideClamp
 
 Gim_StandStore:
 	LDA <Objects_X,X
 	STA Gim_RideX
 	LDA <Objects_XHi,X
 	STA Gim_RideXHi
+	RTS
+
+	; A = high byte of how far a ride just carried Yumetaro. Walking stops at 16 from the left of the screen and
+	; 232 from its right, but only when walking that way: a ride past them would count as crushed off the screen
+Gim_RideClamp:
+	BMI Gim_RideClampLeft
+	LDA <Player_X
+	SUB <Horz_Scroll
+	STA <Temp_Var1
+	LDA <Player_XHi
+	SBC <Horz_Scroll_Hi
+	BMI Gim_RideClampRTS
+	BNE Gim_RideClampRight
+	LDA <Temp_Var1
+	CMP #233
+	BLT Gim_RideClampRTS
+Gim_RideClampRight:
+	LDA #232
+	BNE Gim_RideClampSet
+Gim_RideClampLeft:
+	LDA <Player_X
+	SUB <Horz_Scroll
+	STA <Temp_Var1
+	LDA <Player_XHi
+	SBC <Horz_Scroll_Hi
+	BMI Gim_RideClampLow
+	BNE Gim_RideClampRTS
+	LDA <Temp_Var1
+	CMP #16
+	BGE Gim_RideClampRTS
+Gim_RideClampLow:
+	LDA #16
+Gim_RideClampSet:
+	ADD <Horz_Scroll
+	STA <Player_X
+	LDA <Horz_Scroll_Hi
+	ADC #0
+	STA <Player_XHi
+Gim_RideClampRTS:
 	RTS
 
 Gim_RideRotate:
@@ -292,6 +335,8 @@ Gim_CannonCarry:
 	TYA
 	ADC <Player_XHi
 	STA <Player_XHi
+	TYA
+	JSR Gim_RideClamp
 
 Gim_CannonStore:
 	LDA SpecialObj_XLo,X
@@ -316,7 +361,8 @@ Gim_LevelInit:
 	STA Gim_RideSlot
 	STA Gim_RideSlotNew
 	STA Star_State
-	LDA Gim_MaxHealth
+	LDX Player_Current
+	LDA Gim_MaxHealth,X
 	STA Gim_Health
 	RTS
 

@@ -348,26 +348,45 @@ Gim_StarGravity:
 
 	JSR Gim_StarFloors
 
+	LDA Level_7Vertical
+	BNE Gim_StarVertY
 	LDA Star_YHi
 	BMI Gim_StarYOK
 	BEQ Gim_StarYOK
-	LDA Level_7Vertical
-	BNE Gim_StarYOK
 	LDA Star_Y
 	CMP #$C0
 	BLT Gim_StarYOK
+Gim_StarGone:
 	LDA #$00
 	STA Star_State
 	RTS
+
+	; A vertical level has screens of floors below this one: past the bottom of the screen, it's gone
+Gim_StarVertY:
+	LDA Star_Y
+	SUB Level_VertScroll
+	STA <Temp_Var1
+	LDA Star_YHi
+	SBC Level_VertScrollH
+	BMI Gim_StarYOK
+	BNE Gim_StarGone
+	LDA <Temp_Var1
+	CMP #$D0
+	BGE Gim_StarGone
 Gim_StarYOK:
 
+	; It leaves the screen on the left only once it's wholly past the edge, as on the right
 	LDA Star_X
 	SUB <Horz_Scroll
+	STA <Temp_Var1
 	LDA Star_XHi
 	SBC <Horz_Scroll_Hi
 	BEQ Gim_StarXOK
-	LDA #$00
-	STA Star_State
+	CMP #$FF
+	BNE Gim_StarGone
+	LDA <Temp_Var1
+	CMP #$F0
+	BLT Gim_StarGone
 Gim_StarXOK:
 	RTS
 
@@ -717,6 +736,7 @@ Gim_TileSolidTop:
 	; Tile at Temp_Var13/14 (Y), Temp_Var15/16 (X) -> A, quadrant -> Y
 Gim_TileAt:
 	LDA <Temp_Var13
+	ORA <Temp_Var15
 	BMI Gim_TileAir
 	LDA Level_7Vertical
 	BNE Gim_TileVert
@@ -1028,12 +1048,17 @@ Gim_StarRideFront:
 	STA <Temp_Var2
 	JSR Gim_PlayerSetPoint
 	JSR Gim_RiderSolid
-	BCC Gim_StarRideOn
+	BCC Gim_StarRideClamp
 Gim_StarRideBlocked:
 	LDA <Temp_Var7
 	STA <Player_X
 	LDA <Temp_Var8
 	STA <Player_XHi
+	JMP Gim_StarRideOn
+
+Gim_StarRideClamp:
+	LDA <Temp_Var6
+	JSR Gim_RideClamp
 
 Gim_StarRideOn:
 	LDA #$01

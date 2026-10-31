@@ -526,6 +526,7 @@ PRG030_845A:
 	JSR Do_Title_Screen	; Do the title screen!
 	LDA #GIM_STARTHEALTH
 	STA Gim_MaxHealth
+	STA Gim_MaxHealth+1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; BEGINNING INITIALIZATION OF WORLD MAP!
@@ -3142,7 +3143,7 @@ PRG030_92B6:
 	LDA #$04
 	STA Player_Lives,X
 	LDA #GIM_STARTHEALTH
-	STA Gim_MaxHealth
+	STA Gim_MaxHealth,X
 
 	; Set up position variables
 	LDA <Horz_Scroll
