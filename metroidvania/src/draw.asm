@@ -20,6 +20,7 @@ DrawAll:
         beq @game               ; the attract demo: Samus plays it
         cmp #4
         bcs @notTitle
+        jsr PutTitle
         jsr NewGame             ; the title
         jsr HideHud             ; (the demo left it up)
         clc

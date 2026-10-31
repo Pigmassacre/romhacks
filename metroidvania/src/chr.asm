@@ -173,3 +173,104 @@ RestoreFont:
         bne @copy
 @rts:
         rts
+
+; The title (src/title.asm, from the title editor). Castlevania draws its own
+; first: its update buffer goes in on the frame after it sets the title up. Its
+; screen stays off for a few frames, so this goes in on each of them, and the
+; last one is what shows. Its flashing PUSH START KEY writes the same tiles.
+PutTitle:
+        lda GameMode
+        cmp #1
+        beq @title
+@rts:
+        rts
+@title:
+        lda $1F
+        beq @rts
+        lda $FF                 ; increment by 1, and no NMI: this may run late
+        and #$78
+        sta $2000
+        lda #<TitleTiles
+        sta Ptr
+        lda #>TitleTiles
+        sta Ptr+1
+        ldx #TITLE_TILES
+@tile:
+        ldy #0                  ; the tile's number, then its 16 bytes
+        lda (Ptr),y
+        lsr
+        lsr
+        lsr
+        lsr
+        ora #>$1000
+        sta Temp0
+        lda (Ptr),y
+        asl
+        asl
+        asl
+        asl
+        tay
+        txa
+        pha
+        tya
+        tax
+        lda Temp0
+        jsr PpuAddr
+        ldy #1
+@byte:
+        lda (Ptr),y
+        sta $2007
+        iny
+        cpy #17
+        bne @byte
+        pla
+        tax
+        lda Ptr
+        clc
+        adc #17
+        sta Ptr
+        bcc @next
+        inc Ptr+1
+@next:
+        dex
+        bne @tile
+        lda #<TitleCells
+        sta Ptr
+        lda #>TitleCells
+        sta Ptr+1
+        lda #TITLE_CELLS
+        sta Temp1
+@cell:
+        ldy #0
+        lda (Ptr),y
+        iny
+        pha
+        lda (Ptr),y
+        tax
+        pla
+        jsr PpuAddr
+        iny
+        lda (Ptr),y
+        sta $2007
+        lda Ptr
+        clc
+        adc #3
+        sta Ptr
+        bcc @cellNext
+        inc Ptr+1
+@cellNext:
+        dec Temp1
+        bne @cell
+        lda #>$23C0
+        ldx #<$23C0
+        jsr PpuAddr
+        ldx #0
+@attr:
+        lda TitleAttrs,x
+        sta $2007
+        inx
+        cpx #64
+        bne @attr
+        lda $FF
+        sta $2000
+        rts

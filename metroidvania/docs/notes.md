@@ -87,6 +87,10 @@ Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type 
 
 Items and dropped weapons are drawn with background-table tiles (odd tile numbers, in 8x16 mode).
 
+### The title
+
+Castlevania draws its title with its update buffer, on the frame after mode 0 sets it up, and then keeps the screen off a few frames (`$1F`). While it does, `PutTitle` puts in what differs: 46 new tiles, in numbers the design no longer uses, 79 cells and the attributes. Tiles it already has keep their numbers, because the flashing PUSH START KEY writes those numbers to the name table itself. The big C's body is two sprite objects, slots 1 and 2, whose poses are set at `$AEC7` and `$AED6`. The tiles are all reloaded with each stage, so nothing carries over.
+
 ### The status bar split
 
 Sprite 0 (`$C13B`, written by `$C13F` from the split) sits on the status bar; `$F87D` waits for its hit, waits 221 cycles more, and writes the scroll, at about line 40. Both waits give up after 256 tries, so the game doesn't hang without a hit. Every status bar write goes through the update buffer at `$0700` (entries: increment, address, data, `$FF`; a `$FF` followed by a byte of 3 or more is a literal `$FF`). `ClearSpriteUpdateList` (`$CCEE`), at the end of each NMI, writes a 0 at the buffer's end and moves past it, so `$20` is one past that 0.

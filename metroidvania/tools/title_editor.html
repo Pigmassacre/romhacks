@@ -1,0 +1,522 @@
+<title>Metroidvania Title Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* A dark service bench for a CRT: the screen in the middle, tools on one side, the NES's budgets on the other. One deliberate dark look. */
+:root {
+  --ground: #14131b; --panel: #1e1c29; --raised: #2a2738; --line: #3b3750;
+  --text: #ece8f4; --dim: #a7a1bb; --blue: #5fa8ff; --red: #f0616d; --good: #6fd08c; --warn: #ffc857;
+  --display: "Pixelify Sans", "IBM Plex Mono", monospace;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--ground); color: var(--text); font: 14px/1.45 var(--body); padding-block: 14px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 12px; }
+h1 { font: 700 26px/1.1 var(--display); margin: 0; letter-spacing: .01em; }
+h1 b { color: var(--blue); font-weight: 700; } h1 i { color: var(--red); font-style: normal; }
+#status { font: 12px var(--mono); color: var(--dim); }
+.app { display: grid; grid-template-columns: 76px minmax(0, 1fr) 312px; gap: 12px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+h2 { font: 600 11px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+button, select, input[type=text], input[type=number] { font: 13px var(--body); color: var(--text); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; }
+button { cursor: pointer; } button:hover { border-color: var(--dim); }
+button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid var(--warn); outline-offset: 1px; }
+button.on { background: var(--blue); color: #08142a; border-color: var(--blue); font-weight: 600; }
+.rail { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+.rail button { padding: 7px 2px; font-size: 12px; line-height: 1.15; width: 100%; }
+.rail kbd { display: block; font: 10px var(--mono); opacity: .7; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row + .row, .row + p, p + .row { margin-top: 8px; }
+label { font-size: 12.5px; color: var(--dim); display: inline-flex; gap: 5px; align-items: center; }
+p { margin: 0; color: var(--dim); font-size: 12.5px; }
+p + p { margin-top: 6px; }
+.tabs button { flex: 1 1 auto; }
+#view { position: relative; overflow: auto; background: #000; border: 1px solid var(--line); border-radius: 4px; max-height: 76vh; max-width: 100%; }
+#stage { position: relative; }
+#stage canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; display: block; }
+#over { touch-action: none; cursor: crosshair; }
+.below { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 8px; }
+#pos { font: 12px var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.meter { height: 10px; background: var(--raised); border-radius: 2px; overflow: hidden; margin: 6px 0; }
+.meter i { display: block; height: 100%; background: var(--good); }
+.big { font: 700 24px var(--display); font-variant-numeric: tabular-nums; color: var(--text); }
+.pals { display: grid; gap: 4px; }
+.pal { display: flex; align-items: center; gap: 3px; border: 1px solid transparent; border-radius: 4px; padding: 3px; cursor: pointer; }
+.pal.on { border-color: var(--warn); background: var(--raised); }
+.pal span { font: 11px var(--mono); color: var(--dim); width: 18px; }
+.chip { width: 34px; height: 26px; border: 2px solid transparent; border-radius: 3px; padding: 0; font: 10px var(--mono); color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000; }
+.chip.cur { border-color: #fff; }
+#nes { display: grid; grid-template-columns: repeat(14, 1fr); gap: 1px; margin-top: 8px; }
+#nes button { aspect-ratio: 1; padding: 0; border: 0; border-radius: 0; min-width: 0; }
+#nes button:hover { outline: 2px solid #fff; z-index: 1; position: relative; }
+.ideas { display: grid; gap: 6px; }
+.ideas button { text-align: left; padding: 7px 9px; }
+.ideas b { display: block; font-weight: 600; }
+.ideas small { color: var(--dim); font-size: 12px; }
+#thumb { width: 128px; height: 120px; image-rendering: pixelated; background: #000; border: 1px solid var(--line); }
+input[type=text] { min-width: 0; flex: 1 1 110px; }
+input[type=number] { width: 62px; }
+input[type=file] { display: none; }
+code { font: 12px var(--mono); color: var(--text); }
+@media (max-width: 980px) {
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .rail { flex-direction: row; flex-wrap: wrap; }
+  .rail button { width: auto; flex: 1 1 62px; }
+}
+</style>
+
+<header>
+  <h1><b>Metroid</b><i>vania</i> title bench</h1>
+  <span id="status">Starting…</span>
+</header>
+<div class="app">
+  <nav class="panel rail" id="tools" aria-label="Tools"></nav>
+  <main class="panel" style="min-width:0">
+    <div class="row tabs" id="pages" style="margin-bottom:8px"></div>
+    <div id="view"><div id="stage"><canvas id="screen" width="256" height="240"></canvas><canvas id="over"></canvas></div></div>
+    <div class="below">
+      <span id="pos">x – y –</span>
+      <div class="row">
+        <button id="undo" title="Ctrl+Z">Undo</button><button id="redo" title="Ctrl+Y">Redo</button>
+        <label>Zoom <select id="zoom"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>6</option><option>8</option></select></label>
+        <label><input type="checkbox" id="gTile" checked> 8×8</label>
+        <label><input type="checkbox" id="gBlock"> 16×16</label>
+        <label><input type="checkbox" id="gSafe" checked> TV edge</label>
+        <label><input type="checkbox" id="gBat" checked> Bat</label>
+        <label title="Tiles used only once: redraw these to save budget"><input type="checkbox" id="gOnce"> One-off tiles</label>
+      </div>
+    </div>
+    <div class="row" id="selbar" style="margin-top:8px" hidden>
+      <span style="font-size:12.5px;color:var(--dim)" id="selinfo"></span>
+      <button id="sCopy">Copy</button><button id="sCut">Cut</button><button id="sDel">Delete</button>
+      <button id="sPaste">Paste</button><button id="sFlipH">Flip ↔</button><button id="sFlipV">Flip ↕</button>
+      <label>Scale <select id="sScale"><option value="">…</option><option value="0.75">75%</option><option value="0.66">66%</option><option value="0.5">50%</option><option value="1.5">150%</option><option value="2">200%</option></select></label>
+      <button id="sDone">Place</button>
+      <label><input type="checkbox" id="sSnap" checked> Snap to 8×8</label>
+      <label><input type="checkbox" id="sClear" checked> Colour 0 is see-through</label>
+    </div>
+  </main>
+  <aside class="side">
+    <section class="panel">
+      <h2>Tile budget</h2>
+      <div><span class="big" id="tcount">0</span> <span style="color:var(--dim)">of 256 tiles</span></div>
+      <div class="meter"><i id="tbar"></i></div>
+      <p id="tnote"></p>
+    </section>
+    <section class="panel">
+      <h2>Palettes</h2>
+      <div class="pals" id="pals"></div>
+      <p style="margin-top:6px">Each 16×16 block uses one palette, and all share colour 0. Pick a slot, then a colour below to change it.</p>
+      <div id="nes"></div>
+      <div class="row"><label><input type="checkbox" id="lockB"> Don't change a block's palette while drawing</label></div>
+    </section>
+    <section class="panel">
+      <h2>Text</h2>
+      <div class="row"><input type="text" id="txt" value="PUSH START KEY" aria-label="Text to place"><label>Size <select id="txtS"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><button id="txtGo">Place</button></div>
+      <p>Uses the current colour. Drag it where you want, then press Place.</p>
+    </section>
+    <section class="panel">
+      <h2>Bring in an image</h2>
+      <div class="row"><button id="imgBtn">Choose image…</button><input type="file" id="imgFile" accept="image/*"></div>
+      <div class="row">
+        <button id="imgConvert" disabled>Convert to pixels</button><button id="imgTrace" disabled>Trace over it</button><button id="imgOff">Hide tracing</button>
+      </div>
+      <div class="row"><label><input type="checkbox" id="imgPal" checked> Take palettes from the image</label><label>Tracing <input type="range" id="imgA" min="10" max="90" value="45" style="width:80px" aria-label="Tracing opacity"></label></div>
+      <p id="imgNote">Open a Scrap page first, then convert a 256×240 emulator screenshot there. Logos come through well; fine text may need touching up. Select a piece, Copy it, go to Title and Paste. Your images stay in this browser.</p>
+    </section>
+    <section class="panel">
+      <h2>Starting ideas</h2>
+      <div class="ideas">
+        <button id="rCv" disabled><b>Castlevania's title</b><small>The real screen, tile for tile. The big C and the bat are sprites, so they aren't here.</small></button>
+        <button id="rMet" disabled><b>Metroid's title</b><small>The real logo. Open it on a Scrap page to copy pieces from it.</small></button>
+        <button id="i0"><b>Stacked</b><small>Blue METROID over red VANIA. The O is a metroid, the T a cross.</small></button>
+        <button id="i1"><b>One word, one whip</b><small>METROIDVANIA in a single line, with a whip cracking under it.</small></button>
+        <button id="i2"><b>Castle on the planet</b><small>Zebes's sky and ground, with Dracula's castle standing on it.</small></button>
+      </div>
+      <p style="margin-top:6px">Each replaces this page. Undo brings it back.</p>
+    </section>
+    <section class="panel">
+      <h2>Your design</h2>
+      <div class="row"><canvas id="thumb" width="256" height="240" aria-label="Title page at game scale"></canvas><p style="flex:1 1 120px" id="saveNote">Saves as you draw. Tell Claude when it's ready; only the Title page goes in the game.</p></div>
+      <div class="row"><button id="dlJson">Save file</button><button id="dlPng">Save PNG</button><button id="openBtn">Open file…</button><input type="file" id="openFile" accept=".json,application/json"></div>
+    </section>
+  </aside>
+</div>
+
+<script>
+"use strict";
+const W = 256, H = 240, BW = 16, BH = 15;
+// The 2C02's colours, by NES colour number.
+const NES = "666666 002A88 1412A7 3B00A4 5C007E 6E0040 6C0600 561D00 333500 0B4800 005200 004F08 00404D 000000 000000 000000 ADADAD 155FD9 4240FF 7527FE A01ACC B71E7B B53120 994E00 6B6D00 388700 0C9300 008F32 007C8D 000000 000000 000000 FFFEFF 64B0FF 9290FF C676FF F36AFF FE6ECC FE8170 EA9E22 BCBE00 88D800 5CE430 45E082 48CDDE 4F4F4F 000000 000000 FFFEFF C0DFFF D3D2FF E8C8FF FBC2FF FEC4EA FECCC5 F7D8A5 E4E594 CFEF96 BDF4AB B3F3CC B5EBF2 B8B8B8 000000 000000".split(" ");
+const RGB = NES.map(h => [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)]);
+const USABLE = []; for (let i = 0; i < 64; i++) if (![0x0D,0x0E,0x1D,0x1E,0x1F,0x2E,0x2F,0x3E,0x3F].includes(i)) USABLE.push(i);
+const $ = id => document.getElementById(id);
+
+// ---- state: three pages, each pixels of 0-3 and a palette per 16x16 block
+function newPage(name) { return { name, px: new Uint8Array(W*H), attr: new Uint8Array(BW*BH), backdrop: 0x0F, pals: [[0x01,0x11,0x21],[0x06,0x16,0x27],[0x00,0x10,0x30],[0x08,0x18,0x28]] }; }
+const pages = [newPage("Title"), newPage("Scrap 1"), newPage("Scrap 2")];
+let page = pages[0], pageI = 0;
+let tool = "pen", colour = 3, selPal = 0, slot = 3;
+let clip = null, sel = null, float = null, ghost = null, ghostOn = false, importImg = null;
+let undoS = [], redoS = [], zoom = 3, tilesUsed = 0, onceTiles = [];
+let drag = null, hover = null;
+
+function snap() { return { i: pageI, px: page.px.slice(), attr: page.attr.slice(), backdrop: page.backdrop, pals: page.pals.map(p => p.slice()) }; }
+function restore(s) { pageI = s.i; page = pages[pageI]; page.px = s.px; page.attr = s.attr; page.backdrop = s.backdrop; page.pals = s.pals; }
+function pushUndo() { undoS.push(snap()); if (undoS.length > 60) undoS.shift(); redoS = []; }
+function undo() { if (!undoS.length) return; redoS.push(snap()); restore(undoS.pop()); float = null; sel = null; changed(); }
+function redo() { if (!redoS.length) return; undoS.push(snap()); restore(redoS.pop()); float = null; sel = null; changed(); }
+
+// ---- drawing primitives
+function setPx(x, y, v) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  page.px[y*W+x] = v;
+  if (v && !$("lockB").checked) page.attr[(y>>4)*BW+(x>>4)] = selPal;
+}
+function line(x0, y0, x1, y1, f) {
+  const dx = Math.abs(x1-x0), dy = -Math.abs(y1-y0), sx = x0<x1?1:-1, sy = y0<y1?1:-1; let e = dx+dy;
+  for (;;) { f(x0,y0); if (x0===x1 && y0===y1) break; const e2 = 2*e; if (e2>=dy) { e+=dy; x0+=sx; } if (e2<=dx) { e+=dx; y0+=sy; } }
+}
+function fill(x, y, v) {
+  const from = page.px[y*W+x]; if (from === v) { return; }
+  const st = [[x,y]];
+  while (st.length) { const [a,b] = st.pop(); if (a<0||b<0||a>=W||b>=H||page.px[b*W+a]!==from) continue; setPx(a,b,v); page.px[b*W+a]=v; st.push([a+1,b],[a-1,b],[a,b+1],[a,b-1]); }
+}
+
+// ---- rendering
+const sc = $("screen").getContext("2d"), img = sc.createImageData(W, H);
+function colourOf(p, x, y) {
+  const v = p.px[y*W+x];
+  return v ? p.pals[p.attr[(y>>4)*BW+(x>>4)]][v-1] : p.backdrop;
+}
+function drawScreen(ctx, target, p) {
+  const d = target.data;
+  for (let y=0, o=0; y<H; y++) for (let x=0; x<W; x++, o+=4) { const c = RGB[colourOf(p,x,y)]; d[o]=c[0]; d[o+1]=c[1]; d[o+2]=c[2]; d[o+3]=255; }
+  ctx.putImageData(target, 0, 0);
+}
+function drawOver() {
+  const c = $("over"), g = c.getContext("2d"), z = zoom;
+  g.clearRect(0,0,c.width,c.height);
+  if (ghost && ghostOn) { g.globalAlpha = $("imgA").value/100; g.imageSmoothingEnabled = false; g.drawImage(ghost, 0, 0, ghost.width*z, ghost.height*z); g.globalAlpha = 1; }
+  if (float) {
+    for (let j=0;j<float.h;j++) for (let i=0;i<float.w;i++) {
+      const v = float.px[j*float.w+i]; if (!v && $("sClear").checked) continue;
+      const x = float.x+i, y = float.y+j; if (x<0||y<0||x>=W||y>=H) continue;
+      const pi = float.attr ? float.attr[j*float.w+i] : selPal; const rgb = RGB[v ? page.pals[pi][v-1] : page.backdrop];
+      g.fillStyle = `rgb(${rgb})`; g.fillRect(x*z,y*z,z,z);
+    }
+    g.strokeStyle = "#ffc857"; g.setLineDash([4,3]); g.strokeRect(float.x*z+.5,float.y*z+.5,float.w*z,float.h*z); g.setLineDash([]);
+  }
+  if ($("gOnce").checked && pageI===0) { g.fillStyle = "rgba(240,97,109,.28)"; for (const t of onceTiles) g.fillRect((t%32)*8*z,(t>>5)*8*z,8*z,8*z); }
+  if ($("gTile").checked && z>=2) { g.strokeStyle = "rgba(255,255,255,.09)"; g.beginPath(); for (let x=8;x<W;x+=8) { g.moveTo(x*z+.5,0); g.lineTo(x*z+.5,H*z); } for (let y=8;y<H;y+=8) { g.moveTo(0,y*z+.5); g.lineTo(W*z,y*z+.5); } g.stroke(); }
+  if ($("gBlock").checked) { g.strokeStyle = "rgba(95,168,255,.55)"; g.beginPath(); for (let x=16;x<W;x+=16) { g.moveTo(x*z+.5,0); g.lineTo(x*z+.5,H*z); } for (let y=16;y<H;y+=16) { g.moveTo(0,y*z+.5); g.lineTo(W*z,y*z+.5); } g.stroke(); }
+  if ($("gSafe").checked) { g.fillStyle = "rgba(0,0,0,.45)"; g.fillRect(0,0,W*z,8*z); g.fillRect(0,(H-8)*z,W*z,8*z); }
+  if ($("gBat").checked && pageI===0) { g.strokeStyle = "#ffc857"; g.setLineDash([3,3]); g.strokeRect(184*z+.5,102*z+.5,32*z,32*z); g.setLineDash([]); g.fillStyle = "#ffc857"; g.font = "11px IBM Plex Mono, monospace"; g.fillText("bat lands", 184*z, 102*z-3); }
+  if (sel) { g.strokeStyle = "#fff"; g.setLineDash([4,3]); g.strokeRect(sel.x*z+.5,sel.y*z+.5,sel.w*z,sel.h*z); g.setLineDash([]); }
+  if (hover && !float) { g.strokeStyle = "rgba(255,255,255,.7)"; if (tool==="block") g.strokeRect((hover.x&~15)*z+.5,(hover.y&~15)*z+.5,16*z,16*z); else g.strokeRect(hover.x*z+.5,hover.y*z+.5,z,z); }
+}
+
+// ---- tiles: what the NES would store
+function buildTiles(p) {
+  const map = new Map(), nt = new Array(960), count = new Array(960).fill(0), tiles = [];
+  for (let t=0;t<960;t++) {
+    const tx=(t%32)*8, ty=(t>>5)*8; let s="";
+    let hi="";
+    for (let y=0;y<8;y++) { let a=0,b=0; for (let x=0;x<8;x++) { const v=p.px[(ty+y)*W+tx+x]; a=a*2+(v&1); b=b*2+(v>>1); } s+=a.toString(16).padStart(2,"0"); hi+=b.toString(16).padStart(2,"0"); }
+    const key=s+hi; let n=map.get(key); if (n===undefined) { n=tiles.length; map.set(key,n); tiles.push(key); } nt[t]=n; count[n]++;
+  }
+  const once=[]; for (let t=0;t<960;t++) if (count[nt[t]]===1) once.push(t);
+  return { tiles, nt, once };
+}
+function updateBudget() {
+  const b = buildTiles(pages[0]); tilesUsed = b.tiles.length; onceTiles = b.once;
+  $("tcount").textContent = tilesUsed; const over = tilesUsed>256;
+  const bar = $("tbar"); bar.style.width = Math.min(100,tilesUsed/2.56)+"%"; bar.style.background = over?"var(--red)":tilesUsed>230?"var(--warn)":"var(--good)";
+  $("tcount").style.color = over?"var(--red)":"";
+  $("tnote").textContent = over ? `${tilesUsed-256} over. It won't fit until tiles repeat more. Turn on One-off tiles to see where it costs most.` : `${256-tilesUsed} free. Repeated 8×8 tiles count once, so patterns on the 8×8 grid cost little. Castlevania's title uses 230, Metroid's 94.`;
+}
+
+// ---- UI
+const TOOLS = [["pen","Pen","P"],["fill","Fill","F"],["line","Line","L"],["box","Box","R"],["pick","Pick","I"],["block","Block","K"],["select","Select","S"]];
+function buildTools() {
+  $("tools").replaceChildren(...TOOLS.map(([id,n,k]) => { const b=document.createElement("button"); b.className=tool===id?"on":""; b.innerHTML=`${n}<kbd>${k}</kbd>`; b.title=`${n} (${k})`; b.onclick=()=>{commitFloat(); tool=id; sel=null; buildTools(); refresh();}; return b; }));
+}
+function buildPages() {
+  $("pages").replaceChildren(...pages.map((p,i)=>{ const b=document.createElement("button"); b.textContent=p.name; b.className=i===pageI?"on":""; b.onclick=()=>{commitFloat(); pageI=i; page=pages[i]; sel=null; changed(false);}; return b; }));
+}
+function textOn(c) { const r=RGB[c]; return (r[0]*.3+r[1]*.6+r[2]*.1)>120?"#000":"#fff"; }
+function buildPals() {
+  const root=$("pals"); root.replaceChildren();
+  page.pals.forEach((pal,pi)=>{
+    const row=document.createElement("div"); row.className="pal"+(pi===selPal?" on":""); row.onclick=()=>{selPal=pi; buildPals(); refresh();};
+    const l=document.createElement("span"); l.textContent=pi; row.append(l);
+    [page.backdrop,...pal].forEach((c,i)=>{ const b=document.createElement("button"); b.className="chip"+(pi===selPal&&colour===i?" cur":""); b.style.background="#"+NES[c]; b.style.color=textOn(c); b.textContent=c.toString(16).toUpperCase().padStart(2,"0"); b.title=i?`Colour ${i}`:"Colour 0, shared by all palettes"; b.onclick=e=>{e.stopPropagation(); selPal=pi; colour=i; slot=i; buildPals(); refresh();}; row.append(b); });
+    root.append(row);
+  });
+  const n=$("nes"); if (!n.children.length) USABLE.forEach(c=>{ const b=document.createElement("button"); b.style.background="#"+NES[c]; b.title="NES colour "+c.toString(16).toUpperCase().padStart(2,"0"); b.setAttribute("aria-label",b.title); b.onclick=()=>{ pushUndo(); if (slot===0) page.backdrop=c; else page.pals[selPal][slot-1]=c; changed(); }; n.append(b); });
+}
+function resize() {
+  const c=$("over"); c.width=W*zoom; c.height=H*zoom; c.style.width=c.width+"px"; c.style.height=c.height+"px";
+  const s=$("screen"); s.style.width=c.style.width; s.style.height=c.style.height; const st=$("stage"); st.style.width=c.style.width; st.style.height=c.style.height;
+}
+function refresh() { $("selbar").hidden = !(tool==="select"||float); $("selinfo").textContent = float?"Drag to move.":sel?`${sel.w}×${sel.h}`:"Drag to select."; drawOver(); }
+function changed(save=true) {
+  drawScreen(sc,img,page); buildPages(); buildPals(); updateBudget(); refresh();
+  const th=$("thumb").getContext("2d"), ti=th.createImageData(W,H); drawScreen(th,ti,pages[0]);
+  if (save) saveSoon();
+}
+
+// ---- floating pieces
+function makeFloat(px,w,h,x,y,attr) { float={px,w,h,x,y,attr:attr||null}; }
+function selRead(s) { const a=new Uint8Array(s.w*s.h), at=new Uint8Array(s.w*s.h); for (let j=0;j<s.h;j++) for (let i=0;i<s.w;i++) { const X=s.x+i,Y=s.y+j; a[j*s.w+i]=page.px[Y*W+X]; at[j*s.w+i]=page.attr[(Y>>4)*BW+(X>>4)]; } return {px:a,attr:at,w:s.w,h:s.h}; }
+function commitFloat() {
+  if (!float) return; if (!float.lifted) pushUndo();
+  const clear=$("sClear").checked;
+  for (let j=0;j<float.h;j++) for (let i=0;i<float.w;i++) {
+    const v=float.px[j*float.w+i]; if (!v&&clear) continue; const x=float.x+i,y=float.y+j; if (x<0||y<0||x>=W||y>=H) continue;
+    page.px[y*W+x]=v; if (v) page.attr[(y>>4)*BW+(x>>4)]=float.attr?float.attr[j*float.w+i]:selPal;
+  }
+  float=null; changed();
+}
+function delSel() { if (!sel) return; pushUndo(); for (let j=0;j<sel.h;j++) for (let i=0;i<sel.w;i++) page.px[(sel.y+j)*W+sel.x+i]=0; changed(); }
+function flip(h) {
+  const f=float||(sel?Object.assign(selRead(sel),{x:sel.x,y:sel.y}):null); if (!f) return;
+  if (!float) { delSel(); makeFloat(f.px,f.w,f.h,f.x,f.y,f.attr); float.lifted=true; }
+  const a=float.px.slice(), t=float.attr&&float.attr.slice();
+  for (let j=0;j<float.h;j++) for (let i=0;i<float.w;i++) { const I=h?float.w-1-i:i,J=h?j:float.h-1-j; float.px[J*float.w+I]=a[j*float.w+i]; if (t) float.attr[J*float.w+I]=t[j*float.w+i]; }
+  refresh();
+}
+$("sCopy").onclick=()=>{ if (sel) clip=selRead(sel); else if (float) clip={px:float.px.slice(),attr:float.attr&&float.attr.slice(),w:float.w,h:float.h}; };
+$("sCut").onclick=()=>{ if (sel) { clip=selRead(sel); delSel(); } };
+$("sDel").onclick=()=>{ if (float) { float=null; refresh(); } else delSel(); };
+$("sPaste").onclick=()=>{ if (clip) { commitFloat(); makeFloat(clip.px.slice(),clip.w,clip.h,8,8,clip.attr&&clip.attr.slice()); sel=null; if (tool!=="select") { tool="select"; buildTools(); } refresh(); } };
+$("sFlipH").onclick=()=>flip(true); $("sFlipV").onclick=()=>flip(false);
+$("sScale").onchange=e=>{
+  const k=+e.target.value; e.target.value=""; if (!k) return;
+  if (!float&&sel) { const s=selRead(sel); makeFloat(s.px,s.w,s.h,sel.x,sel.y,s.attr); float.lifted=true; delSelQuiet(); sel=null; }
+  if (!float) return;
+  const w=Math.max(1,Math.round(float.w*k)), h=Math.max(1,Math.round(float.h*k)), a=new Uint8Array(w*h), t=float.attr?new Uint8Array(w*h):null;
+  for (let j=0;j<h;j++) for (let i=0;i<w;i++) { const o=Math.min(float.h-1,Math.floor(j/k))*float.w+Math.min(float.w-1,Math.floor(i/k)); a[j*w+i]=float.px[o]; if (t) t[j*w+i]=float.attr[o]; }
+  float.px=a; float.attr=t; float.w=w; float.h=h; refresh();
+};
+$("sDone").onclick=()=>{ commitFloat(); sel=null; refresh(); };
+
+// ---- pointer
+const over=$("over");
+function at(e) { const r=over.getBoundingClientRect(); return { x:Math.max(0,Math.min(W-1,Math.floor((e.clientX-r.left)/zoom))), y:Math.max(0,Math.min(H-1,Math.floor((e.clientY-r.top)/zoom))) }; }
+over.addEventListener("pointerdown",e=>{
+  e.preventDefault(); over.setPointerCapture(e.pointerId);
+  const p=at(e); const erase=e.button===2;
+  if (float) {
+    if (p.x>=float.x&&p.y>=float.y&&p.x<float.x+float.w&&p.y<float.y+float.h) { drag={k:"float",ox:p.x-float.x,oy:p.y-float.y}; return; }
+    commitFloat(); sel=null; refresh(); return;
+  }
+  const v=erase?0:colour;
+  if (tool==="pen") { pushUndo(); drag={k:"pen",x:p.x,y:p.y,v}; setPx(p.x,p.y,v); changedLight(); }
+  else if (tool==="fill") { pushUndo(); fill(p.x,p.y,v); changed(); }
+  else if (tool==="line"||tool==="box") { pushUndo(); drag={k:tool,x:p.x,y:p.y,v,base:page.px.slice(),attr:page.attr.slice()}; }
+  else if (tool==="pick") { colour=page.px[p.y*W+p.x]; selPal=page.attr[(p.y>>4)*BW+(p.x>>4)]; slot=colour; buildPals(); }
+  else if (tool==="block") { pushUndo(); drag={k:"block"}; page.attr[(p.y>>4)*BW+(p.x>>4)]=selPal; changedLight(); }
+  else if (tool==="select") {
+    if (sel&&p.x>=sel.x&&p.y>=sel.y&&p.x<sel.x+sel.w&&p.y<sel.y+sel.h) { const s=selRead(sel); makeFloat(s.px,s.w,s.h,sel.x,sel.y,s.attr); float.lifted=true; delSelQuiet(); sel=null; drag={k:"float",ox:p.x-float.x,oy:p.y-float.y}; refresh(); return; }
+    drag={k:"sel",x:p.x,y:p.y}; sel={x:p.x,y:p.y,w:1,h:1}; refresh();
+  }
+});
+function delSelQuiet() { pushUndo(); for (let j=0;j<sel.h;j++) for (let i=0;i<sel.w;i++) page.px[(sel.y+j)*W+sel.x+i]=0; drawScreen(sc,img,page); }
+function changedLight() { drawScreen(sc,img,page); drawOver(); }
+over.addEventListener("pointermove",e=>{
+  const p=at(e); hover=p; $("pos").textContent=`x ${p.x} y ${p.y}  tile ${p.x>>3},${p.y>>3}  block ${p.x>>4},${p.y>>4}`;
+  if (!drag) { drawOver(); return; }
+  if (drag.k==="pen") { line(drag.x,drag.y,p.x,p.y,(a,b)=>setPx(a,b,drag.v)); drag.x=p.x; drag.y=p.y; changedLight(); }
+  else if (drag.k==="line"||drag.k==="box") {
+    page.px.set(drag.base); page.attr.set(drag.attr);
+    if (drag.k==="line") line(drag.x,drag.y,p.x,p.y,(a,b)=>setPx(a,b,drag.v));
+    else for (let y=Math.min(drag.y,p.y);y<=Math.max(drag.y,p.y);y++) for (let x=Math.min(drag.x,p.x);x<=Math.max(drag.x,p.x);x++) setPx(x,y,drag.v);
+    changedLight();
+  }
+  else if (drag.k==="block") { page.attr[(p.y>>4)*BW+(p.x>>4)]=selPal; changedLight(); }
+  else if (drag.k==="sel") { sel={x:Math.min(drag.x,p.x),y:Math.min(drag.y,p.y),w:Math.abs(p.x-drag.x)+1,h:Math.abs(p.y-drag.y)+1}; refresh(); }
+  else if (drag.k==="float") { let nx=p.x-drag.ox, ny=p.y-drag.oy; if ($("sSnap").checked) { nx=Math.round(nx/8)*8; ny=Math.round(ny/8)*8; } float.x=nx; float.y=ny; drawOver(); }
+});
+over.addEventListener("pointerup",()=>{ if (drag&&drag.k!=="float"&&drag.k!=="sel") changed(); drag=null; refresh(); });
+over.addEventListener("pointerleave",()=>{ hover=null; drawOver(); });
+over.addEventListener("contextmenu",e=>e.preventDefault());
+
+document.addEventListener("keydown",e=>{
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)&&e.target.type!=="checkbox") return;
+  const k=e.key.toLowerCase();
+  if ((e.ctrlKey||e.metaKey)&&k==="z") { e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if ((e.ctrlKey||e.metaKey)&&k==="y") { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey||e.metaKey)&&k==="c") { $("sCopy").click(); return; }
+  if ((e.ctrlKey||e.metaKey)&&k==="x") { $("sCut").click(); return; }
+  if ((e.ctrlKey||e.metaKey)&&k==="v") { $("sPaste").click(); return; }
+  if (e.ctrlKey||e.metaKey) return;
+  const t=TOOLS.find(x=>x[2].toLowerCase()===k); if (t) { commitFloat(); tool=t[0]; sel=null; buildTools(); refresh(); return; }
+  if ("0123".includes(k)) { colour=+k; slot=+k; buildPals(); return; }
+  if (k==="enter"&&float) { commitFloat(); return; }
+  if (k==="escape") { float=null; sel=null; refresh(); return; }
+  if (k==="delete"||k==="backspace") { $("sDel").click(); return; }
+  if (float&&k.startsWith("arrow")) { e.preventDefault(); const s=$("sSnap").checked?8:1; if (k==="arrowleft") float.x-=s; if (k==="arrowright") float.x+=s; if (k==="arrowup") float.y-=s; if (k==="arrowdown") float.y+=s; drawOver(); }
+});
+["undo","redo"].forEach(n=>$(n).onclick=n==="undo"?undo:redo);
+$("zoom").onchange=e=>{ zoom=+e.target.value; resize(); drawOver(); };
+["gTile","gBlock","gSafe","gBat","gOnce","sClear"].forEach(n=>$(n).onchange=drawOver);
+$("imgA").oninput=drawOver;
+
+// ---- text
+const F={A:"0E11111F111111",B:"1E11111E11111E",C:"0E11101010110E",D:"1E11111111111E",E:"1F10101E10101F",F:"1F10101E101010",G:"0E11101711110F",H:"1111111F111111",I:"0E04040404040E",J:"0702020202120C",K:"11121418141211",L:"1010101010101F",M:"111B1515111111",N:"11111915131111",O:"0E11111111110E",P:"1E11111E101010",Q:"0E11111115120D",R:"1E11111E141211",S:"0F10100E01011E",T:"1F040404040404",U:"1111111111110E",V:"11111111110A04",W:"1111111515150A",X:"11110A040A1111",Y:"1111110A040404",Z:"1F01020408101F","0":"0E11131519110E","1":"040C040404040E","2":"0E11010204081F","3":"1F02040201110E","4":"02060A121F0202","5":"1F101E0101110E","6":"0608101E11110E","7":"1F010204080808","8":"0E11110E11110E","9":"0E11110F01020C",".":"0000000000000C",",":"00000000000C04","-":"0000001F000000","!":"04040404040004",":":"000C0C000C0C00","'":"04040800000000","&":"0812140815120D","/":"01010204081010"," ":"00000000000000"};
+function glyph(ch) { const h=F[ch]||F[" "], r=[]; for (let i=0;i<7;i++) r.push(parseInt(h.slice(i*2,i*2+2),16)); return r; }
+function textFloat(str,s,v) {
+  const w=str.length*6*s-s, h=7*s, a=new Uint8Array(Math.max(1,w)*h);
+  [...str].forEach((ch,n)=>{ glyph(ch).forEach((row,y)=>{ for (let x=0;x<5;x++) if (row&(16>>x)) for (let j=0;j<s;j++) for (let i=0;i<s;i++) a[(y*s+j)*w+n*6*s+x*s+i]=v; }); });
+  return {px:a,w,h};
+}
+$("txtGo").onclick=()=>{ commitFloat(); const t=textFloat($("txt").value.toUpperCase(),+$("txtS").value,colour||3); makeFloat(t.px,t.w,t.h,(W-t.w)>>1&~7,136,null); float.attr=null; $("sClear").checked=true; if (tool!=="select") { tool="select"; buildTools(); } refresh(); };
+// (the Place button under the screen commits it)
+
+// ---- images
+function nearest(r,g,b) { let best=0x0F,bd=1e12; for (const c of USABLE) { const q=RGB[c], d=(q[0]-r)**2*3+(q[1]-g)**2*4+(q[2]-b)**2*2; if (d<bd) { bd=d; best=c; } } return best; }
+async function loadImage(file) {
+  const u=URL.createObjectURL(file), im=new Image(); im.src=u; await im.decode();
+  const c=document.createElement("canvas"); c.width=Math.min(W,im.width); c.height=Math.min(H,im.height);
+  const scale=Math.min(1,W/im.width,H/im.height); c.width=Math.round(im.width*scale); c.height=Math.round(im.height*scale);
+  const g=c.getContext("2d"); g.imageSmoothingEnabled=false; g.drawImage(im,0,0,c.width,c.height); importImg=c; URL.revokeObjectURL(u);
+  $("imgConvert").disabled=false; $("imgTrace").disabled=false; $("imgNote").textContent=`${file.name||"Pasted image"}: ${c.width}×${c.height}. It stays in this browser.`;
+}
+const dist=(a,b)=>{ const p=RGB[a],q=RGB[b]; return (p[0]-q[0])**2*3+(p[1]-q[1])**2*4+(p[2]-q[2])**2*2; };
+function convertImage() {
+  pushUndo();
+  const g=importImg.getContext("2d"), d=g.getImageData(0,0,importImg.width,importImg.height).data, w=importImg.width,h=importImg.height;
+  const idx=new Int16Array(W*H).fill(-1), freq={};
+  for (let y=0;y<h;y++) for (let x=0;x<w;x++) { const o=(y*w+x)*4; if (d[o+3]<128) continue; const c=nearest(d[o],d[o+1],d[o+2]); idx[y*W+x]=c; freq[c]=(freq[c]||0)+1; }
+  if ($("imgPal").checked) {
+    const back=+Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0]; page.backdrop=back;
+    const sets=[]; for (let b=0;b<BW*BH;b++) { const cnt={}; for (let y=(b>>4)*16;y<(b>>4)*16+16;y++) for (let x=(b%16)*16;x<(b%16)*16+16;x++) { const c=idx[y*W+x]; if (c>=0&&c!==back) cnt[c]=(cnt[c]||0)+1; } const s=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]).slice(0,3).map(Number); if (s.length) sets.push(s); }
+    sets.sort((a,b)=>b.length-a.length);
+    const pals=[[],[],[],[]];
+    for (const s of sets) {
+      let bi=-1,bg=99; pals.forEach((p,i)=>{ const add=s.filter(c=>!p.includes(c)).length; if (p.length+add<=3&&add<bg) { bg=add; bi=i; } });
+      if (bi>=0) s.forEach(c=>{ if (!pals[bi].includes(c)) pals[bi].push(c); });
+    }
+    page.pals=pals.map(p=>{ const q=p.slice(); while (q.length<3) q.push(q[q.length-1]??0x10); return q; });
+    // Refine: give each block its best palette, then refit each palette to its blocks.
+    for (let round=0;round<12;round++) {
+      const use=[{},{},{},{}];
+      for (let by=0;by<BH;by++) for (let bx=0;bx<BW;bx++) {
+        let bp=0,be=1e15;
+        page.pals.forEach((pal,pi)=>{ const opts=[back,...pal]; let e=0; for (let y=by*16;y<by*16+16;y++) for (let x=bx*16;x<bx*16+16;x++) { const c=idx[y*W+x]; if (c<0||c===back) continue; let m=1e12; for (const o of opts) m=Math.min(m,dist(c,o)); e+=m; } if (e<be) { be=e; bp=pi; } });
+        for (let y=by*16;y<by*16+16;y++) for (let x=bx*16;x<bx*16+16;x++) { const c=idx[y*W+x]; if (c>=0&&c!==back) use[bp][c]=(use[bp][c]||0)+1; }
+      }
+      page.pals=use.map((u,i)=>{ const q=Object.keys(u).sort((a,b)=>u[b]-u[a]).slice(0,3).map(Number); const old=page.pals[i]; while (q.length<3) q.push(old[q.length]); return q; });
+    }
+  }
+  for (let by=0;by<BH;by++) for (let bx=0;bx<BW;bx++) {
+    let bp=0,be=1e15;
+    page.pals.forEach((pal,pi)=>{ const opts=[page.backdrop,...pal]; let e=0; for (let y=by*16;y<by*16+16;y++) for (let x=bx*16;x<bx*16+16;x++) { const c=idx[y*W+x]; if (c<0) continue; let m=1e12; for (const o of opts) m=Math.min(m,dist(c,o)); e+=m; } if (e<be) { be=e; bp=pi; } });
+    page.attr[by*BW+bx]=bp; const opts=[page.backdrop,...page.pals[bp]];
+    for (let y=by*16;y<by*16+16;y++) for (let x=bx*16;x<bx*16+16;x++) { const c=idx[y*W+x]; if (c<0) continue; let bi=0,bd=1e12; opts.forEach((o,i)=>{ const dd=dist(c,o); if (dd<bd) { bd=dd; bi=i; } }); page.px[y*W+x]=bi; }
+  }
+  changed();
+}
+$("imgBtn").onclick=()=>$("imgFile").click();
+$("imgFile").onchange=e=>{ if (e.target.files[0]) loadImage(e.target.files[0]).catch(()=>{$("imgNote").textContent="That file couldn't be read as an image.";}); };
+document.addEventListener("paste",e=>{ const f=[...(e.clipboardData?.files||[])].find(x=>x.type.startsWith("image/")); if (f) loadImage(f); });
+$("imgConvert").onclick=convertImage;
+$("imgTrace").onclick=()=>{ ghost=importImg; ghostOn=true; drawOver(); };
+$("imgOff").onclick=()=>{ ghostOn=false; drawOver(); };
+
+// ---- starting ideas: drawn here, nothing from the games
+function clearPage(p) { p.px.fill(0); p.attr.fill(2); p.backdrop=0x0F; p.pals=[[0x01,0x11,0x21],[0x06,0x16,0x27],[0x00,0x10,0x30],[0x08,0x18,0x28]]; }
+function blockPal(p,x0,y0,x1,y1,i) { for (let y=y0>>4;y<=(y1-1)>>4;y++) for (let x=x0>>4;x<=(x1-1)>>4;x++) p.attr[y*BW+x]=i; }
+function put(p,x,y,v) { if (x>=0&&y>=0&&x<W&&y<H) p.px[y*W+x]=v; }
+function bigText(p,str,x,y,s,ramp) { [...str].forEach((ch,n)=>glyph(ch).forEach((row,r)=>{ for (let c=0;c<5;c++) if (row&(16>>c)) for (let j=0;j<s;j++) for (let i=0;i<s;i++) { const yy=y+r*s+j, f=(yy-y)/(7*s); put(p,x+n*6*s+c*s+i,yy,f<.3?ramp[0]:f<.72?ramp[1]:ramp[2]); } })); }
+function smallText(p,str,y,v) { const w=str.length*6-1,x=(W-w)>>1; bigText(p,str,x,y,1,[v,v,v]); }
+function stars(p) { for (let y=8;y<H-8;y+=8) for (let x=0;x<W;x+=8) if (((x*7+y*13)%97)<4) put(p,x+((x+y)%7),y+((x*3)%7),((x+y)%24===0)?3:1); }
+function ground(p,y0,pal) { blockPal(p,0,y0&~15,W,H,pal); for (let y=y0;y<H;y++) for (let x=0;x<W;x++) { const u=(x&7),t=(y&7),bump=y0+((x>>3)%3); if (y<bump) continue; put(p,x,y,(u+t)%5===0?3:(u*t)%3===0?2:1); } }
+function metroid(p,x,y,v) { // a jellyfish of our own: dome, three nuclei, fangs
+  for (let j=0;j<18;j++) { const w=Math.round(10*Math.sqrt(1-((j-9)/10)**2)); for (let i=-w;i<w;i++) put(p,x+10+i,y+j,j<4?v[0]:j<12?v[1]:v[2]); }
+  [[5,8],[11,6],[15,9]].forEach(([a,b])=>{ for (let j=0;j<4;j++) for (let i=0;i<4;i++) put(p,x+a+i-1,y+b+j,v[2]); });
+  [[3,18],[8,20],[12,20],[17,18]].forEach(([a,b])=>{ for (let j=0;j<7;j++) { put(p,x+a,y+b+j-2,v[1]); put(p,x+a+1,y+b+j-3,v[1]); } });
+}
+function cross(p,x,y,h,v) { for (let j=0;j<h;j++) for (let i=-2;i<2;i++) put(p,x+i,y+j,j<8?v[0]:v[1]); for (let i=-9;i<9;i++) for (let j=0;j<4;j++) put(p,x+i,y+7+j,j<2?v[0]:v[1]); }
+function castle(p,x,base) { // towers and battlements, standing where the bat lands
+  const tower=(a,w,t)=>{ for (let y=t;y<base;y++) for (let i=0;i<w;i++) put(p,a+i,y,(i===0||i===w-1)?1:((y>>3)%2&&(i===w>>1))?3:2); for (let i=0;i<w;i+=4) for (let j=0;j<4;j++) for (let q=0;q<2;q++) put(p,a+i+q,t-4+j,1); };
+  tower(x+8,32,134); tower(x-16,16,158); tower(x+40,16,150); for (let y=172;y<base;y++) for (let i=-16;i<56;i++) put(p,x+i,y,(i&7)===0||(y&7)===0?1:2);
+}
+const R=[3,2,1];
+const IDEAS=[
+  p=>{ clearPage(p); stars(p); blockPal(p,32,16,224,64,0); blockPal(p,48,64,208,112,1);
+    bigText(p,"ME",44,32,4,R); cross(p,104+6,20,44,[3,2]); bigText(p,"R",124,32,4,R); metroid(p,148,34,[3,2,1]); bigText(p,"ID",172,32,4,R);
+    bigText(p,"VANIA",70,68,4,R); for (let j=0;j<14;j++) for (let i=0;i<4-(j>>2);i++) { put(p,78+i,96+j,1); put(p,166+i,96+j,1); }
+    smallText(p,"PUSH START KEY",130,3); blockPal(p,176,128,240,208,3); castle(p,184,208); ground(p,208,3); smallText(p,"A ROM HACK",220,3); blockPal(p,0,208,W,H,3); },
+  p=>{ clearPage(p); stars(p); p.pals[0]=[0x01,0x11,0x21]; blockPal(p,0,48,128,96,0); blockPal(p,128,48,W,96,1);
+    bigText(p,"METROID",8,56,3,R); bigText(p,"VANIA",128,56,3,R);
+    for (let x=16;x<240;x++) { const y=88+Math.round(3*Math.sin(x/9)*(1-(x-16)/330)); put(p,x,y,3); put(p,x,y+1,2); } for (let i=0;i<7;i++) { put(p,240+i,86-i,3); put(p,240+i,87-i,2); }
+    smallText(p,"PUSH START KEY",128,3); blockPal(p,176,128,240,208,3); castle(p,184,208); ground(p,208,3); },
+  p=>{ clearPage(p); stars(p); blockPal(p,16,24,240,80,0); blockPal(p,0,128,W,H,3);
+    p.pals[0]=[0x01,0x12,0x21]; bigText(p,"METROID",46,28,4,R); p.pals[1]=[0x06,0x16,0x27]; blockPal(p,64,64,192,96,1); bigText(p,"VANIA",94,66,3,R);
+    for (let j=-22;j<=22;j++) for (let i=-22;i<=22;i++) if (i*i+j*j<484) put(p,70+i,160+j,(i+j)<-10?3:(i+j)<8?2:1);
+    castle(p,184,208); ground(p,208,3); smallText(p,"PUSH START KEY",116,3); }
+];
+["i0","i1","i2"].forEach((id,n)=>$(id).onclick=()=>{ commitFloat(); pushUndo(); IDEAS[n](page); sel=null; changed(); });
+// The real titles are captured from your own ROMs into this page's private data, not its source.
+let refDb=null;
+async function loadRef(name) {
+  if (!refDb) return;
+  try {
+    const s=await refDb.doc("references/"+name).get();
+    if (!s.exists) { setStatus("That title isn't stored yet. Ask Claude to add it."); return; }
+    commitFloat(); pushUndo(); unpackPage(s.data(),page); sel=null; changed(); setStatus("Loaded on "+page.name+". Undo brings back what was here.");
+  } catch { setStatus("Couldn't load that title. Try again."); }
+}
+$("rCv").onclick=()=>loadRef("castlevania"); $("rMet").onclick=()=>loadRef("metroid");
+
+// ---- saving
+function b64(u8) { let s=""; for (let i=0;i<u8.length;i+=8192) s+=String.fromCharCode(...u8.subarray(i,i+8192)); return btoa(s); }
+function unb64(s) { const b=atob(s), u=new Uint8Array(b.length); for (let i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u; }
+function packPx(px) { const a=new Uint8Array(W*H/4); for (let i=0;i<W*H;i++) a[i>>2]|=px[i]<<((i&3)*2); return b64(a); }
+function unpackPx(s,px) { const a=unb64(s); for (let i=0;i<W*H;i++) px[i]=(a[i>>2]>>((i&3)*2))&3; }
+function hex(a) { return Array.from(a,v=>v.toString(16).padStart(2,"0")).join(""); }
+function packPage(p) { return { name:p.name, px:packPx(p.px), attr:hex(p.attr), backdrop:p.backdrop, pals:p.pals }; }
+function unpackPage(o,p) { unpackPx(o.px,p.px); for (let i=0;i<p.attr.length;i++) p.attr[i]=parseInt(o.attr.substr(i*2,2),16); p.backdrop=o.backdrop; p.pals=o.pals.map(q=>q.slice()); }
+// What the build reads: tiles in the NES's format, the name table and attribute table.
+function exportTitle() {
+  const p=pages[0], b=buildTiles(p), at=new Uint8Array(64);
+  for (let y=0;y<BH;y++) for (let x=0;x<BW;x++) { const i=(y>>1)*8+(x>>1), sh=((y&1)<<1|(x&1))*2; at[i]|=p.attr[y*BW+x]<<sh; }
+  return { format:"metroidvania-title-1", updatedAt:Date.now(), backdrop:p.backdrop, palettes:p.pals, tileCount:b.tiles.length, fits:b.tiles.length<=256, tiles:b.tiles.length<=256?b.tiles:null, nametable:b.tiles.length<=256?hex(b.nt):null, attributes:hex(at), page:packPage(p) };
+}
+let dbDoc=null, saveT=0, downloads=null;
+function setStatus(s) { $("status").textContent=s; }
+function saveSoon() {
+  clearTimeout(saveT);
+  try { localStorage.setItem("title-bench",JSON.stringify({pages:pages.map(packPage),t:Date.now()})); } catch {}
+  saveT=setTimeout(async()=>{ if (!dbDoc) { setStatus("Saved in this browser only"); return; } try { setStatus("Saving…"); await dbDoc.set(exportTitle()); setStatus("Saved. Claude can read it."); } catch { setStatus("Couldn't save online. Kept in this browser."); } },1200);
+}
+async function saveFile(name,blob) { if (!downloads) { setStatus("Saving files isn't available in this view"); return; } try { await downloads.save({filename:name,data:blob}); } catch (e) { if (e&&e.code!=="declined") setStatus("Couldn't save the file: "+(e.message||e.code)); } }
+$("dlJson").onclick=()=>saveFile("metroidvania_title.json",new Blob([JSON.stringify(exportTitle())],{type:"application/json"}));
+$("dlPng").onclick=()=>{ const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d"); drawScreen(g,g.createImageData(W,H),pages[0]); c.toBlob(b=>saveFile("metroidvania_title.png",b)); };
+$("openBtn").onclick=()=>$("openFile").click();
+$("openFile").onchange=async e=>{ const f=e.target.files[0]; if (!f) return; try { const o=JSON.parse(await f.text()); pushUndo(); unpackPage(o.page,page); changed(); } catch { setStatus("That file isn't a saved title."); } };
+
+// ---- start: the first idea, then whatever was saved
+IDEAS[0](pages[0]);
+let loaded=0;
+try { const s=JSON.parse(localStorage.getItem("title-bench")||"null"); if (s&&s.pages) { s.pages.forEach((o,i)=>{ if (pages[i]) unpackPage(o,pages[i]); }); loaded=s.t||1; } } catch {}
+zoom=Math.max(2,Math.min(8,Math.floor(($("view").clientWidth-16)/W)||1)); if (![1,2,3,4,6,8].includes(zoom)) zoom=zoom===5?4:6; $("zoom").value=zoom;
+buildTools(); resize(); changed(false);
+setStatus(loaded?"Back where you left off":"Showing a starter idea. It's yours to change.");
+(async()=>{
+  try {
+    if (!window.claude) throw 0;
+    downloads=await claude.use("downloads"); if (!downloads) { $("dlJson").hidden=true; $("dlPng").hidden=true; }
+    const db=await claude.use("db"); if (!db) { setStatus("Saving in this browser only"); return; }
+    dbDoc=db.doc("designs/current"); refDb=db; $("rCv").disabled=false; $("rMet").disabled=false;
+    const s=await dbDoc.get();
+    if (s.exists) { const o=s.data(); if (o.page&&(o.updatedAt||0)>loaded) { unpackPage(o.page,pages[0]); changed(false); setStatus("Loaded your saved design"); } }
+  } catch { setStatus(loaded?"Saving in this browser only":"Showing a starter idea. Saving in this browser only."); $("dlJson").hidden=true; $("dlPng").hidden=true; }
+})();
+</script>

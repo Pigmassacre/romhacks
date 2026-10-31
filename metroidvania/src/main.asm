@@ -456,6 +456,15 @@ Bank6_ScreenAtExit:
 ;@ seg $06 $A2E8 $A2E9 the status bar: no double or triple shot icon
         rts
 
+;@ seg $06 $B803 $B812 the title's background palettes (src/title.asm)
+        .db TITLE_PAL0,TITLE_PAL1,TITLE_PAL2,TITLE_PAL3,TITLE_PAL4,TITLE_PAL5,TITLE_PAL6,TITLE_PAL7
+        .db TITLE_PAL8,TITLE_PAL9,TITLE_PAL10,TITLE_PAL11,TITLE_PAL12,TITLE_PAL13,TITLE_PAL14
+
+;@ seg $06 $AEC7 $AEC9 the title: no big C, whose body is these two sprite objects
+        lda #$00
+;@ seg $06 $AED6 $AED8
+        lda #$00
+
 ;@ seg $06 $A113 $A114 the status bar: no subweapon icon (sprites 7-16 are the HUD's)
         rts
 
@@ -855,6 +864,8 @@ HackTable:
 .include "chr.asm"
 .include "../out/gen/samus_chr.asm"
 .include "../out/gen/samus_frames.asm"
+
+.include "title.asm"
 
 ;@ seg $08 $BD00 $C000 hack bank: Castlevania's font
 ; A copy of bank 3 $BC08-$BF07, for the Game Over screen (see chr.asm).

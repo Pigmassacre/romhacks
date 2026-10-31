@@ -101,6 +101,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `death` | Samus explodes; on the last life, the Game Over screen has its font, and continuing gives Samus her tiles back |
 | `load` | The screen stays black while a stage loads (the hack's palette writes once showed there as a line) |
 | `timeout` | Running out of time kills Samus wherever she is (she once lived on until she took the stairs) |
+| `titlelogo` | The title shows the design from the title editor, with no big C, after the first load and after the attract demo, and PUSH START KEY flashes on into the game |
 | `title` | The title screen is still Castlevania's: its bat flies and lands on the castle (the hack once covered the end of its path, and the attract demo never came) |
 | `demo` | Samus plays the attract demo, with the HUD, and the title gives her full energy back for the next game |
 | `ending` | The ending is Castlevania's: the castle falling (object slot 0, which in play is Simon) in its own colours, no Samus and no status bar |
@@ -110,6 +111,8 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 `boss` and `platform` warp to their stages and fly Samus there through the walls (a debug flag in the hack's RAM, `DebugFlags`, which only the tests set).
 
 `tests/s_play.lua` (`python3 tests/run.py play`) plays the whole game with controller inputs alone, from the title through the ending and into the second quest: no warps, no flying. A bot walks each stage's route (`tests/play_routes.lua`), jumps, climbs stairs, rides platforms, shoots and fights the bosses, with hits turned off unless `PLAY_HONEST=1`. It gets through in one run. It logs each stage and leaves screenshots; `PLAY_FROM=n` starts again from the stage's savestate. `tests/s_maps.lua` writes every stage's collision map as text, for planning routes.
+
+`tools/title_editor.html` is the page the title was drawn in; `tools/title_import.py` turns what it saves into `src/title.asm`.
 
 Sweeps go through the whole game, for looking over rather than passing: `tour` (every stage, with screenshots), `allstairs` (every staircase, up and down), `stairsoff` (every staircase, started from each side of the middle of the screen), `exits` (every stage's exit), `bosses` (every boss, then the stage's end) and `items` (every item), each with `python3 tests/run.py <name>` and logging where Samus ends up. `fuzz` presses random buttons on every stage and flies her to random places, stairs and exits, watching every frame for hangs, the split on the wrong line, walls, jumps of her or the screen and more (`out/test/fuzz_<seed>.log`; `FUZZ_SEED`, `FUZZ_FROM`, `FUZZ_TO`, `FUZZ_FRAMES`). `PLAY_WARP=1 PLAY_FROM=n` starts the bot at any stage without a savestate.
 
