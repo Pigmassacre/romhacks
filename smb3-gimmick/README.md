@@ -4,7 +4,7 @@ Yumetaro, from Sunsoft's *Gimmick!*, in the worlds of *Super Mario Bros. 3*. He 
 
 You bring your own copy of Super Mario Bros. 3. The hack is a BPS patch.
 
-This hack is AI-assisted.
+This hack is AI-assisted, using Claude.
 
 ## Play it
 

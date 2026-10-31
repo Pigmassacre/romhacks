@@ -1,6 +1,6 @@
 # Yumetaro physics reference (Godot)
 
-A frame-exact model of Yumetaro and his star from *Gimmick!* (Sunsoft, 1992), with a small test course drawn in rectangles. It is the reference implementation for [the physics guide](../docs/yumetaro-physics-guide.md). Like the hack it belongs to, it is AI-assisted.
+A frame-exact model of Yumetaro and his star from *Gimmick!* (Sunsoft, 1992), with a small test course drawn in rectangles. It is the reference implementation for [the physics guide](../docs/yumetaro-physics-guide.md). Like the hack it belongs to, it is AI-assisted, using Claude.
 
 Made with Godot 4.7. Open this folder in the editor and press Play, or run:
 

@@ -6,7 +6,7 @@ one is recalled.
 
 You bring your own copy of the Japanese *Gimmick!*. The hack is a small BPS patch.
 
-This hack is AI-assisted.
+This hack is AI-assisted, using Claude.
 
 ## What's new
 

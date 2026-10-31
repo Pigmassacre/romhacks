@@ -4,7 +4,7 @@ Samus, from Nintendo's *Metroid*, in Konami's *Castlevania*. She moves, jumps, r
 
 You bring your own copy of Castlevania. The hack is a BPS patch.
 
-This hack is AI-assisted.
+This hack is AI-assisted, using Claude.
 
 ## Play it
 
