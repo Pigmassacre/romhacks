@@ -968,10 +968,28 @@ Gim_StarRideCheck:
 	BNE Gim_StarRideWasOn
 	LDX <Player_InAir
 	BEQ Gim_StarRideRTS
-	CMP #16
-	BLT Gim_StarRideRTS
-	CMP #16+16
-	BGE Gim_StarRideRTS
+	SUB #16
+	BCC Gim_StarRideRTS
+	STA <Temp_Var2
+
+	; His feet must be within 8 pixels of its top, as in Gimmick!, or as far as they can have sunk in this frame
+	LDA <Player_YVel
+	LDX Star_YVel
+	BPL Gim_StarRideNotRising
+	SUB Star_YVel
+Gim_StarRideNotRising:
+	LSR A
+	LSR A
+	LSR A
+	LSR A
+	ADD #1
+	CMP #8
+	BGE Gim_StarRideReach
+	LDA #8
+Gim_StarRideReach:
+	CMP <Temp_Var2
+	BCC Gim_StarRideRTS
+	BEQ Gim_StarRideRTS
 	JMP Gim_StarRideSnap
 Gim_StarRideWasOn:
 	CMP #16+17

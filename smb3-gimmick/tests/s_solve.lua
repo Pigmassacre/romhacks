@@ -29,7 +29,25 @@ end
 -- A macro is a list of {buttons, frames}. "until" macros keep going till the ground.
 local D = {"R", "R", "R", "L", ""}
 local function pick(t) return t[math.random(#t)] end
+-- The end card, if it's on the screen; the nearest enemy, if any
+local function target()
+  local card, foe, fd = nil, nil, 1e9
+  local sc = rs("Horz_Scroll_Hi") * 256 + rs("Horz_Scroll")
+  for i = 0, 7 do
+    if rs("Objects_State", i) == 2 and rs("Objects_SprHVis", i) == 0 then
+      local x = rs("Objects_XHi", i) * 256 + rs("Objects_X", i)
+      local id = rs("Level_ObjectID", i)
+      if id == 0x41 or id == 0x52 or (id == 0x0E and rs("Level_GetWandState") == 2) then card = x
+      elseif r(S["Object_AttrFlags"] + id) & 0x20 == 0 and i < 5 and math.abs(x - px()) < fd then foe, fd = i, math.abs(x - px()) end
+    end
+  end
+  return card, foe
+end
+
 local function macro()
+  local card, foe = target()
+  if card and math.random(100) <= 40 then return {kind = "seek", x = card} end
+  if foe and math.random(100) <= 25 then return {kind = "aim", i = foe} end
   if math.random(100) <= 25 then return "go" end
   local k = math.random(100)
   local d = pick(D)
@@ -110,6 +128,32 @@ local function goInput()
   return t
 end
 
+-- Walk under the card and jump at it
+local seek
+local function seekInput()
+  seek.t = seek.t + 1
+  if seek.t > seek.max then seek.done = true end
+  local t = {}
+  local d = seek.x - px()
+  if d > 2 then t.right = true elseif d < -2 then t.left = true end
+  if math.abs(d) < seek.w then t.a = seek.t % 60 < 40 end
+  return t
+end
+-- Face an enemy, jump if it's above, and throw a star at it
+local aim
+local function aimInput()
+  aim.t = aim.t + 1
+  if aim.t > 56 then aim.done = true end
+  local d = rs("Objects_XHi", aim.i) * 256 + rs("Objects_X", aim.i) - px()
+  local t = {}
+  if aim.t < 37 then
+    t.b = true
+    if aim.t < 4 then if d > 0 then t.right = true else t.left = true end end
+    if aim.t > 26 and aim.up then t.a = true end
+  end
+  return t
+end
+
 local function finish(result)
   local c = cur
   local h = io.open(OUT .. "solve_" .. names[li] .. ".txt", "w")
@@ -138,8 +182,11 @@ startRun = function()
   ride = {}
   if m == "ride" then ride = {t = 0, d = pick({"R", "R", "L"}), wait = pick({1, 4, 12, 30}), k = pick({12, 20, 28, 36, 48}), jh = pick({8, 14, 22, 40}), h = pick({10, 20, 34}), dj = pick({"R", "R", "L", ""}), any = math.random(100) < 25}; plan = "ride"
   elseif m == "go" then go = {t = 0, d = math.random(100) <= 85 and 1 or -1, hold = 0, max = pick({40, 80, 160}), done = false, seed = math.random(1 << 30)}; math.randomseed(go.seed); plan = "go"
+  elseif type(m) == "table" and m.kind == "seek" then seek = {t = 0, x = m.x, max = pick({60, 120, 200}), w = pick({8, 16, 28}), done = false}; plan = "seek"
+  elseif type(m) == "table" and m.kind == "aim" then aim = {t = 0, i = m.i, up = math.random(100) < 30, done = false}; plan = "aim"
   else plan = m end
-  pi_, pleft, runFrames, extra = 1, (plan ~= "ride" and plan ~= "go") and plan[1][2] or 0, 0, 0
+  local scripted = plan == "ride" or plan == "go" or plan == "seek" or plan == "aim"
+  pi_, pleft, runFrames, extra = 1, (not scripted) and plan[1][2] or 0, 0, 0
   phase = "run"
   F = 0
 end
@@ -161,6 +208,8 @@ end
 local function planStr()
   if plan == "ride" then return string.format("ride %s w%d k%d jh%d h%d %s", ride.d, ride.wait, ride.k, ride.jh, ride.h, ride.dj) end
   if plan == "go" then return string.format("go %d %d", go.d, go.max) end
+  if plan == "seek" then return "seek" end
+  if plan == "aim" then return "aim" end
   local t = {}
   for _, p in ipairs(plan) do t[#t + 1] = p[1] .. ":" .. p[2] end
   return table.concat(t, ",")
@@ -170,6 +219,8 @@ INPUT = function(f)
   if phase ~= "run" then return {} end
   if plan == "ride" then return rideInput() end
   if plan == "go" then return goInput() end
+  if plan == "seek" then return seekInput() end
+  if plan == "aim" then return aimInput() end
   local p = plan[pi_]
   if not p then return {} end
   return pad(p[1])
@@ -200,7 +251,7 @@ FRAME = function(f)
     onexec(startRun)
     return
   end
-  if plan ~= "ride" and plan ~= "go" then
+  if type(plan) == "table" then
     if pi_ <= #plan then
       pleft = pleft - 1
       while pleft <= 0 and pi_ <= #plan do
@@ -209,8 +260,14 @@ FRAME = function(f)
       end
     end
   end
-  local over = (plan == "ride" and ride.done) or (plan == "go" and go.done) or (plan ~= "ride" and plan ~= "go" and pi_ > #plan)
-  if over and (not ingame()) and extra < 240 then extra = extra + 1; return end
+  local over
+  if plan == "ride" then over = ride.done elseif plan == "go" then over = go.done
+  elseif plan == "seek" then over = seek.done elseif plan == "aim" then over = aim.done
+  else over = pi_ > #plan end
+  -- wait for a pipe to finish, and for him to land: a place in the air is no place to start from
+  local airborne = rs("Player_InAir") ~= 0 and rs("Player_InWater") == 0 and rs("Player_IsClimbing") == 0 and rs("Star_Ridden") == 0
+  if over and (not ingame() or airborne) and extra < 240 then extra = extra + 1; return end
+  if over and airborne then phase = "wait"; onexec(startRun); return end
   if over or runFrames > 400 then
     local k = key()
     local c = cells[k]
