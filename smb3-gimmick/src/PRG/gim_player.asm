@@ -488,8 +488,15 @@ Gim_FrictionNeg:
 	INC <Player_XVel
 Gim_FrictionDone:
 
+	; Bolt lifts, parabeetles and rotating platforms carry him through the air, and say he may jump from them
+	LDY Player_AllowAirJump
+	BEQ Gim_JumpOnGround
+	DEC Player_AllowAirJump
+	BNE Gim_JumpAllowed
+Gim_JumpOnGround:
 	LDA <Player_InAir
 	BNE Gim_NoJump
+Gim_JumpAllowed:
 	LDA Player_FlashInv
 	CMP #GIM_STUNTIME
 	BGE Gim_NoJump
@@ -501,6 +508,8 @@ Gim_FrictionDone:
 	LDA #$01
 	STA <Player_InAir
 	STA Gim_JumpHold
+	LDA #$00
+	STA Player_AllowAirJump
 	LDA #GIMSND_JUMP
 	STA Gim_SndQ
 Gim_NoJump:

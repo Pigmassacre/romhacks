@@ -101,4 +101,6 @@ emu.addMemoryCallback(function()
   ws("Level_LayPtrOrig_AddrL", l.lay); ws("Level_LayPtrOrig_AddrH", l.lay >> 8)
   ws("Level_ObjPtr_AddrL", l.obj); ws("Level_ObjPtr_AddrH", l.obj >> 8)
   ws("Level_ObjPtrOrig_AddrL", l.obj); ws("Level_ObjPtrOrig_AddrH", l.obj >> 8)
+  -- a battle's enemy comes from the map object that was walked into
+  if l.name:match("HB[A-D]$") then ws("Map_EnterViaID", 3) end
 end, emu.callbackType.exec, S["PRG030_892A"], S["PRG030_892A"])

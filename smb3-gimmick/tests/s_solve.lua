@@ -30,7 +30,7 @@ end
 local D = {"R", "R", "R", "L", ""}
 local function pick(t) return t[math.random(#t)] end
 local function macro()
-  if math.random(100) <= 35 then return "go" end
+  if math.random(100) <= 25 then return "go" end
   local k = math.random(100)
   local d = pick(D)
   if k <= 22 then return {{d, pick({6, 12, 24, 48, 96})}}
@@ -40,40 +40,41 @@ local function macro()
     return {{a ~= "" and a or d, pick({0, 0, 8, 20})}, {"A " .. a, h}, {a, pick({10, 24, 40})}}
   elseif k <= 68 then return {{"B " .. d, pick({36, 44})}, {d, pick({6, 20, 40})}}
   elseif k <= 76 then return {{"B R", 36}, {"", pick({10, 20, 40})}, {"A", 16}, {"R", 30}}
-  elseif k <= 84 then return "ride"
-  elseif k <= 88 then return {{"D", 24}, {"", 40}}
-  elseif k <= 92 then return {{"U", 24}, {"", 30}}
-  elseif k <= 94 then return {{"U A", 20}, {"U " .. d, 24}}
-  elseif k <= 96 then return {{"A " .. d, 10}, {"B " .. d, 36}, {d, 20}}
+  elseif k <= 90 then return "ride"
+  elseif k <= 93 then return {{"D", 24}, {"", 40}}
+  elseif k <= 96 then return {{"U", 24}, {"", 30}}
+  elseif k <= 97 then return {{"U A", 20}, {"U " .. d, 24}}
+  elseif k <= 98 then return {{"A " .. d, 10}, {"B " .. d, 36}, {d, 20}}
   else return {{"", pick({30, 60, 120})}} end
 end
 
--- Throw a star, follow it, jump on it, and jump from it
+-- Throw a star, follow it till it rolls, jump on it, and jump from it
 local ride = {}
 local function rideInput()
-  local st = rs("Star_State")
   ride.t = ride.t + 1
   if ride.t < 37 then return pad("B " .. ride.d) end
-  if ride.jumped and rs("Star_Ridden") ~= 0 then
+  if ride.leap then
+    ride.leap = ride.leap + 1
+    if ride.leap > 34 then ride.done = true end
+    if ride.leap <= ride.h then return pad("A " .. ride.dj) end
+    return pad(ride.dj)
+  end
+  if rs("Star_State") ~= 1 or ride.t > 260 then ride.done = true; return {} end
+  if rs("Star_Ridden") ~= 0 then
     ride.on = (ride.on or 0) + 1
-    if ride.on > ride.wait then
-      ride.hold = ride.hold + 1
-      if ride.hold > 24 then ride.done = true end
-      return pad("A " .. ride.d)
-    end
-    return pad(ride.dir and "" or "")
+    if ride.on > ride.wait then ride.leap = 0 end
+    return {}
   end
-  if ride.hold > 0 then
-    ride.hold = ride.hold + 1
-    if ride.hold > 40 then ride.done = true end
-    return pad("A " .. ride.d)
-  end
-  if st ~= 1 or ride.t > 170 then ride.done = true; return {} end
-  local sx = rs("Star_XHi") * 256 + rs("Star_X")
+  local dx = rs("Star_XHi") * 256 + rs("Star_X") - px()
   local t = {}
-  if sx > px() + 4 then t.right = true elseif sx < px() - 4 then t.left = true end
-  if rs("Player_InAir") == 0 and rs("Star_Standable") ~= 0 and math.abs(sx - px()) < 24 then t.a = true; ride.jumped = true end
-  if rs("Player_InAir") ~= 0 then t.a = true end
+  if dx > 2 then t.right = true elseif dx < -2 then t.left = true end
+  if rs("Player_InAir") ~= 0 then
+    ride.air = (ride.air or 0) + 1
+    if ride.air <= ride.jh then t.a = true end
+    return t
+  end
+  ride.air = 0
+  if rs("Star_Standable") ~= 0 and math.abs(dx) < ride.k and (rs("Star_Floor") ~= 0 or ride.any) then t.a = true end
   return t
 end
 
@@ -135,7 +136,7 @@ startRun = function()
   area = cur.area
   local m = macro()
   ride = {}
-  if m == "ride" then ride = {t = 0, d = pick({"R", "R", "L"}), hold = 0, wait = pick({0, 20, 50, 90})}; plan = "ride"
+  if m == "ride" then ride = {t = 0, d = pick({"R", "R", "L"}), wait = pick({1, 4, 12, 30}), k = pick({12, 20, 28, 36, 48}), jh = pick({8, 14, 22, 40}), h = pick({10, 20, 34}), dj = pick({"R", "R", "L", ""}), any = math.random(100) < 25}; plan = "ride"
   elseif m == "go" then go = {t = 0, d = math.random(100) <= 85 and 1 or -1, hold = 0, max = pick({40, 80, 160}), done = false, seed = math.random(1 << 30)}; math.randomseed(go.seed); plan = "go"
   else plan = m end
   pi_, pleft, runFrames, extra = 1, (plan ~= "ride" and plan ~= "go") and plan[1][2] or 0, 0, 0
@@ -158,7 +159,7 @@ nextLevel = function()
 end
 
 local function planStr()
-  if plan == "ride" then return string.format("ride %s %d", ride.d, ride.wait) end
+  if plan == "ride" then return string.format("ride %s w%d k%d jh%d h%d %s", ride.d, ride.wait, ride.k, ride.jh, ride.h, ride.dj) end
   if plan == "go" then return string.format("go %d %d", go.d, go.max) end
   local t = {}
   for _, p in ipairs(plan) do t[#t + 1] = p[1] .. ":" .. p[2] end

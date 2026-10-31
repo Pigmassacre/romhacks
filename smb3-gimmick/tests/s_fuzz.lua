@@ -77,6 +77,7 @@ local function solid(x, y)
 end
 
 local last, lastc, stuckc, halted, inwall, floating, starAge, exitAt
+local flying = 0
 local function nextLevel()
   li = li + 1
   if li > #names then
@@ -92,7 +93,7 @@ local function nextLevel()
   if not h then flog("no state " .. level); nextLevel(); return end
   local d = h:read("a"); h:close()
   emu.loadSavestate(d)
-  F = 0; phase = "play"; until_ = 0; last = nil; lastc = -1; stuckc, halted, inwall, floating, starAge = 0, 0, 0, 0, 0
+  F = 0; phase = "play"; until_ = 0; flying = 0; last = nil; lastc = -1; stuckc, halted, inwall, floating, starAge = 0, 0, 0, 0, 0
 end
 onexec(nextLevel)
 
@@ -165,12 +166,13 @@ FRAME = function(f)
     end
   end
 
-  -- fly along the level now and then
-  if f % 500 == 499 and moving and rs("Level_7Vertical") == 0 then
-    local nx = x + math.random(100, 400)
-    setx(math.min(nx, rs("Level_Width") * 256 + 200))
-    sety(math.random(100, 330))
-    ws("Player_YVel", 0)
-    last = nil
-  end
+  -- fly along the level now and then, fast enough to see it but with the screen keeping up
+  if f % 500 == 400 and moving and rs("Level_7Vertical") == 0 then flying = 90 end
+  if flying > 0 then
+    flying = flying - 1
+    setx(math.min(x + 6, rs("Level_Width") * 256 + 200))
+    sety(math.max(96, y - 4))
+    ws("Player_YVel", 0); ws("Player_InAir", 1)
+    last = nil; inwall = 0; floating = 0
+end
 end
