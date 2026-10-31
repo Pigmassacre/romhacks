@@ -59,9 +59,14 @@ local function macro()
   elseif k <= 68 then return {{"B " .. d, pick({36, 44})}, {d, pick({6, 20, 40})}}
   elseif k <= 76 then return {{"B R", 36}, {"", pick({10, 20, 40})}, {"A", 16}, {"R", 30}}
   elseif k <= 90 then return "ride"
-  elseif k <= 93 then return {{"D", 24}, {"", 40}}
-  elseif k <= 96 then return {{"U", 24}, {"", 30}}
-  elseif k <= 97 then return {{"U A", 20}, {"U " .. d, 24}}
+  elseif k <= 92 then return {{"D", 24}, {"", 40}}
+  elseif k <= 94 then return {{"U", 24}, {"", 30}}
+  elseif k <= 96 then return {{"U A", 20}, {"U " .. d, 24}, {"U", 40}}
+  elseif k <= 97 then
+    -- mash A: out of quicksand
+    local p = {}
+    for i = 1, 30 do p[#p + 1] = {"A " .. d, 2}; p[#p + 1] = {d, 2} end
+    return p
   elseif k <= 98 then return {{"A " .. d, 10}, {"B " .. d, 36}, {d, 20}}
   else return {{"", pick({30, 60, 120})}} end
 end
