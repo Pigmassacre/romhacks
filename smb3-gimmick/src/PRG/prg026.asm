@@ -3222,10 +3222,12 @@ StatusBar_Fill_PowerMT:
 	LDA Gim_MaxHealth,X
 	STA <Temp_Var14
 
-	; Health is full at the start of every level, and it's that the map shows
+	; Health is full at the start of every level, and it's that the map and bonus games show
 	STA <Temp_Var15
 	LDA Level_Tileset
 	BEQ PRG026_HealthShown
+	CMP #15
+	BGE PRG026_HealthShown
 
 	LDA Gim_Health
 	STA <Temp_Var15
