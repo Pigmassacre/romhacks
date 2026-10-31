@@ -65,7 +65,11 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: on t
 | `rideedge` | Carried by an enemy to the screen's edge he stops there (he once counted as crushed, and died) |
 | `sand` | A pressed A gets him across 2-Sun's quicksand |
 | `shoe` | Kuribo's shoe is drawn under him (he once hopped about in nothing), and a hit knocks it off |
+| `gameover` | Out of lives, Start on Continue gives 4 lives, and only that player's maximum health goes back to 3 |
+| `starbump` | The star bumps ? blocks and breaks bricks, from the side and from below |
 | `statusbar` | Health as arrows, the [P]'s two halves, and on the map the maximum (it once showed what the last level left) |
+| `starscroll` | In a room that scrolls up and down over a fixed floor, the star lands on the floor shown (it once sank through it) |
+| `whistle` | Every hop up the steps to world 1 fortress's high door, for the warp whistle Mario flew to |
 | `toad` | A toad house's chest gives its item and goes back to the map |
 
 Some scripts go through the whole game, for looking over rather than passing, each with `python3 tests/run.py <name>`:
