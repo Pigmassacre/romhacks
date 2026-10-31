@@ -21,7 +21,7 @@ local li, phase, base = 0, "wait", nil
 local held, until_, level = {}, 0, ""
 local counts, totals = {}, {}
 local function st()
-  return string.format("x %d y %d xv %d yv %d air %d hp %d star %02x ride %d pipe %d halt %d/%d scr %d/%d die %d water %d climb %d", px(), py(), s8(rs("Player_XVel")), s8(rs("Player_YVel")), rs("Player_InAir"), rs("Gim_Health"), rs("Star_State"), rs("Gim_RideSlot"), rs("Level_PipeMove"), rs("Player_HaltGame"), rs("Player_HaltTick"), rs("Horz_Scroll_Hi") * 256 + rs("Horz_Scroll"), rs("Level_VertScroll"), rs("Player_IsDying"), rs("Player_InWater"), rs("Player_IsClimbing"))
+  return string.format("x %d y %d xv %d yv %d air %d hp %d star %02x ride %d pipe %d halt %d/%d scr %d/%d die %d water %d climb %d", px(), py(), s8(rs("Player_XVel")), s8(rs("Player_YVel")), rs("Player_InAir"), rs("Gim_Health"), rs("Star_State"), rs("Gim_RideSlot"), rs("Level_PipeMove"), rs("Player_HaltGame"), rs("Player_HaltTick"), rs("Horz_Scroll_Hi") * 256 + rs("Horz_Scroll"), rs("Level_VertScroll"), rs("Player_IsDying"), rs("Player_InWater"), rs("Player_IsClimbing")) .. string.format(" flash %d lost %d kur %d frame %02x slot %d", rs("Player_FlashInv"), rs("Player_SuitLost"), rs("Player_Kuribo"), rs("Player_Frame"), rs("Star_Ridden"))
 end
 local function finding(kind, msg)
   counts[kind] = (counts[kind] or 0) + 1
