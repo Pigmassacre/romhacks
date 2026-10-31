@@ -23,7 +23,7 @@ Versions 1.5.0 and earlier were a program that built the game from both Super Ma
 - He stands on enemies instead of stomping them.
 - Health instead of Mario's power-ups. A mushroom heals. Flowers, leaves and suits raise the maximum, up to 6, and fill it. A ? block gives its mushroom while he's hurt, and otherwise the flower or leaf it holds. A power-up used from the map's inventory raises the maximum too, each player's their own.
 - Gimmick! sounds for jumping, the star, and the death jingle.
-- Yumetaro on the world map, and the Gimmick! logo on the title screen.
+- Yumetaro on the world map, in the Game Over box and the ending, and the Gimmick! logo on the title screen. Mario and Luigi still act out the title's curtain scene, and the 2-player battle is theirs.
 
 ## Credits
 
@@ -60,6 +60,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: on t
 | `items` | A power-up from the inventory raises the maximum, with no suit, and no change of colour on the map (they once gave Mario's suit moves) |
 | `junction` | Through a pipe, health stays as it was and the star is gone |
 | `koopaling` | Each Koopaling takes three hits from stars, and its wand can be reached |
+| `names` | The title says AI SLOP, DO NOT PLAY, and the world's intro box YUMETARO, with his sprite and horn |
 | `powerups` | What each power-up does to health, and what ? blocks give (flowers and leaves once only counted as mushrooms) |
 | `ride` | Landing on a rolling star, it carries him, and he jumps higher from it (he was once pulled up 15 pixels onto it) |
 | `rideedge` | Carried by an enemy to the screen's edge he stops there (he once counted as crushed, and died) |

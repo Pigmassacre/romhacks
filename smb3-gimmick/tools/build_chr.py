@@ -43,6 +43,18 @@ def color3_to_2(data):
     return bytes(out)
 
 
+def horn(data):
+    # On the map his horn shares palette 2: orange (2) and, in place of the level's dark outline, black (3)
+    out = bytearray(data)
+    for t in range(0, len(out), 16):
+        for y in range(8):
+            lo, hi = out[t + y], out[t + 8 + y]
+            one, three = lo & ~hi & 0xFF, lo & hi
+            out[t + y] = one
+            out[t + 8 + y] = one | three
+    return bytes(out)
+
+
 MAP_TILES = [
     (0x20, 0x2C, pair(0x0C, 0x04)),
     (0x20, 0x2E, pair(0x0C, 0x14)),
@@ -50,7 +62,24 @@ MAP_TILES = [
     (0x20, 0x0E, pair(0x0C, 0x1A)),
     (0x20, 0x3C, mirror(pair(0x0C, 0x14))),
     (0x20, 0x3E, mirror(pair(0x0C, 0x04))),
-    (0x21, 0x08, color3_to_2(pair(0x0C, 0x02))),
+    (0x21, 0x08, horn(pair(0x0C, 0x02))),
+]
+
+# The Y of YUMETARO over a tile the map doesn't use ($CC), and the status bar's <Y> over <M>
+def glyph(rows):
+    out = bytearray(16)
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            v = '.#+@'.index(ch)
+            out[y] |= (v & 1) << (7 - x)
+            out[8 + y] |= (v >> 1) << (7 - x)
+    return bytes(out)
+
+
+MAP_TILES += [
+    (0x17, 0x0C, glyph(["########", "#++##++#", "#++##++#", "##++++##", "@##++##@", "@@#++#@@", "@@#++#@@", "@@####@@"])),
+    (0x5D, 0x34, glyph(["@@@@@@@@", "@#######", "##@@#++#", "#@@@#++#", "#@@@##++", "#@@@@#++", "##@@@#++", "@#######"])),
+    (0x5D, 0x35, glyph(["@@@@@@@@", "#######@", "#++#@@##", "#++#@@@#", "++##@@@#", "++#@@@@#", "++#@@@##", "#######@"])),
 ]
 
 
@@ -66,7 +95,7 @@ for page, tile, data in MAP_TILES:
     if page not in pages:
         with open(os.path.join(ROOT, 'src', 'CHR', 'chr%03d.bin' % page), 'rb') as f:
             pages[page] = bytearray(f.read())
-    pages[page][tile * 16:tile * 16 + 32] = data
+    pages[page][tile * 16:tile * 16 + len(data)] = data
 for page, chr_data in pages.items():
     with open(os.path.join(OUT, 'chr%03d.bin' % page), 'wb') as f:
         f.write(chr_data)

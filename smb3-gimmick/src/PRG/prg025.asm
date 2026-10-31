@@ -17,10 +17,9 @@
 	.byte           $01, $28
 	.byte $4F, $B7, $01, $20
 	.byte $57, $B5, $01, $18
-	.byte $6F, $01, $00, $D8
-	.byte $6F, $01, $40, $E0
-	.byte $7F, $03, $00, $D8
-	.byte $7F, $03, $40, $E0
+	.byte $6F, $03, $00, $E0
+	.byte $7F, $05, $00, $D8
+	.byte $7F, $15, $00, $E0
 Ending2_EndPicSprites3_End
 
 Ending2_EndPicSprites4:
@@ -32,18 +31,15 @@ Ending2_EndPicSprites4:
 	.byte $31, $41, $01, $80
 	.byte $31, $43, $01, $88
 	.byte $31, $45, $01, $90
-	.byte $3F, $47, $01, $20
-	.byte $3F, $49, $01, $28
-	.byte $3F, $4B, $01, $30
-	.byte $3F, $4D, $01, $38
+	.byte $2F, $03, $40, $28
+	.byte $3F, $05, $40, $30
+	.byte $3F, $15, $40, $28
 Ending2_EndPicSprites4_End
 
 Ending2_EndPicSprites5:
-	.byte $69, $29, $00, $B0
-	.byte $69, $2B, $00, $B8
-	.byte $79, $01, $00, $B0
-	.byte $79, $03, $00, $B8
-	.byte $79, $05, $00, $C0
+	.byte $69, $03, $00, $B8
+	.byte $79, $05, $00, $B0
+	.byte $79, $15, $00, $B8
 	.byte $A1, $53, $02, $B8
 	.byte $A1, $55, $02, $C0
 	.byte $B1, $57, $02, $B8
@@ -55,11 +51,9 @@ Ending2_EndPicSprites5:
 Ending2_EndPicSprites5_End
 
 Ending2_EndPicSprites6:
-	.byte $69, $19, $40, $20
-	.byte $69, $27, $40, $28
-	.byte $79, $1F, $40, $20
-	.byte $79, $1D, $40, $28
-	.byte $79, $1B, $40, $30
+	.byte $69, $03, $40, $20
+	.byte $79, $05, $40, $28
+	.byte $79, $15, $40, $20
 	.byte $61, $A7, $41, $58
 	.byte $61, $AF, $41, $50
 	.byte $A9, $D3, $02, $70
@@ -76,15 +70,15 @@ Ending2_EndPicSprites7:
 	.byte $51, $67, $42, $C8
 	.byte $61, $65, $02, $B8
 	.byte $79, $65, $42, $A8
-	.byte $89, $37, $40, $A8
-	.byte $89, $35, $40, $B0
+	.byte $79, $03, $40, $A8
+	.byte $89, $05, $40, $B0
+	.byte $89, $15, $40, $A8
 Ending2_EndPicSprites7_End
 
 Ending2_EndPicSprites8:
 	.byte $79, $03, $40, $28
-	.byte $79, $01, $40, $30
-	.byte $89, $07, $40, $28
 	.byte $89, $05, $40, $30
+	.byte $89, $15, $40, $28
 	.byte $99, $51, $02, $50
 	.byte $99, $5F, $02, $58
 	.byte $90, $69, $01, $B0
@@ -580,10 +574,14 @@ Title_LoadMenu:
 	.byte 13	; 13 bytes to follow
 	.byte $1E, $5C, $0A, $0B, $0C, $1A, $1B, $0D, $5C, $1C, $0C, $1D, $1B
 
-	; C 1988 Nintendo
+	; AI SLOP, DO NOT PLAY, on two lines to fit between the hills (tools/build_title.py has the letters PLAYER GAME doesn't: I S O D N T)
+	vaddr $22CC
+	.byte 7		; 7 bytes to follow
+	.byte $0C, $2A, $5C, $2B, $0B, $2C, $0A
+
 	vaddr $22EA
-	.byte 13	; 13 bytes to follow
-	.byte $3F, $5C, $0E, $0F, $1F, $1F, $5C, $2A, $2B, $2C, $2D, $2E, $2F
+	.byte 11	; 11 bytes to follow
+	.byte $2D, $2C, $5C, $2E, $2C, $2F, $5C, $0A, $0B, $0C, $1A
 
 	.byte $00	; Terminator
 
@@ -864,7 +862,7 @@ PRG025_D059:
 EndSeq_World1Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $37, $0F, $16, $36, $0F, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
+	.byte $37, $0F, $0B, $2A, $30, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
 	.byte $16
 
 	; Terminator
@@ -873,7 +871,7 @@ EndSeq_World1Pal:
 EndSeq_World2Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $37, $0F, $16, $36, $0F, $0F, $0F, $30, $16, $0F, $0F, $30, $2A, $0F, $0F, $30
+	.byte $37, $0F, $0B, $2A, $30, $0F, $0F, $30, $16, $0F, $0F, $30, $2A, $0F, $0F, $30
 	.byte $2A
 
 	; Terminator
@@ -882,7 +880,7 @@ EndSeq_World2Pal:
 EndSeq_World3Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $37, $0F, $2A, $36, $0F, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
+	.byte $37, $0F, $0B, $2A, $30, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
 	.byte $16
 
 	; Terminator
@@ -891,7 +889,7 @@ EndSeq_World3Pal:
 EndSeq_World4Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $3A, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
+	.byte $3A, $0F, $0B, $2A, $30, $0F, $0F, $30, $16, $0F, $0F, $30, $16, $0F, $0F, $30
 	.byte $16
 
 	; Terminator
@@ -900,7 +898,7 @@ EndSeq_World4Pal:
 EndSeq_World5Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $30, $0F, $2C, $30, $37, $0F, $2C, $30
-	.byte $30, $0F, $17, $36, $0F, $0F, $0F, $00, $10, $0F, $0F, $30, $26, $0F, $0F, $30
+	.byte $30, $0F, $0B, $2A, $30, $0F, $0F, $00, $10, $0F, $0F, $30, $26, $0F, $0F, $30
 	.byte $16
 
 	; Terminator
@@ -909,7 +907,7 @@ EndSeq_World5Pal:
 EndSeq_World6Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $30, $0F, $2C, $30, $37, $0F, $2C, $30
-	.byte $30, $0F, $16, $36, $0F, $0F, $0F, $30, $16, $0F, $0F, $30, $2A, $0F, $0F, $30
+	.byte $30, $0F, $0B, $2A, $30, $0F, $0F, $30, $16, $0F, $0F, $30, $2A, $0F, $0F, $30
 	.byte $2A
 
 	; Terminator
@@ -918,7 +916,7 @@ EndSeq_World6Pal:
 EndSeq_World7Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $3A, $0F, $30, $36, $0F, $0F, $0F, $21, $2A, $0F, $0F, $30, $16, $0F, $0F, $30
+	.byte $3A, $0F, $0B, $2A, $30, $0F, $0F, $21, $2A, $0F, $0F, $30, $16, $0F, $0F, $30
 	.byte $16
 
 	; Terminator
@@ -927,7 +925,7 @@ EndSeq_World7Pal:
 EndSeq_World8Pal:
         vaddr $3F00
 	.byte $20, $0F, $0F, $30, $16, $0F, $17, $2A, $37, $0F, $2C, $30, $37, $0F, $2C, $2A
-	.byte $37, $0F, $16, $36, $0F, $0F, $0F, $30, $0B, $0F, $0F, $30, $16, $0F, $0F, $30
+	.byte $37, $0F, $0B, $2A, $30, $0F, $0F, $30, $0B, $0F, $0F, $30, $16, $0F, $0F, $30
 	.byte $16
 
 	; Terminator

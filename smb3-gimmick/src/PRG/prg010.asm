@@ -59,8 +59,8 @@ Video_DoWXMario00:
 	vaddr $294C
 	.byte $05, $D8, $F0, $E9, $EC, $EE	; WORLD
 
-	vaddr $29AA
-	.byte $05, $BA, $BC, $E9, $FC, $F0	; MARIO
+	vaddr $29A9
+	.byte $08, $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0	; YUMETARO
 
 	vaddr $29B3
 	.byte $01, $FB
@@ -149,8 +149,8 @@ Video_DoWXMario80:
 	vaddr $2940
 	.byte $01, $EE			; D
 
-	vaddr $29BA
-	.byte $05, $BA, $BC, $E9, $FC, $F0 ; MARIO
+	vaddr $29B9
+	.byte $08, $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0 ; YUMETARO
 
 	vaddr $29A3
 	.byte $01, $FB
@@ -580,9 +580,9 @@ PRG010_C303:
 ; it directly sets the graphics buffer, not inserts.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GameOver_MLName:
-	.byte $BA, $BC, $E9, $FC, $F0, $00	; MARIO[Terminator]
-	.byte $EC, $DA, $FC, $EB, $FC, $00	; LUIGI[Terminator]
-GameOver_MLName_Len = 6
+	.byte $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0, $00	; YUMETARO[Terminator]
+	.byte $EC, $DA, $FC, $EB, $FC, $FE, $FE, $FE, $00	; LUIGI[Terminator]
+GameOver_MLName_Len = 9
 
 GameOver_PatchPlayerName:
 	LDY Player_Current	; Y = Player_Current
@@ -987,8 +987,9 @@ PRG010_C51B:
 
 	; This defines two sprites to make up the Player's current powerup
 Map_WorldIntro_PSpr:
-	.byte $60, $2D, $00, $84	; Left half of Player sprite
-	.byte $60, $2F, $00, $8C	; Right half of Player sprite
+	.byte $60, $2D, $00, $88	; Left half of Player sprite
+	.byte $60, $2F, $00, $90	; Right half of Player sprite
+	.byte $50, $49, $02, $90	; His horn
 
 	; This defines the first pattern to use for the Player sprite based on powerup
 	; The second pattern is implicitly +2 to this value
@@ -1005,8 +1006,8 @@ Map_WorldIntro_PSPat:
 	; Draws the tiny Player icon in the world intro box
 Map_WorldIntro_DrawPlayer:
 
-	; Copies in the 2 sprites from Map_WorldIntro_PSpr
-	LDY #$07	 ; Y = 7
+	; Copies in the 3 sprites from Map_WorldIntro_PSpr
+	LDY #$0B	 ; Y = 11
 PRG010_C52D:
 	LDA Map_WorldIntro_PSpr,Y
 	STA Sprite_RAM+$84,Y	
@@ -1450,8 +1451,9 @@ PRG010_C74C:
 	JMP PRG010_C75D	 ; Jump to PRG010_C75D
 
 GameOver_DeadPlayerSprite:
-	.byte $64, $61, $00, $50	; Left half
-	.byte $64, $61, $40, $58	; Right half
+	.byte $64, $2D, $00, $50	; Left half
+	.byte $64, $2F, $00, $58	; Right half
+	.byte $54, $49, $02, $58	; His horn
 	
 PRG010_C75D:
 
@@ -1473,7 +1475,7 @@ PRG010_C75D:
 
 	; Generate the little "dead Player" sprite in the Game Over box
 PRG010_C772:
-	LDY #$07	 ; Y = 7
+	LDY #$0B	 ; Y = 11
 PRG010_C774:
 	LDA GameOver_DeadPlayerSprite,Y	 ; Get dead player sprite byte
 	STA Sprite_RAM+$84,Y	 ; Store into Sprite_RAM

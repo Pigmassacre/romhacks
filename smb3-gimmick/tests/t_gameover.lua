@@ -18,7 +18,12 @@ FRAME = function(f)
     return
   end
   if phase == "menu" then
-    if f == t0 + 400 then shot("menu") end
+    if f == t0 + 150 then
+      shot("menu")
+      local t = {}
+      for i = 0, 8 do t[#t + 1] = string.format("%02x", r(0x285 + i * 4)) end
+      check(r(0x285) == 0x2D and r(0x289) == 0x2F and r(0x28D) == 0x49, "his sprite and horn, not Mario: " .. table.concat(t, " "))
+    end
     if rs("Player_Lives") >= 3 and rs("Player_Lives") < 0x80 then
       check(rs("Gim_MaxHealth") == 3, "Mario's maximum back at 3: " .. rs("Gim_MaxHealth"))
       check(rs("Gim_MaxHealth", 1) == 5, "Luigi's left as it was: " .. rs("Gim_MaxHealth", 1))

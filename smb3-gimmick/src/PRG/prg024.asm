@@ -5735,7 +5735,8 @@ PRG024_BF5D:
 	RTS		 ; Return
 
 	; PatTable_BankSel+X values (sprite pattern tables) loaded per "world" of ending picture
-Ending2_EndPicPatTable2:	.byte $57, $53, $51, $00, $43, $02, $44, $54
+	; Yumetaro takes Mario's place in the pictures, from his own page
+Ending2_EndPicPatTable2:	.byte $50, $50, $50, $50, $50, $50, $50, $50
 Ending2_EndPicPatTable3:	.byte $00, $04, $00, $76, $76, $76, $04, $76
 Ending2_EndPicPatTable4:	.byte $57, $4E, $1A, $1A, $00, $0B, $00, $00
 Ending2_EndPicPatTable5:	.byte $4F, $4F, $00, $00, $4F, $4F, $4F, $00
@@ -5773,10 +5774,9 @@ Ending2_EndPicSpriteListLen:
 	.byte (Ending2_EndPicSprites8_End - Ending2_EndPicSprites8 - 1)
 
 Ending2_EndPicSprites1:
-	.byte $81, $19, $00, $B0
-	.byte $81, $1B, $00, $B8
-	.byte $91, $1D, $00, $B0
-	.byte $91, $21, $00, $B8
+	.byte $81, $03, $00, $B8
+	.byte $91, $05, $00, $B0
+	.byte $91, $15, $00, $B8
 	.byte $B1, $EB, $01, $B8
 	.byte $B1, $EB, $41, $C0
 	.byte $B1, $D9, $01, $80
@@ -5786,8 +5786,9 @@ Ending2_EndPicSprites1:
 Ending2_EndPicSprites1_End
 
 Ending2_EndPicSprites2:
-	.byte $79, $1B, $40, $38
-	.byte $79, $19, $40, $40
+	.byte $69, $03, $40, $38
+	.byte $79, $05, $40, $40
+	.byte $79, $15, $40, $38
 	.byte $99, $67, $01, $50
 	.byte $B1, $65, $01, $70
 	.byte $A9, $85, $01, $88
