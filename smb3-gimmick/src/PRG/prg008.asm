@@ -5156,8 +5156,8 @@ LATP_Flower:
 
 	LDY #$05	 ; Y = 5 (spawn a mushroom) (index into PRG001 Bouncer_PUp)
 
-	LDA <Player_Suit
-	BEQ PRG008_B7F9	 ; If Player is small, jump to PRG008_B7F9
+	JSR LATP_GimHurt
+	BCC PRG008_B7F9	 ; If he's hurt, jump to PRG008_B7F9
 
 	LDY #$02	 ; Y = 2 (spawn a fire flower) (index into PRG001 Bouncer_PUp)
 
@@ -5165,14 +5165,25 @@ PRG008_B7F9:
 	RTS		 ; Return
 
 
+	; Yumetaro is always small: a mushroom while he's hurt (carry clear), otherwise what raises his maximum
+LATP_GimHurt:
+	TXA
+	PHA
+	LDX Player_Current
+	LDA Gim_Health
+	CMP Gim_MaxHealth,X
+	PLA
+	TAX
+	RTS
+
 LATP_Leaf:
 	LDA #$00
 	STA PUp_StarManFlash	 ; PUp_StarManFlash = 0 (don't activate star man flash)
 
 	LDY #$05	 ; Y = 5 (spawn a mushroom) (index into PRG001 Bouncer_PUp)
 
-	LDA <Player_Suit
-	BEQ PRG008_B807	 ; If Player is small, jump to PRG008_B807
+	JSR LATP_GimHurt
+	BCC PRG008_B807	 ; If he's hurt, jump to PRG008_B807
 
 	LDY #$03	 ; Y = 3 (spawn a leaf) (index into PRG001 Bouncer_PUp)
 

@@ -2074,19 +2074,8 @@ PRG001_A9F6:
 
 
 ObjHit_FireFlower:
+	; Yumetaro is always small, so unlike Mario he never takes this for a mushroom
 	LDA <Player_Suit
-	BNE PRG001_AA05	 ; If Player is not small, jump to PRG001_AA05
-
-	; Player is small...
-
-	; NOTE: The "flashing" Fire Flower is never used (but can be found in the
-	; "lost" Big Question Block test level, and it grants you fire power 
-	; regardless of whether you're small or not!!)
-	LDY PUp_StarManFlash
-	BNE PRG001_AA05	 ; If fire flower came from Big (?) block, jump to PRG001_AA05
-
-	JMP PRG001_A897	 ; Otherwise, jump to PRG001_A897
-
 PRG001_AA05:
 	CMP #$02
 	BEQ PRG001_AA13	 ; If Player is already Fire, jump to PRG001_AA13
@@ -2531,18 +2520,8 @@ PRG001_AC22:
 
 
 ObjHit_SuperLeaf:
+	; Yumetaro is always small, so unlike Mario he never takes this for a mushroom
 	LDA <Player_Suit
-	BNE PRG001_AC37	 ; If Player is not small, jump to PRG001_AC37
-
-	; NOTE: The "flashing" Super Leaf is never used (but can be found in the
-	; "lost" Big Question Block test level, and it grants you Raccoon 
-	; regardless of whether you're small or not!!)
-	; BUG to jump to PRG001_AC37, the compare will be invalid!!
-	LDA PUp_StarManFlash
-	BNE PRG001_AC37	 ; If leaf did not come from big (?) block, jump to PRG001_AC37 
-
-	JMP PRG001_A897	 ; Otherwise, jump to PRG001_A897
-
 PRG001_AC37:
 	CMP #$03
 	BNE PRG001_AC40	 ; If Player is not already Raccoon, jump to PRG001_AC40
