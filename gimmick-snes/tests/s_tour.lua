@@ -60,7 +60,7 @@ ON_NMI = function(f)
       marks:write(f, " stuck ", i, "\n"); start_step(f)
     end
   elseif phase == "play" then
-    if r(0x346) < 3 then poke(0x346, 3) end
+    if r(0x346) < r(0x2B) then poke(0x346, r(0x2B)) end
     if f == t0 + 300 then mark(f, string.format("s%d_c%d_later", st.stage, st.cp)) end
     if f > t0 + PLAY then start_step(f) end
   elseif phase == "clearing" then
