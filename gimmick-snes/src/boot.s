@@ -282,6 +282,9 @@ spc_size = $1FF4
 
 ; The vertical scroll's HDMA and the background's tile set restart with each frame.
 nmi_emu:
+        ; The fast mirror of this bank: no interrupt can land in this, which would lose the bank.
+        jml $800000 | nmi_fast
+nmi_fast:
         pha
         phx
         phy

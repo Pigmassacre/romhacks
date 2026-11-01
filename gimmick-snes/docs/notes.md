@@ -53,11 +53,18 @@ buffer, sprites' CHR pages, colours, then second-set pages. Anything written to 
 must not start where it cannot finish, and a line number from the next picture is not "early". `vram_flush` writes runs
 and columns directly, as the game resends a column of 24 tiles every frame. The game's own calls then find little left.
 
+**Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
+code the game itself calls can go there and run faster than from RAM. `convert_oam` does: the more sprites, the more
+it costs, where the NES only copies them, and that is what slows the game when the screen is busy.
+
 **CHR pages.** The NES's bank switch is instant and a page here takes 12 lines of vblank, so the game's own
 order, with CHR last, is usually too late. `top_pages` runs first in `nmi_work`, from what the game has at `$E1-$E8`:
 sprites' pages, then the background's if no colours are waiting (`attr_work`), one page a frame, or two if there
 is no tile buffer. Yumetaro's own page changes as Yumetaro animates, so this matters all the time. Only one stale page
 is sure of being copied, so `spr_check` keeps sprites on any other off for that frame, rather than draw garbage.
+
+**Behind the background, with parallax.** Colour 0 there is solid and the sky is not there, the reverse of what
+such a sprite needs, so it would vanish in a pipe's mouth. So with parallax they all go in front (`spr_pri`).
 
 **The portal.** It hides what comes out of it with the NES's limit of 8 sprites on a line: 16 blank sprites, tile
 `$80` with attribute `$20`, in two stacks of 8, ahead of the others. The SNES has no such limit, so `spr_check` notes them
@@ -88,7 +95,7 @@ backdrop goes back.
 The island is fixed nametable data. `tools/survey.py` captures it, and `build_mode7` makes a Mode 7 map
 and tiles from it (129 tile and palette pairs). Mode 7 needs the first half of VRAM, so sprites move
 to their second tables and everything is reloaded on the way out. `map_now` runs the arrival from
-a table of matrices, then sets the identity, at which it lines up with the sprites.
+a table of scales, then sets the identity, at which it lines up with the sprites.
 
 ## Gimmick! 1.5, as options
 
@@ -113,6 +120,9 @@ The game's own sound driver runs on the 65816 and writes the NES's registers, wh
 of. `sound_hook`, right after that in the NMI, sends what changed to `src/sound.spc`, which keeps the
 NES's sequencer going (length, envelope, sweep, linear counter) and sets the DSP's voices. There are
 exactly enough: pulse, pulse, triangle, noise, DPCM and three 5B squares.
+
+From about 1 kHz a voice switches to a wave with fewer harmonics (`band_sample`, picked in `set_pitch`): the DSP has no
+filter to speak of when it steps over samples, and a square's edges would fold back as scratchy noise.
 
 Waves are short looped samples, and DPCM samples are converted to BRR at build time, at a third of their
 rate to fit. `tools/spcasm.py` is a small assembler for the SPC700. The noise channel's short mode is a

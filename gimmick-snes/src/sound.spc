@@ -31,6 +31,7 @@ envs   = $68         ; start flags
 half   = $6C         ; set_pitch: an octave down
 batch  = $6D         ; the runtime is part way through a frame's registers
 ticks  = $6E
+srcb   = $6F         ; set_pitch: the duty to choose a sample for, or negative for none
 
 start:
         mov x,#$EF
@@ -38,6 +39,7 @@ start:
         mov $F0,#$0A        ; the normal test state
         mov ctrl,#$30       ; the ports start from zero
         mov last,#0
+        mov srcb,#$FF
         call dsp_init
         mov timer0,#33      ; 8 kHz / 33 = 242 Hz
         mov ctrl,#$01
@@ -468,7 +470,31 @@ sp_write:
         or a,#3
         mov dspa,a
         mov dspd,y
-        ret
+        ; The sample for this pitch: the DSP takes it up when this one loops, soon enough.
+        mov a,srcb
+        bmi sp_out
+        mov tmp2,a
+        mov a,y
+        cmp a,#8
+        bcc sp_src
+        cmp a,#16
+        bcs sp_2
+        mov a,#SRC_BAND
+        bra sp_band
+sp_2:   cmp a,#32
+        bcs sp_3
+        mov a,#SRC_BAND+4
+        bra sp_band
+sp_3:   mov a,#SRC_BAND+8
+sp_band:
+        clc
+        adc a,tmp2
+        mov tmp2,a
+sp_src: mov a,tmp
+        or a,#4
+        mov dspa,a
+        mov dspd,tmp2
+sp_out: ret
 
 ; Volume of DSP voice x*16 from a.
 set_vol:
@@ -520,23 +546,14 @@ p_on:   ; duty picks the sample
         lsr a
         lsr a
         lsr a
-        clc
-        adc a,#SRC_DUTY
-        mov tmp,a
-        mov a,x
-        asl a
-        asl a
-        asl a
-        asl a
-        or a,#4
-        mov dspa,a
-        mov dspd,tmp
+        mov srcb,a
         mov a,x
         asl a
         asl a
         asl a
         asl a
         call set_pitch
+        mov srcb,#$FF
         ; constant volume or the envelope's
         mov a,x
         asl a
@@ -681,7 +698,9 @@ fb_ok:
         asl a
         asl a
         asl a
+        mov srcb,#2         ; a square
         call set_pitch
+        mov srcb,#$FF
         mov half,#0
         ; tone enabled? the mixer's bits 0-2, low for on
         mov a,x

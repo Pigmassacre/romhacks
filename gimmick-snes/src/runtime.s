@@ -23,7 +23,7 @@ CLOUD_PAGE = 1              ; the CHR page of clouds, for parallax
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
-IRQ_EARLY  = 12             ; lines ahead of time to start a split's interrupt
+IRQ_EARLY  = 10             ; lines ahead of time to start a split's interrupt
 CROP_TOP   = 8              ; the SNES's 224 lines start this far down the NES's 240
 
 .segment "WVARS"
@@ -132,6 +132,10 @@ scroll_hold: .res 1         ; $2000 comes next, with the rest of this split's sc
 split_cnt:   .res 1         ; scroll changes in this frame's splits
 bg_at:       .res 1         ; the one that changed the tile set last frame
 bg_at_new:   .res 1
+bg_flipped:  .res 1
+spr_full:    .res 1         ; every sprite needs spr_check this frame
+spr_pri:     .res 1         ; $20 to put them all in front of the background
+spr_attr:    .res 2         ; the last sprite's attributes, as they came and as they went
 spr_tmp:     .res 3         ; not tmp: a split's interrupt can land in the middle of the sprites, and uses that
 load_first:  .res 1         ; the one stale sprite page this frame's sprites may wait on: see spr_check
 band_n:      .res 1         ; the portal's blank sprites: see spr_check
@@ -593,6 +597,8 @@ set_hi: .byte BGSET_HI, $30
 show_split_set:
         jsr flip_sprites
 flip_bg:
+        lda bg_flipped
+        bne flip_out        ; no need to wait for a line again
         lda split_n
         beq flip_out
         asl a
@@ -610,6 +616,7 @@ flip_bg:
         jsr wait_line
         ldx split_n
 flip_set:
+        inc bg_flipped
         lda set_hi,x
         lsr a
         lsr a
@@ -706,6 +713,7 @@ nmi_work2:
         stz split_n
         stz split_open
         stz split_cnt
+        stz bg_flipped
         lda bg_at_new
         sta bg_at
         stz bg_at_new
@@ -724,12 +732,12 @@ nmi_work2:
         lda force_blank
         bne :+              ; the main thread may be using VRAM
         ; Tiles, while there is sure to be time: the game's own call then finds its buffer empty.
+        ; The game has not finished its frame: give it the time back, for what can wait.
         lda $F0
         cmp #$AC
-        bne @no_tiles
+        bne @all_done
         stz vf_limit
         jsr vram_flush_now
-@no_tiles:
         ; Then sprites' pages, colours, the pages for below a split, and more colours.
         jsr top_pages
         bcs @copied         ; that was the time there was
@@ -747,6 +755,7 @@ nmi_work2:
 @copied:
         lda #252
         jsr attr_work
+@all_done:
         ; Ready, if the slots that matter have what they asked for.
         ldy #1
         ldx #4
@@ -1043,21 +1052,18 @@ map_now:
         lda map7_t
         cmp #M7_FRAMES
         bcs @rest
-        ; Matrix for this frame
-        asl a
-        asl a
+        ; Scale for this frame
         asl a
         tax
-        ldy #0
-:       lda f:M7Anim,x
-        sta M7A,y
+        ; These registers share one latch: each gets both its bytes in turn.
+        lda f:M7Anim,x
+        sta M7A
         lda f:M7Anim + 1,x
-        sta M7A,y
-        inx
-        inx
-        iny
-        cpy #4
-        bne :-
+        sta M7A
+        lda f:M7Anim,x
+        sta M7D
+        lda f:M7Anim + 1,x
+        sta M7D
         inc map7_t
 @out:   rts
 @rest:  bne @out
@@ -1166,6 +1172,19 @@ map_enter:
         sta BG1VOFS
         lda #>(M7_AT + 7)
         sta BG1VOFS
+        ; Far off from the first frame, with no turn.
+        lda f:M7Anim
+        sta M7A
+        lda f:M7Anim + 1
+        sta M7A
+        lda f:M7Anim
+        sta M7D
+        lda f:M7Anim + 1
+        sta M7D
+        stz M7B
+        stz M7B
+        stz M7C
+        stz M7C
         lda #1
         sta map7
         stz map7_t
@@ -2480,71 +2499,6 @@ attr_item:
 
 ; ---- $4014: sprites ---------------------------------------------------------------
 
-; NES sprites 8x16 each become two SNES sprites, since it has no size that shape. Each
-; keeps its place in the order, so priority comes out the same.
-.macro convert_sprites buf, first
-.local @sprite, @hide, @flip, @next, @even
-        ldx #first
-        ldy #0
-@sprite:
-        lda $0200,x
-        cmp #$EF
-        bcs @hide
-        sbc #CROP_TOP - 2   ; carry is clear: subtract one more
-        sta spr_tmp
-        jsr spr_check
-        bcs @hide
-        lda $0203,x
-        sta buf,y
-        sta buf + 4,y
-        lda $0201,x
-        and #$FE
-        sta buf + 2,y
-        ina
-        sta buf + 6,y
-        lda $0201,x
-        and #1
-        sta spr_tmp + 1
-@even:  lda $0202,x
-        phx
-        tax
-        lda f:AttrTable,x
-        plx
-        ora spr_tmp + 1
-        sta buf + 3,y
-        sta buf + 7,y
-        lda $0202,x
-        bmi @flip
-        lda spr_tmp
-        sta buf + 1,y
-        clc
-        adc #8
-        sta buf + 5,y
-        bra @next
-@flip:  lda spr_tmp
-        sta buf + 5,y
-        clc
-        adc #8
-        sta buf + 1,y
-        bra @next
-@hide:  lda #HIDDEN_Y
-        sta buf + 1,y
-        sta buf + 5,y
-@next:  tya
-        clc
-        adc #8
-        tay
-        inx
-        inx
-        inx
-        inx
-        txa
-        and #$7F
-        beq :+
-        jmp @sprite
-:
-.endmacro
-
 .export oam_dma_a
 oam_dma_a:
         php
@@ -2610,6 +2564,90 @@ frame_done:
         ply
         plx
         rts
+
+; ---- Sprites --------------------------------------------------------------------------
+
+; This takes up the game's time when there are many sprites, as the NES only has to copy them, so
+; it is in fast ROM: the $C000 window of every code bank, which the CPU has no other use for. It
+; is only called from the game's own code, in those banks.
+.segment "ROMC"
+
+; NES sprites 8x16 each become two SNES sprites, since it has no size that shape. Each
+; keeps its place in the order, so priority comes out the same.
+.macro convert_sprites buf, first
+.local @sprite, @hide, @flip, @next, @check, @fine, @same
+        ldx #first
+        ldy #0
+@sprite:
+        lda $0200,x
+        cmp #$EF
+        bcs @hide
+        sbc #CROP_TOP - 2   ; carry is clear: subtract one more
+        sta spr_tmp
+        ; Most of the time no page is stale and only odd tiles and the portal need a closer look.
+        lda spr_full
+        bne @check
+        lda $0201,x
+        cmp #$80
+        beq @check
+        lsr a
+        bcc @fine
+@check: jsr spr_check
+        bcs @hide
+@fine:  lda $0203,x
+        sta buf,y
+        sta buf + 4,y
+        lda $0201,x
+        and #$FE
+        sta buf + 2,y
+        ina
+        sta buf + 6,y
+        lda $0201,x
+        and #1
+        ora spr_pri
+        sta spr_tmp + 1
+        ; Sprites next to each other mostly have the same attributes.
+        lda $0202,x
+        cmp spr_attr
+        beq @same
+        sta spr_attr
+        phx
+        tax
+        lda f:AttrTable,x
+        plx
+        sta spr_attr + 1
+@same:  lda spr_attr + 1
+        ora spr_tmp + 1
+        sta buf + 3,y
+        sta buf + 7,y
+        lda spr_tmp
+        bit spr_attr
+        bmi @flip
+        sta buf + 1,y
+        clc
+        adc #8
+        sta buf + 5,y
+        bra @next
+@flip:  sta buf + 5,y
+        clc
+        adc #8
+        sta buf + 1,y
+        bra @next
+@hide:  lda #HIDDEN_Y
+        sta buf + 1,y
+        sta buf + 5,y
+@next:  inx
+        inx
+        inx
+        inx
+        tya
+        clc
+        adc #8
+        tay
+        beq :+              ; 32 sprites
+        jmp @sprite
+:
+.endmacro
 
 ; Sprite x of the game's: its CHR slot, and whether its page will be there in time. Only one
 ; stale page is sure to be copied in vblank, so sprites on any other stay off for this frame,
@@ -2695,14 +2733,52 @@ convert_oam:
         lda #$FF
         sta load_first
         stz band_n
+        ; Behind the background means nothing with parallax: its black is solid, and its sky
+        ; is not there, so such a sprite would vanish in a pipe's mouth and show through sky.
+        lda parallax
+        beq :+
+        lda #$20
+:       sta spr_pri
+        ; Anything for spr_check to find, for every sprite? A stale page, or the status bar's.
+        lda force_blank
+        ora map7
+        bne @calm
+        ldx #7
+:       lda $E1,x
+        cmp chr_obj,x
+        bne @full
+        dex
+        cpx #4
+        bcs :-
+        ldx #3
+:       lda $E1,x
+        cmp chr_obj,x
+        bne @full
+        dex
+        bpl :-
+@calm:  lda obj2_ready
+        bne :+
+        lda $4A
+        cmp #1
+        bne :+
+@full:  lda #1
+        bra :++
+:       lda #0
+:       sta spr_full
         stz obj_used + 4
         stz obj_used + 5
         stz obj_used + 6
         stz obj_used + 7
+        lda #0
+        sta spr_attr
+        lda f:AttrTable
+        sta spr_attr + 1
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
         plp
         rts
+
+.segment "WCODE"
 
 ; ---- Gimmick! 1.5, as options ---------------------------------------------------------
 

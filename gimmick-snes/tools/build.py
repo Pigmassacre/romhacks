@@ -8,6 +8,7 @@ The game's code keeps its place: each ROM bank the machine runs from holds, at $
 $A000, $C000 and $E000, the NES banks one mapping of the FME-7 shows there. Instructions
 that touch NES hardware become JSRs to src/runtime.s, in RAM every bank can see.
 """
+import math
 import os
 import re
 import subprocess
@@ -319,6 +320,7 @@ SPC_CODE = 0x0600
 SPC_PITCH = 0x2000
 SPC_BRR = 0x4000
 DPCM_STEP = 3               # samples kept: 1 in this many, for them all to fit
+BAND_HARMONICS = (7, 3, 2)  # for pitches from 1, 2 and 4 kHz: src/sound.spc picks by the pitch
 DMC_HZ = [4181.71, 4709.93, 5264.04, 5593.04, 6257.95, 7046.35, 7918.63, 8363.42,
           9419.86, 11186.1, 12604.0, 13982.6, 16884.6, 21306.8, 24858.0, 33143.9]
 NOISE_PERIODS = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
@@ -395,6 +397,23 @@ def triangle_sample():
     return bytes(out)
 
 
+def band_sample(duty, harmonics):
+    """A pulse wave with only its lower harmonics. At high pitches the DSP steps over samples, and
+    a wave's sharp edges then fold back as noise, so these have none to lose."""
+    d = {0: 2, 1: 4, 2: 8, 3: 12}[duty] / 16
+    nibs = []
+    for i in range(16):
+        x = (i + 0.5) / 16
+        v = 2 * d - 1
+        for n in range(1, harmonics + 1):
+            v += 4 / (n * math.pi) * math.sin(n * math.pi * d) * math.cos(2 * math.pi * n * (x - d / 2))
+        nibs.append(max(-8, min(7, round(v * 7.5 - 0.5))) & 15)
+    out = bytearray([0xC3])
+    for i in range(0, 16, 2):
+        out.append(nibs[i] << 4 | nibs[i + 1])
+    return bytes(out)
+
+
 def short_noise_sample():
     """The noise channel's short mode: 93 steps that repeat. 16 times over, to fill whole blocks."""
     lfsr, steps = 1, []
@@ -454,11 +473,14 @@ def build_spc(prg):
         src.append((at, at + loop_at))
         return len(src) - 1
 
-    # 0-3 duty, 4 triangle, 5 the noise's short mode, then samples
+    # 0-3 duty, 4 triangle, 5 the noise's short mode, 6-17 duty for high pitches, then samples
     for d in range(4):
         place(duty_sample(d))
     place(triangle_sample())
     place(short_noise_sample())
+    for harmonics in BAND_HARMONICS:
+        for d in range(4):
+            place(band_sample(d, harmonics))
     lst = []
     for (bank, addr, length) in sorted(samples):
         off = bank * BANK + addr * 64
@@ -488,7 +510,7 @@ def build_spc(prg):
     for per in NOISE_PERIODS:
         tables += "  .word %d\n" % min(int(1789773 / per * 4096 / 32000), 0x3FFF)
     text = open(os.path.join(REPO, "src", "sound.spc")).read() + tables
-    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "src_short": 5, "dir_page": SPC_ORIGIN >> 8,
+    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "src_short": 5, "src_band": 6, "dir_page": SPC_ORIGIN >> 8,
                                                  "pitch_hi": SPC_PITCH >> 8, "tri_vol": 70, "dpcm_vol": 100})
     print("sound driver: %d bytes" % len(code))
     if SPC_CODE + len(code) > SPC_PITCH:
@@ -626,18 +648,14 @@ def build_mode7(chr_rom):
 
 
 def mode7_frames():
-    """The island's arrival: a turn and a half, from a long way off, slowing to rest."""
-    import math
+    """The island's arrival: it grows from a long way off, slowing to rest. A matrix entry is how
+    far one pixel on screen moves in the map, so it is 256 over the island's size."""
     out = []
     for i in range(M7_FRAMES):
-        t = 1 - i / M7_FRAMES
-        t = t * t
-        ang = t * math.pi * 3
-        scale = 1 + t * 5
-        a = int(math.cos(ang) * scale * 256) & 0xFFFF
-        b = int(math.sin(ang) * scale * 256) & 0xFFFF
-        c = int(-math.sin(ang) * scale * 256) & 0xFFFF
-        out += [a & 0xFF, a >> 8, b & 0xFF, b >> 8, c & 0xFF, c >> 8, a & 0xFF, a >> 8]
+        u = (i + 1) / M7_FRAMES
+        size = 0.12 + 0.88 * (1 - (1 - u) ** 3)
+        a = int(256 / size)
+        out += [a & 0xFF, a >> 8]
     return out
 
 
@@ -676,10 +694,12 @@ for _row in CLOUD_BANK.values():
 
 
 # The pages of stages with parallax, with their black solid and their sky see-through.
-# Their sky and cloud fill tiles, where the page has them. Of the clouds' page, what BG3 draws
-# instead: the rest of it is foreground, such as the shadows under platforms.
-CLOUD_TILES = {v for table in (PUFFS, CLOUD_BANK) for parts in table.values() for seq in parts.values()
-               for v in seq if not isinstance(v, str)}
+# Their sky and cloud fill tiles, where the page has them. All of the clouds' page but the shadows
+# under platforms, on the walls' triangles, which are foreground.
+CLOUD_TILES = set(range(64)) - {0x0F, 0x21, 0x28, 0x30, 0x31, 0x39}
+# Slopes have the white of the clouds behind them in their tiles, as colour 3. In this page's first
+# four columns are the walls, whose white is their own.
+SLOPE_TILES = {0x02: {t for t in range(64) if t & 15 >= 4}}
 PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
                   CLOUD_PAGE: CLOUD_TILES}
 for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
@@ -697,8 +717,10 @@ def build_parallax_pages(chr_rom):
                 out += bytes(32)
                 continue
             rows, solid = bytearray(), bytearray()
+            behind = t in SLOPE_TILES.get(page, ())
             for y in range(8):
-                rows += bytes([c[y], c[8 + y]])
+                white = c[y] & c[8 + y] if behind else 0
+                rows += bytes([c[y] & ~white & 0xFF, c[8 + y] & ~white & 0xFF])
                 # Plane 3: colour 4, the black, where the NES has colour 0.
                 solid += bytes([(~(c[y] | c[8 + y])) & 0xFF, 0])
             # Colour 0 becomes 4, which has only that plane set; 1-3 stay as they are.
@@ -956,6 +978,7 @@ def main():
                 data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x4C, t & 0xFF, t >> 8, 0xEA])
         patched[num] = bytes(data)
 
+    romc = open(boot + ".c", "rb").read()    # src/runtime.s's fast code, for every code bank's $C000
     image = bytearray(b"\xFF" * ROM_SIZE)
     image[0x8000:0x10000] = open(boot, "rb").read()
     for n, b in enumerate(banks):
@@ -964,6 +987,7 @@ def main():
             page = b[i] if b[i] is not None else 0
             image[at + i * BANK:at + (i + 1) * BANK] = patched[page]
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
+        image[at + 2 * BANK:at + 2 * BANK + len(romc)] = romc
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
     image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
     for n in range(len(alias_tiles) // 0x800):
