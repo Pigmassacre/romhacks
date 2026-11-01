@@ -44,6 +44,36 @@ NES sprites are 8x16, which the SNES lacks: each is two 8x8 sprites, keeping its
 A tile row can wrap at line 240 on the NES; the SNES's map has 2 more rows there, so an HDMA table adds
 16 to the vertical scroll where the picture crosses them.
 
+**Sprites.** `nmi_work` sends them first thing in vblank, and the game's own `$4014` then does nothing. Late, they would
+corrupt OAM, and they include the high table so that such damage cannot last. `convert_sprites` keeps to `spr_tmp`, as
+it runs at the end of the main thread's frame, and a split's interrupt can land in it and use `tmp`.
+
+**The order in vblank.** Everything does not fit, so `nmi_work` decides: sprites, palette, scroll, the game's tile
+buffer, sprites' CHR pages, colours, then second-set pages. Anything written to VRAM after vblank is lost, so a copy
+must not start where it cannot finish, and a line number from the next picture is not "early". `vram_flush` writes runs
+and columns directly, as the game resends a column of 24 tiles every frame. The game's own calls then find little left.
+
+**Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
+code the game itself calls can go there and run faster than from RAM. `convert_oam` does: the more sprites, the more
+it costs, where the NES only copies them, and that is what slows the game when the screen is busy.
+
+**CHR pages.** The NES's bank switch is instant and a page here takes 12 lines of vblank, so the game's own
+order, with CHR last, is usually too late. `top_pages` runs first in `nmi_work`, from what the game has at `$E1-$E8`:
+sprites' pages, then the background's if no colours are waiting (`attr_work`), one page a frame, or two if there
+is no tile buffer. Yumetaro's own page changes as Yumetaro animates, so this matters all the time. Only one stale page
+is sure of being copied, so `spr_check` keeps sprites on any other off for that frame, rather than draw garbage.
+
+**Behind the background, with parallax.** Colour 0 there is solid and the sky is not there, the reverse of what
+such a sprite needs, so it would vanish in a pipe's mouth. So with parallax they all go in front (`spr_pri`).
+
+**The portal.** It hides what comes out of it with the NES's limit of 8 sprites on a line: 16 blank sprites, tile
+`$80` with attribute `$20`, in two stacks of 8, ahead of the others. The SNES has no such limit, so `spr_check` notes them
+and `band_now` turns sprites off for those lines, by HDMA on TM.
+
+**Splits take longer than on the NES.** A split changes scroll and then tiles, and the stubs for that take several
+lines. So `split_early` changes tiles along with the scroll that came before them last frame. A handler's `$2005` just
+before a `$2000` becomes `ppu_scroll_hold`, so that both apply at once and no line shows the wrong nametable.
+
 **The status bar.** The game takes an FME-7 interrupt, counted in CPU cycles, and changes CHR pages and
 scroll for what is below. The SNES interrupts on a line (`arm_irq`). Its handler takes much longer here,
 so the interrupt comes 12 lines early, and what shows waits for the line (`wait_line`). CHR cannot be
@@ -54,9 +84,10 @@ splits asked for (`load_page`), and the split flips to them.
 
 Sky is a solid tile on the NES, and black outlines are colour 0, which the SNES would see through. BG1
 is 16 colours in Mode 1 so both can work: in the versions of pages made by `build_parallax_pages`, colour
-0 becomes solid colour 4 (the backdrop's colour) and sky tiles and the clouds' page are blank. The sky's colour
-becomes the backdrop's. The clouds are on BG3, at half the camera's speed (`bg2_now`), arranged as in the
-stages: the tables are near the top of `tools/build.py`. Below the status bar's split BG3 goes off and the
+0 becomes solid colour 4 (the backdrop's colour) and sky tiles and the cloud tiles BG3 draws are blank. The rest
+of the clouds' page stays, because it holds foreground too, such as the shadows under platforms. The sky's colour
+becomes the backdrop's. The clouds are on BG3, at half the camera's speed (`bg2_now`). Their bank is the title
+screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`. Below the status bar's split BG3 goes off and the
 backdrop goes back.
 
 ## The world map
@@ -64,7 +95,7 @@ backdrop goes back.
 The island is fixed nametable data. `tools/survey.py` captures it, and `build_mode7` makes a Mode 7 map
 and tiles from it (129 tile and palette pairs). Mode 7 needs the first half of VRAM, so sprites move
 to their second tables and everything is reloaded on the way out. `map_now` runs the arrival from
-a table of matrices, then sets the identity, at which it lines up with the sprites.
+a table of scales, then sets the identity, at which it lines up with the sprites.
 
 ## Gimmick! 1.5, as options
 
@@ -90,9 +121,19 @@ of. `sound_hook`, right after that in the NMI, sends what changed to `src/sound.
 NES's sequencer going (length, envelope, sweep, linear counter) and sets the DSP's voices. There are
 exactly enough: pulse, pulse, triangle, noise, DPCM and three 5B squares.
 
+From about 1 kHz a voice switches to a wave with fewer harmonics (`band_sample`, picked in `set_pitch`): the DSP has no
+filter to speak of when it steps over samples, and a square's edges would fold back as scratchy noise.
+
 Waves are short looped samples, and DPCM samples are converted to BRR at build time, at a third of their
-rate to fit. `tools/spcasm.py` is a small assembler for the SPC700. Not done: the noise channel's short
-mode sounds like plain noise, and the 5B's envelope and noise are unused by this game's music.
+rate to fit. `tools/spcasm.py` is a small assembler for the SPC700. The noise channel's short mode is a
+sample too, as its 93 steps have a pitch. The 5B's envelope and noise are not handled: the game writes the
+mixer's noise bits only rarely, and never sets an envelope volume.
+
+A frame's registers are sent between messages `$1E` and `$1F`, and the driver does not read them in between: a
+period is two registers, and half of a new one is a wildly wrong note for 4 ms. The 5B takes 32 clocks a step and
+the period itself, where a pulse takes 16 and period + 1, so its voices are an octave below a pulse's with the same
+number. The driver's sweep moves its own copy of a period, so a new note sends the period again even if the
+game's value has not changed.
 
 ## What was found out along the way
 

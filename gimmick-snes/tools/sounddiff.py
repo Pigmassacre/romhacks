@@ -34,7 +34,9 @@ def load(name):
 
 
 def want_pitch(ch, per):
-    return min(229090 // (per + 1 if ch < 5 else max(per, 1)), 0x3FFF)
+    if ch >= 5:
+        return min(229090 // (2 * max(per, 1)), 0x3FFF)
+    return min(229090 // (per + 1), 0x3FFF)
 
 
 def score(a, b, off):

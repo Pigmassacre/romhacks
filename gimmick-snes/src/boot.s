@@ -8,7 +8,7 @@
 .include "hw.inc"
 
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
-.import split_open, irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
+.import band_tab, split_open, irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
 .import nmi_work, runtime_init
 .import FirstBank, NesNmi, NesIrq, NesReset, SpcAddr, SpcSize, SpcEntry
 SPC_BLOB = $D80000          ; tools/build.py puts these there
@@ -228,6 +228,13 @@ fast:
         ldx #hdma_tab
         stx A1T6L
         stz A1B6
+        ; TM by line, for the portal: see band_now
+        stz DMAP7 - $30
+        lda #<TM
+        sta BBAD6 - $20
+        ldx #band_tab
+        stx A1T6L - $20
+        stz A1B6 - $20
 
         ; Unset tile-set pages can't match any page.
         ldx #0
@@ -275,6 +282,9 @@ spc_size = $1FF4
 
 ; The vertical scroll's HDMA and the background's tile set restart with each frame.
 nmi_emu:
+        ; The fast mirror of this bank: no interrupt can land in this, which would lose the bank.
+        jml $800000 | nmi_fast
+nmi_fast:
         pha
         phx
         phy

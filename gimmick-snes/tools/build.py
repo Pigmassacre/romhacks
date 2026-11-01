@@ -8,6 +8,7 @@ The game's code keeps its place: each ROM bank the machine runs from holds, at $
 $A000, $C000 and $E000, the NES banks one mapping of the FME-7 shows there. Instructions
 that touch NES hardware become JSRs to src/runtime.s, in RAM every bank can see.
 """
+import math
 import os
 import re
 import subprocess
@@ -38,16 +39,12 @@ SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush"}
 
 # 2C02 colours.
-NES_RGB = [
-    (84,84,84),(0,30,116),(8,16,144),(48,0,136),(68,0,100),(92,0,48),(84,4,0),(60,24,0),
-    (32,42,0),(8,58,0),(0,64,0),(0,60,0),(0,50,60),(0,0,0),(0,0,0),(0,0,0),
-    (152,150,152),(8,76,196),(48,50,236),(92,30,228),(136,20,176),(160,20,100),(152,34,32),(120,60,0),
-    (84,90,0),(40,114,0),(8,124,0),(0,118,40),(0,102,120),(0,0,0),(0,0,0),(0,0,0),
-    (236,238,236),(76,154,236),(120,124,236),(176,98,236),(228,84,236),(236,88,180),(236,106,100),(212,136,32),
-    (160,170,0),(116,196,0),(76,208,32),(56,204,108),(56,180,204),(60,60,60),(0,0,0),(0,0,0),
-    (236,238,236),(168,204,236),(188,188,236),(212,178,236),(236,174,236),(236,174,212),(236,180,176),(228,196,144),
-    (204,210,120),(180,222,120),(168,226,144),(152,226,180),(160,214,228),(160,162,160),(0,0,0),(0,0,0),
-]
+NES_RGB = [tuple(bytes.fromhex(c)) for c in """
+666666 002A88 1412A7 3B00A4 5C007E 6E0040 6C0600 561D00 333500 0B4800 005200 004F08 00404D 000000 000000 000000
+ADADAD 155FD9 4240FF 7527FE A01ACC B71E7B B53120 994E00 6B6D00 388700 0C9300 008F32 007C8D 000000 000000 000000
+FFFEFF 64B0FF 9290FF C676FF F36AFF FE6ECC FE8170 EA9E22 BCBE00 88D800 5CE430 45E082 48CDDE 4F4F4F 000000 000000
+FFFEFF C0DFFF D3D2FF E8C8FF FBC2FF FEC4EA FECCC5 F7D8A5 E4E594 CFEF96 BDF4AB B3F3CC B5EBF2 B8B8B8 000000 000000
+""".split()]
 
 
 def load_survey():
@@ -233,6 +230,16 @@ def find_patches(instrs, stubs):
                         bad.append("%02X:%04X %s %s $%04X" % (num, pc, m, mode, a))
                 else:
                     p[pc] = label
+    # A $2005 just before a $2000: those two take effect together.
+    for num, code in instrs.items():
+        for pc, ins in code.items():
+            if not ins or ins[1] != "abs" or ins[2] != 0x2005 or ins[0] not in ("sta", "stx", "sty"):
+                continue
+            nxt = code.get(pc + 3)
+            if nxt and nxt[0] in ("lda", "ldx", "ldy") and nxt[1] != "abs":
+                nxt = code.get(pc + 3 + nxt[3])
+            if nxt and nxt[1] == "abs" and nxt[2] == 0x2000 and nxt[0] in ("sta", "stx", "sty"):
+                patches[num][pc] = "ppu_scroll_hold_%s" % ins[0][2]
     return patches, bad
 
 
@@ -313,6 +320,7 @@ SPC_CODE = 0x0600
 SPC_PITCH = 0x2000
 SPC_BRR = 0x4000
 DPCM_STEP = 3               # samples kept: 1 in this many, for them all to fit
+BAND_HARMONICS = (7, 3, 2)  # for pitches from 1, 2 and 4 kHz: src/sound.spc picks by the pitch
 DMC_HZ = [4181.71, 4709.93, 5264.04, 5593.04, 6257.95, 7046.35, 7918.63, 8363.42,
           9419.86, 11186.1, 12604.0, 13982.6, 16884.6, 21306.8, 24858.0, 33143.9]
 NOISE_PERIODS = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
@@ -333,7 +341,8 @@ def brr_encode(samples, loop=False):
     for at in range(0, len(samples), 16):
         block = samples[at:at + 16]
         best = None
-        for flt in range(4):
+        # The DSP does not clear what came before when a sample starts: no filter at first.
+        for flt in range(4 if at else 1):
             for rng in range(13):
                 a, b = p1, p2
                 err = 0
@@ -388,6 +397,39 @@ def triangle_sample():
     return bytes(out)
 
 
+def band_sample(duty, harmonics):
+    """A pulse wave with only its lower harmonics. At high pitches the DSP steps over samples, and
+    a wave's sharp edges then fold back as noise, so these have none to lose."""
+    d = {0: 2, 1: 4, 2: 8, 3: 12}[duty] / 16
+    nibs = []
+    for i in range(16):
+        x = (i + 0.5) / 16
+        v = 2 * d - 1
+        for n in range(1, harmonics + 1):
+            v += 4 / (n * math.pi) * math.sin(n * math.pi * d) * math.cos(2 * math.pi * n * (x - d / 2))
+        nibs.append(max(-8, min(7, round(v * 7.5 - 0.5))) & 15)
+    out = bytearray([0xC3])
+    for i in range(0, 16, 2):
+        out.append(nibs[i] << 4 | nibs[i + 1])
+    return bytes(out)
+
+
+def short_noise_sample():
+    """The noise channel's short mode: 93 steps that repeat. 16 times over, to fill whole blocks."""
+    lfsr, steps = 1, []
+    for _ in range(93):
+        steps.append(lfsr & 1)
+        lfsr = lfsr >> 1 | ((lfsr ^ lfsr >> 6) & 1) << 14
+    bits = steps * 16
+    out = bytearray()
+    for b in range(0, len(bits), 16):
+        out.append(0xC0 | (3 if b + 16 >= len(bits) else 0))
+        nibs = [8 if v else 7 for v in bits[b:b + 16]]
+        for i in range(0, 16, 2):
+            out.append(nibs[i] << 4 | nibs[i + 1])
+    return bytes(out)
+
+
 def dpcm_decode(data):
     """1-bit deltas to samples, one in DPCM_STEP, with the slow drift taken out."""
     level = 64
@@ -406,6 +448,10 @@ def dpcm_decode(data):
         v = sum(part) / len(part)
         dc += (v - dc) / 256
         out.append(int(max(-32768, min(32767, (v - dc) * 300))))
+    # The NES's output stays where it ends; this one stops at 0, which would click.
+    fade = min(64, len(out))
+    for i in range(fade):
+        out[-1 - i] = out[-1 - i] * i // fade
     return out
 
 
@@ -427,10 +473,14 @@ def build_spc(prg):
         src.append((at, at + loop_at))
         return len(src) - 1
 
-    # 0-3 duty, 4 triangle, then samples
+    # 0-3 duty, 4 triangle, 5 the noise's short mode, 6-17 duty for high pitches, then samples
     for d in range(4):
         place(duty_sample(d))
     place(triangle_sample())
+    place(short_noise_sample())
+    for harmonics in BAND_HARMONICS:
+        for d in range(4):
+            place(band_sample(d, harmonics))
     lst = []
     for (bank, addr, length) in sorted(samples):
         off = bank * BANK + addr * 64
@@ -456,9 +506,12 @@ def build_spc(prg):
     for hz in DMC_HZ:
         tables += "  .word %d\n" % min(int(hz / DPCM_STEP * 4096 / 32000), 0x3FFF)
     tables += "noise_clock:\n  .byte " + ",".join(str(v) for v in noise) + "\n"
+    tables += "noise_pitch:\n"
+    for per in NOISE_PERIODS:
+        tables += "  .word %d\n" % min(int(1789773 / per * 4096 / 32000), 0x3FFF)
     text = open(os.path.join(REPO, "src", "sound.spc")).read() + tables
-    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "dir_page": SPC_ORIGIN >> 8,
-                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 56, "dpcm_vol": 64})
+    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "src_short": 5, "src_band": 6, "dir_page": SPC_ORIGIN >> 8,
+                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 70, "dpcm_vol": 100})
     print("sound driver: %d bytes" % len(code))
     if SPC_CODE + len(code) > SPC_PITCH:
         sys.exit("the sound driver is too big")
@@ -598,18 +651,14 @@ def build_mode7(chr_rom):
 
 
 def mode7_frames():
-    """The island's arrival: a turn and a half, from a long way off, slowing to rest."""
-    import math
+    """The island's arrival: it grows from a long way off, slowing to rest. A matrix entry is how
+    far one pixel on screen moves in the map, so it is 256 over the island's size."""
     out = []
     for i in range(M7_FRAMES):
-        t = 1 - i / M7_FRAMES
-        t = t * t
-        ang = t * math.pi * 3
-        scale = 1 + t * 5
-        a = int(math.cos(ang) * scale * 256) & 0xFFFF
-        b = int(math.sin(ang) * scale * 256) & 0xFFFF
-        c = int(-math.sin(ang) * scale * 256) & 0xFFFF
-        out += [a & 0xFF, a >> 8, b & 0xFF, b >> 8, c & 0xFF, c >> 8, a & 0xFF, a >> 8]
+        u = (i + 1) / M7_FRAMES
+        size = 0.12 + 0.88 * (1 - (1 - u) ** 3)
+        a = int(256 / size)
+        out += [a & 0xFF, a >> 8]
     return out
 
 
@@ -634,21 +683,28 @@ PUFFS = {
     9: {9: (0x09, 0x06, 0x16, 0x07)},
     11: {21: (0x09, 0x06, 0x16, 0x07, 0x17)},
 }
+# The bank of cloud under them: the rows the title screen has, which meet at their ends, so it
+# loops. Tiles from $40 are the clouds' page; L and W are its fill.
 CLOUD_BANK = {
-    12: {4: (0x08, 0x18)},
-    13: {0: (0x0A, 0x1A, 0x0B, 0x1B, 0x2B, 0x3B, 0x0E, 0x1E, 0x0A, 0x1A, 0x07, 0x17)},
-    14: {0: ("L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C, "L", "L", "L"), 14: (0x08, 0x18)},
-    15: {0: (0x29, "W", "W", "W", "W", "W", "W", 0x3D, "L", "L", 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B, 0x0A, 0x1A,
-             0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
-    16: {0: ("W",) * 8 + (0x20, 0x23, "L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C) + ("L",) * 12 + (0x38, 0x2A, 0x3A)},
-    17: {0: ("W",) * 10 + (0x29,) + ("W",) * 6 + (0x3D,) + ("L",) * 13 + (0x29,)},
-    18: {0: ("W",) * 18 + (0x20, 0x23, 0x22, 0x32, 0x20, 0x23, 0x20, 0x23) + ("W",) * 6},
+    15: {0: (0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B,
+             0x0A, 0x1A, 0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
+    16: {0: ("L",) * 11 + (0x38, 0x2A, 0x3A, "W", "W", 0x2C) + ("L",) * 15},
+    17: {0: (0x24, 0x34, 0x25, 0x35) + ("L",) * 6 + (0x29,) + ("W",) * 6 + (0x3D,) + ("L",) * 14},
+    18: {0: (0x20, 0x23, 0x23, 0x33, 0x20, 0x23, 0x22, 0x32, 0x20, 0x23) + ("W",) * 8 + (0x20, 0x23) * 7},
 }
+for _row in CLOUD_BANK.values():
+    assert len(_row[0]) == 32
 
 
 # The pages of stages with parallax, with their black solid and their sky see-through.
-# Their sky and cloud fill tiles, where the page has them; the clouds' page is all see-through.
-PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,), CLOUD_PAGE: "all"}
+# Their sky and cloud fill tiles, where the page has them. All of the clouds' page but the shadows
+# under platforms, on the walls' triangles, which are foreground.
+CLOUD_TILES = set(range(64)) - {0x0F, 0x21, 0x28, 0x30, 0x31, 0x39}
+# Slopes have the white of the clouds behind them in their tiles, as colour 3. In this page's first
+# four columns are the walls, whose white is their own.
+SLOPE_TILES = {0x02: {t for t in range(64) if t & 15 >= 4}}
+PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
+                  CLOUD_PAGE: CLOUD_TILES}
 for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
     PARALLAX_PAGES[_p] = ()
 
@@ -660,12 +716,14 @@ def build_parallax_pages(chr_rom):
         alias[page] = 0x80 + n
         for t in range(64):
             c = chr_rom[page * 0x400 + t * 16:page * 0x400 + t * 16 + 16]
-            if sky == "all" or t in sky:
+            if t in sky:
                 out += bytes(32)
                 continue
             rows, solid = bytearray(), bytearray()
+            behind = t in SLOPE_TILES.get(page, ())
             for y in range(8):
-                rows += bytes([c[y], c[8 + y]])
+                white = c[y] & c[8 + y] if behind else 0
+                rows += bytes([c[y] & ~white & 0xFF, c[8 + y] & ~white & 0xFF])
                 # Plane 3: colour 4, the black, where the NES has colour 0.
                 solid += bytes([(~(c[y] | c[8 + y])) & 0xFF, 0])
             # Colour 0 becomes 4, which has only that plane set; 1-3 stay as they are.
@@ -851,7 +909,7 @@ def main():
 
     # Tables and stubs for the assembler
     s = '.segment "TABLES"\n'
-    colors = [min(r * 31 // 236, 31) | min(g * 31 // 236, 31) << 5 | min(b * 31 // 236, 31) << 10 for r, g, b in NES_RGB]
+    colors = [(r * 31 + 127) // 255 | ((g * 31 + 127) // 255) << 5 | ((b * 31 + 127) // 255) << 10 for r, g, b in NES_RGB]
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
@@ -923,6 +981,7 @@ def main():
                 data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x4C, t & 0xFF, t >> 8, 0xEA])
         patched[num] = bytes(data)
 
+    romc = open(boot + ".c", "rb").read()    # src/runtime.s's fast code, for every code bank's $C000
     image = bytearray(b"\xFF" * ROM_SIZE)
     image[0x8000:0x10000] = open(boot, "rb").read()
     for n, b in enumerate(banks):
@@ -931,6 +990,7 @@ def main():
             page = b[i] if b[i] is not None else 0
             image[at + i * BANK:at + (i + 1) * BANK] = patched[page]
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
+        image[at + 2 * BANK:at + 2 * BANK + len(romc)] = romc
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
     image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
     for n in range(len(alias_tiles) // 0x800):
