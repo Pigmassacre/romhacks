@@ -35,7 +35,11 @@ class Map:
             return "#"
         if r < 0 or r >= self.h:
             return "."
-        return self.r[r][c]
+        ch = self.r[r][c]
+        return {"P": "#", "D": "."}.get(ch, ch)
+
+    def raw(self, c, r):
+        return self.r[r][c] if 0 <= c < self.w and 0 <= r < self.h else "."
 
     def solid(self, x, y):
         return self.at(x // 16, y // 16) == "#"
@@ -64,7 +68,8 @@ def fly(m, x, y, dirn, delay, vy=-84.0, step=1.44):
                 ny = fy
         else:
             for px in (int(fx) - 4, int(fx) + 4):
-                if m.top(px, int(ny)) and int(ny) // 16 > int(fy) // 16 or (m.top(px, int(ny)) and not m.top(px, int(fy))):
+                # only by coming down onto the top of a tile with room above it
+                if m.top(px, int(ny)) and int(ny) // 16 > int(fy) // 16 and m.at(px // 16, int(ny) // 16 - 1) != "#":
                     return (px // 16, int(ny) // 16)
         fy = ny
         if fy > m.h * 16:
@@ -149,13 +154,14 @@ def main():
         for t in (1, 2, 3):
             got = reach(m, (c0, r0), t)
             res.append(max(c for c, r in got))
+            ways = sorted(set(c for c, r in got for dc in (-1, 0, 1) for dr in (-5, -4, -3, -2, -1, 0) if m.raw(c + dc, r + dr) in "PD" and (m.raw(c + dc, r + dr) == "D" or dr in (0, -3, -4, -5))))
             if res[-1] >= end - 1:
                 break
         if res[0] >= end - 1:
             continue
         stop = res[-1]
         past = sorted(set("%02x@%d" % (o[0], o[1]) for o in objs if o[0] in PLATFORMS and stop - 12 <= o[1] <= stop + 30))
-        print("%-18s end %3d reach %s %s" % (name, end, "/".join(map(str, res)), "platforms " + " ".join(past[:6]) if past else ""))
+        print("%-18s end %3d reach %s %s%s" % (name, end, "/".join(map(str, res)), "ways at %s " % ways[:6] if ways else "", "platforms " + " ".join(past[:6]) if past else ""))
 
 
 main()

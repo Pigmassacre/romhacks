@@ -1,5 +1,5 @@
 -- Writes each area's tiles to out/test/map_<name>.txt, for planning routes: # solid, = solid from
--- above only, . air, ~ water, and the level's objects. MAP_LEVELS=a,b,c picks areas.
+-- above only, . air, ~ water, D doors, P pipes to go into, and the level's objects. MAP_LEVELS=a,b,c picks areas.
 local names = {}
 for n in (os.getenv("MAP_LEVELS") or ""):gmatch("[^,]+") do names[#names + 1] = n end
 if #names == 0 then for _, l in ipairs(levels()) do names[#names + 1] = l.name end end
@@ -25,6 +25,8 @@ local function nextone()
         local q = t >> 6
         local c = t >= all[q] and "#" or t >= top[q] and "=" or "."
         if c == "." and t >= r(S["Level_MinTileUWByQuad"] + idx * 4 + q) then c = "~" end
+        if t == 0x42 or t == 0x43 then c = "D" end
+        if t == 0xAD or t == 0xAF or t == 0xB3 or t == 0xBD or t == 0xB5 then c = "P" end
         s[#s + 1] = c
       end
     end
