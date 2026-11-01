@@ -159,7 +159,7 @@ fast:
         ina
 :       sta APUIO0
 
-        ; The notices for the title screen: BG2's tiles and map.
+        ; The notices for the title screen: BG3's tiles and map.
         lda #$80
         sta VMAINC
         ldx #$6800
@@ -177,7 +177,7 @@ fast:
         lda #$80
         sta MDMAEN
         ; The clouds' two maps, for parallax
-        ldx #$7800
+        ldx #$7000
         stx VMADDL
         ldx #$1000
         stx A1T7L
@@ -185,9 +185,9 @@ fast:
         lda #$80
         sta MDMAEN
         lda #$6C
-        sta BG2SC
-        ; Black, grey and white, for the notices. BG2's first palette is the clouds'.
-        lda #49
+        sta BG3SC
+        ; Black, grey and white, for the notices. Palette 1 is the clouds'.
+        lda #9
         sta CGADD
         stz CGDATA
         stz CGDATA
@@ -200,12 +200,15 @@ fast:
         lda #$7F
         sta CGDATA
 
-        ; The picture: mode 0, BG1 only with sprites over it, as the NES's layers.
-        stz BGMODE
+        ; The picture: mode 1, for 16 colours on BG1 and BG3 on top where it asks to be.
+        lda #$09
+        sta BGMODE
         lda #$60 | 1        ; maps at $6000, side by side to start with
         sta BG1SC
-        lda #$62            ; BG1's tiles at $2000, BG2's at $6000 (its own at tile 256)
+        lda #$02            ; BG1's tiles at $2000
         sta BG12NBA
+        lda #$06            ; BG3's at $6000 (its own start at tile 256)
+        sta BG34NBA
         lda #$00            ; sprite tables at 0, 8x8 and 16x16
         sta OBSEL
         ; One window, over the leftmost 8 pixels, for when the game hides them.

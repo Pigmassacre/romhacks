@@ -13,14 +13,13 @@
 
 .include "hw.inc"
 
-.import ColorLo, ColorHi, AttrTable, ChrBgBanks, ChrObjBanks
+.import ColorLo, ColorHi, AttrTable, ChrObjBanks, PageAlias
 .import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
 OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
 BGSET_HI   = $20            ; the first tile set of three: see set_hi
 CLOUD_PAGE = 1              ; the CHR page of clouds, for parallax
-BG2_NIBBLE = $60            ; BG2's tiles, for BG12NBA's other half
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
@@ -63,7 +62,7 @@ cam_hi:      .res 1
 cam_prev:    .res 2
 cam_acc:     .res 2
 tm_now:      .res 1         ; what the game has switched on
-overlay:     .res 1         ; and BG2, on the title screen
+overlay:     .res 1         ; and BG3, on the title screen or behind clouds
 in_split:    .res 1         ; a split's interrupt has run this frame
 .export in_split
 .export irq_flag
@@ -431,8 +430,7 @@ fme_chr:
         lda split_open
         bne @have
         lda split_n
-        cmp #2
-        bcs @flip
+        bne @flip           ; there is one further tile set
         inc split_n
         inc split_open
         ; Start it from the set above.
@@ -481,6 +479,7 @@ load_top_slot:
         txa
         and #3
         asl a
+        asl a
         ora #BGSET_HI
         sta VMADDH
         jsr dma_bg_page
@@ -498,16 +497,18 @@ load_top_slot:
         jsr dma_obj_page
 @out:   rts
 
-; Page in y; the VRAM address is set. Keeps y.
+; Page in y; the VRAM address is set. Keeps y. Background tiles are 4 bits a pixel, as
+; sprites are, and come from the same place: pages from $80 are the versions for parallax.
 dma_bg_page:
         tya
         phx
         tax
-        lda f:ChrBgBanks,x
+        lda f:ChrObjBanks,x
         plx
         sta A1B7
         tya
-        and #$1F
+        and #$0F
+        asl a
         asl a
         asl a
         sta A1T7H
@@ -517,7 +518,7 @@ dma_bg_page:
         lda #<VMDATAL
         sta BBAD7
         stz DAS7L
-        lda #$04
+        lda #$08
         sta DAS7H
         lda #$80
         sta MDMAEN
@@ -558,7 +559,7 @@ dma_obj_page:
         rts
 
 ; The tile sets, by the high byte of their VRAM address.
-set_hi: .byte BGSET_HI, $30, $70
+set_hi: .byte BGSET_HI, $30
 
 ; At the next line, show the tiles and sprites a split changed to, once they are copied.
 show_split_set:
@@ -585,8 +586,17 @@ flip_bg:
         lsr a
         lsr a
         lsr a
-        ora #BG2_NIBBLE
         sta BG12NBA
+        ; Below the split the backdrop is the game's again, not the sky, and no clouds.
+        lda parallax
+        beq @out
+        lda tm_now
+        sta TM
+        stz CGADD
+        lda cg_bg
+        sta CGDATA
+        lda cg_bg + 1
+        sta CGDATA
 @out:   rts
 
 ; The game sets the sprites' pages one by one: flip when the last one is right.
@@ -638,7 +648,7 @@ nmi_work2:
         stz irq_line
         stz in_split
         stz OBSEL
-        lda #BG2_NIBBLE | (BGSET_HI >> 4)
+        lda #BGSET_HI >> 4
         sta BG12NBA
         lda #$40
         sta HDMAEN
@@ -732,7 +742,7 @@ scroll_now:
         sta cam_hi
 @out:   rts
 
-; BG2: the notices on the title screen, clouds behind stages that have them. $4A is 3 and
+; BG3: the notices on the title screen, clouds behind stages that have them. $4A is 3 and
 ; $90 is 0 on the title; $4A is 1 in play, where the clouds' page is at $E6 or $E7.
 bg2_now:
         ldx #0
@@ -746,12 +756,12 @@ bg2_now:
         lda $90
         bne @off
         lda #$6C
-        sta BG2SC
-        stz BG2HOFS
-        stz BG2HOFS
-        stz BG2VOFS
-        stz BG2VOFS
-        ldx #2
+        sta BG3SC
+        stz BG3HOFS
+        stz BG3HOFS
+        stz BG3VOFS
+        stz BG3VOFS
+        ldx #4
         bra @done2
 @not_title:
         cmp #1
@@ -769,7 +779,7 @@ bg2_now:
         bcs @off
         lda cloud_sc,y
         beq @off
-        sta BG2SC
+        sta BG3SC
         inc parallax
         lda cloud_pal,y
         cmp band_pal
@@ -778,9 +788,9 @@ bg2_now:
         lda #1
         sta pal_dirty
 :       lda cloud_y,y
-        sta BG2VOFS
+        sta BG3VOFS
         lda cloud_yh,y
-        sta BG2VOFS
+        sta BG3VOFS
         ; Half the camera's speed: a jump is a new screen, not movement.
         lda cam_lo
         sec
@@ -817,14 +827,31 @@ bg2_now:
         sta tmp + 3
         lda cam_acc
         ror a
-        sta BG2HOFS
+        sta BG3HOFS
         lda tmp + 3
         and #3
-        sta BG2HOFS
-        ldx #2
+        sta BG3HOFS
+        ; The sky is the backdrop now: the colour that was its tile.
+        lda band_pal
+        asl a
+        asl a
+        asl a
+        tax
+        stz CGADD
+        lda cg_bg + 2,x
+        sta CGDATA
+        lda cg_bg + 3,x
+        sta CGDATA
+        ldx #4
         bra @done
 @really_off:
         ldx #0
+        ; Without parallax the backdrop is the game's own.
+        stz CGADD
+        lda cg_bg
+        sta CGDATA
+        lda cg_bg + 1
+        sta CGDATA
 @done:  stx overlay
         lda tm_now
         beq :+
@@ -843,7 +870,7 @@ load_page:
         cmp set_have,x
         bne @load
 :       inx
-        cpx #12
+        cpx #8
         bne @next
         ldx #4
 @obj:   lda obj2_want,x
@@ -873,7 +900,7 @@ load_page:
         cmp set_have,x
         bne @load
         inx
-        cpx #12
+        cpx #8
         bne @rest
         ldx #7
 @rest2: lda obj2_want,x
@@ -896,26 +923,19 @@ load_page:
         lda #$80
         sta VMAINC
         stz VMADDL
-        ; x = set * 4 + slot, and slots are $200 words.
+        ; x = 4 + slot, and slots are $400 words.
         txa
         and #3
         asl a
-        sta tmp
-        txa
-        lsr a
-        lsr a
-        phx
-        tax
-        lda set_hi,x
-        plx
-        ora tmp
+        asl a
+        ora #$30
         sta VMADDH
         jmp dma_bg_page
 
 .segment "WCODE"
 
 ; For each stage: BG2's map (0 for none), the palette its clouds use and where they sit.
-cloud_sc:  .byte $78, $78, $00, $7C, $00, $00, $00
+cloud_sc:  .byte $70, $70, $00, $74, $00, $00, $00
 cloud_pal: .byte 1, 1, 0, 3, 0, 0, 0
 cloud_y:   .byte <(7), <(7 - 40), 0, <(7), 0, 0, 0
 cloud_yh:  .byte >(7), >(7 - 40), 0, >(7), 0, 0, 0
@@ -931,12 +951,13 @@ chr_all:
         sta chr_want,x
         cpx #4
         bcc :+
-        ; With parallax the clouds are on BG2, and blank tiles take their place on BG1.
+        ; With parallax the page's version with see-through sky takes its place.
         ldy parallax
         beq @plain
-        cmp #CLOUD_PAGE
-        bne @plain
-        ora #$80
+        phx
+        tax
+        lda f:PageAlias,x
+        plx
 @plain: sta set_want - 4,x
 :       lda force_blank
         bne :+
@@ -1476,20 +1497,46 @@ commit_palette:
         lda pal_dirty
         beq @out
         stz pal_dirty
-        stz CGADD
-        ldx #0
-:       lda cg_bg,x
+        ; BG1 is 16 colours a palette: the NES's three, then the backdrop's colour for its
+        ; black when that has to be solid. BG3's are in the gaps, 5-7 for the clouds.
+        ldy #0
+@pal:   tya
+        asl a
+        asl a
+        asl a
+        asl a
+        ina
+        sta CGADD
+        tya
+        asl a
+        asl a
+        asl a
+        tax
+        lda cg_bg + 2,x
         sta CGDATA
-        inx
-        cpx #32
-        bne :-
-        ; The clouds' palette, for BG2
+        lda cg_bg + 3,x
+        sta CGDATA
+        lda cg_bg + 4,x
+        sta CGDATA
+        lda cg_bg + 5,x
+        sta CGDATA
+        lda cg_bg + 6,x
+        sta CGDATA
+        lda cg_bg + 7,x
+        sta CGDATA
+        lda cg_bg
+        sta CGDATA
+        lda cg_bg + 1
+        sta CGDATA
+        iny
+        cpy #4
+        bne @pal
         lda band_pal
         asl a
         asl a
         asl a
         tax
-        lda #33
+        lda #5
         sta CGADD
         inx
         inx

@@ -24,11 +24,12 @@ SURVEY = os.path.join(OUT, "survey")
 ROM = os.path.join(REPO, "Gimmick! (Japan).nes")
 BANK = 0x2000
 FIXED = 0x1F
+CLOUD_PAGE = 0x01           # src/runtime.s has the same number
 NO_RETURN = {0xF319}        # reads a jump table inline, after its JSR
 ROM_SIZE = 0x400000
 FIRST_CODE_BANK = 32        # $A0: the first with the cartridge RAM at $6000
 LAST_CODE_BANK = 63
-BG_HALF, OBJ_HALF = 1, 8    # which banks' lower halves hold the converted tiles
+ALIAS_HALF, OBJ_HALF = 1, 8 # which banks' lower halves hold the converted tiles
 SPC_BANK = 24               # all of it: src/boot.s has the same number, as $D8
 PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
@@ -299,12 +300,10 @@ def tile_2bpp(t):
 
 
 def convert_chr(chr_rom):
-    bg, obj = bytearray(), bytearray()
+    obj = bytearray()
     for t in range(len(chr_rom) // 16):
-        s = tile_2bpp(chr_rom[t * 16:t * 16 + 16])
-        bg += s
-        obj += s + bytes(16)
-    return bytes(bg), bytes(obj)
+        obj += tile_2bpp(chr_rom[t * 16:t * 16 + 16]) + bytes(16)
+    return bytes(obj)
 
 
 # ---- Sound ---------------------------------------------------------------------------
@@ -477,13 +476,12 @@ def build_spc(prg):
 
 NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"]
 FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
-BLANK_HALF = 29             # a lower half left at 0, for blank tiles
 OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
 TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
 
 # Clouds for parallax, on BG2: the game's own page of them, arranged as it does in stage 1
 # and in stages 2 and 4. An entry is a tile of that page; S is sky, L and W its fill tiles.
-CLOUD_PAGE, FILL_PAGE, TILE_CLOUDS = 0x01, 0x00, 28
+TILE_CLOUDS, FILL_PAGE = 28, 0x00
 PUFFS = {
     3: {5: (0x09, 0x06, 0x16, 0x07, 0x17, 0x08, 0x18)},
     6: {0: (0x02, 0x12, 0x04, 0x14), 30: (0x00, 0x10)},
@@ -500,8 +498,36 @@ CLOUD_BANK = {
 }
 
 
+# The pages of stages with parallax, with their black solid and their sky see-through.
+# Their sky and cloud fill tiles, where the page has them; the clouds' page is all see-through.
+PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,), CLOUD_PAGE: "all"}
+for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
+    PARALLAX_PAGES[_p] = ()
+
+
+def build_parallax_pages(chr_rom):
+    alias = list(range(128))
+    out = bytearray()
+    for n, (page, sky) in enumerate(sorted(PARALLAX_PAGES.items())):
+        alias[page] = 0x80 + n
+        for t in range(64):
+            c = chr_rom[page * 0x400 + t * 16:page * 0x400 + t * 16 + 16]
+            if sky == "all" or t in sky:
+                out += bytes(32)
+                continue
+            rows, solid = bytearray(), bytearray()
+            for y in range(8):
+                rows += bytes([c[y], c[8 + y]])
+                # Plane 3: colour 4, the black, where the NES has colour 0.
+                solid += bytes([(~(c[y] | c[8 + y])) & 0xFF, 0])
+            # Colour 0 becomes 4, which has only that plane set; 1-3 stay as they are.
+            out += rows + solid
+    return alias, bytes(out)
+
+
 def build_overlay(chr_rom):
-    """Tiles and a map for BG2, which shows only on the title: 4 KB for VRAM word $6800."""
+    """Tiles and maps for BG3: the notices, which show only on the title, then the clouds.
+    8 KB, the first half for VRAM word $6800 and the rest for $7000."""
     def recolour(tile):
         # A box, not see-through: 0 black, shading grey, the letter white.
         out = bytearray(16)
@@ -538,7 +564,7 @@ def build_overlay(chr_rom):
 
         def cell(v):
             t = TILE_CLOUDS + (64 if v == "L" else 65 if v == "W" else v)
-            return bytes([t, 0x01])
+            return bytes([t, 0x01 | 0x04])      # palette 1
 
         for table in rows:
             for r, parts in table.items():
@@ -553,7 +579,7 @@ def build_overlay(chr_rom):
 
     maps = cloud_map([PUFFS, CLOUD_BANK], 16) + cloud_map([PUFFS], None)
 
-    word = lambda t, front=True: bytes([t, 0x01 | 0x10 | (0x20 if front else 0)])  # tile 256 + t, palette 4
+    word = lambda t, front=True: bytes([t, 0x01 | 0x08 | (0x20 if front else 0)])  # tile 256 + t, palette 2
     screen = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
     top = 22
     width = max(len(t) for t in NOTICES) + 2
@@ -617,9 +643,10 @@ def main():
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
-    # Pages from $80 are the blank ones parallax puts in place of the clouds' page.
-    s += bytes_asm("ChrBgBanks", [0xC0 + BG_HALF + p // 32 for p in range(128)] + [0xC0 + BLANK_HALF] * 128)
-    s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)])
+    alias, alias_tiles = build_parallax_pages(chr_rom)
+    s += bytes_asm("PageAlias", alias)
+    s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)]
+                   + [0xC0 + ALIAS_HALF + p // 16 for p in range(128)])
     s += bytes_asm("ComboIdx8", idx[0])
     s += bytes_asm("ComboIdxA", idx[1])
     s += bytes_asm("ComboTable", [0x80 + FIRST_CODE_BANK + b for b in table])
@@ -680,16 +707,16 @@ def main():
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
     image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
-    image[BLANK_HALF * 0x10000:BLANK_HALF * 0x10000 + 0x8000] = bytes(0x8000)
+    for n in range(len(alias_tiles) // 0x800):
+        at = (ALIAS_HALF + n // 16) * 0x10000 + (n % 16) * 0x800
+        image[at:at + 0x800] = alias_tiles[n * 0x800:(n + 1) * 0x800]
     overlay = build_overlay(chr_rom)
     image[OVERLAY_HALF * 0x10000:OVERLAY_HALF * 0x10000 + len(overlay)] = overlay
     for num in range(32):
         at = (PRG_HALF + num // 4) * 0x10000 + (num % 4) * BANK
         image[at:at + BANK] = prg[num * BANK:(num + 1) * BANK]
-    bg, obj = convert_chr(chr_rom)
+    obj = convert_chr(chr_rom)
     for p in range(128):
-        at = (BG_HALF + p // 32) * 0x10000 + (p % 32) * 0x400
-        image[at:at + 0x400] = bg[p * 0x400:(p + 1) * 0x400]
         at = (OBJ_HALF + p // 16) * 0x10000 + (p % 16) * 0x800
         image[at:at + 0x800] = obj[p * 0x800:(p + 1) * 0x800]
 
