@@ -411,10 +411,10 @@ SamusDeath:
         lda SamusAnimFrame
         jmp DrawFrame
 @explode:
+        cmp #$18                ; (it stops there: on its way to $80 it would read as
+        bcs @rts                ; pairs still to load, and it runs while paused)
         inc ExplodeCount
         lda ExplodeCount
-        cmp #$19
-        bcs @rts
         ; Metroid's frame data moves the explosion up 4 (and y - 1 for OAM)
         lda DrawY
         sec

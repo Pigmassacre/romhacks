@@ -94,6 +94,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
 | `pause` | Start stops everything: she, the time and the HUD stay as they were, and no button does anything |
 | `whipflash` | A whip upgrade stops the game a moment, and she flashes through the palettes as Simon does (she once just froze) |
+| `pausedeath` | Paused for a long time as she dies, in a pit: the tiles stay as they were (her explosion's counter once ran on and wrote junk all over them, for good) |
 | `clear` | Clearing a stage fills her energy |
 | `tally` | At a stage's end all the time's digits count down on the HUD (only the last one once did, as it changed every time and the others never got a turn) |
 | `lenttiles` | The cross and the orb keep their own tiles (they once showed as scraps of Samus); dying, the explosion borrows the tiles it needs, and coming back puts them all back |
