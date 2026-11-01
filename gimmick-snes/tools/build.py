@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the game for the SNES, from your own copy of the ROM.
 
-    python3 tools/survey.py    # once: out/survey/, what the game does when it plays
+    python3 tools/survey.py    # once: out/survey*/, what the game does when it plays
     python3 tools/build.py     # out/gimmick.sfc
 
 The game's code keeps its place: each ROM bank the machine runs from holds, at $8000,
@@ -268,9 +268,9 @@ def build_tables(combos, banks):
     table = [pick_bank((a, b), banks, exact.get((a, b))) for a in vals[0] for b in vals[1]]
     idx = []
     for i, stride in enumerate((sizes[1], 1)):
-        col = [0] * 32
+        col = [0] * 64
         for j, v in enumerate(vals[i]):
-            col[v & 31] = j * stride
+            col[v & 63] = j * stride
         idx.append(col)
     return idx, table
 
@@ -369,7 +369,6 @@ def brr_encode(samples, loop=False):
 
 def duty_sample(duty):
     """16 samples of a pulse wave, one BRR block that loops."""
-    pattern = {0: "0100000000000000", 1: "0110000000000000", 2: "0111100000000000", 3: "1001111111111111"}[duty]
     pattern = {0: "1100000000000000", 1: "1111000000000000", 2: "1111111100000000", 3: "1111111111110000"}[duty]
     out = bytearray([0xC3])
     nibs = [7 if c == "1" else 8 for c in pattern]     # +7, -8 in 4 bits
@@ -411,7 +410,7 @@ def dpcm_decode(data):
 
 
 def build_spc(prg):
-    survey = os.path.join(OUT, "survey_snd", "snd.txt")
+    survey = os.path.join(OUT, "survey", "snd.txt")
     samples = {}
     for line in open(survey):
         f = line.split()
@@ -472,6 +471,61 @@ def build_spc(prg):
     return bytes(blob)
 
 
+# ---- Gimmick! 1.5, as options --------------------------------------------------------
+
+HACK_BANK = 0x20
+HOOKS = {(0x1E, 0x8199): "opt_jump", (0x1E, 0x81C3): "opt_star", (0x1E, 0x81DA): "opt_bheld",
+         (0x1D, 0x8469): "opt_fx", (0x1D, 0x8151): "opt_water"}
+FAR_NAMES = {"opt_jump": "Far_Jump", "opt_star": "Far_StarButton", "opt_bheld": "Far_BHeld",
+             "opt_fx": "Far_FxDraw", "opt_water": "Far_Water"}
+PAD_READ = 0xF2D7           # lda $4016: the first pad, in the game's read loop
+
+
+def assemble_15():
+    """Gimmick! 1.5's own source and its own build's assembler step. Its logo and its bigger
+    ROM stay out of it: the fixed bank is still $1F here."""
+    import importlib.util
+    root = os.path.join(os.path.dirname(REPO), "gimmick-1.5")
+    spec = importlib.util.spec_from_file_location("build_15", os.path.join(root, "tools", "build.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    m.OUT = os.path.join(GEN, "gimmick-1.5")
+    os.makedirs(m.OUT, exist_ok=True)
+    m.ASM6 = os.path.join(REPO, "tools", "asm6")
+    prologue, segs = m.split_segments(os.path.join(m.SRC, "main.asm"))
+    return m.assemble(prologue, segs)
+
+
+def apply_15(prg):
+    """(prg with bank $20 and the far calls in, {hook site: label}, {far name: address},
+    seeds for the decoder, the fixed bank's range that is no longer the game's.)"""
+    out = bytearray(prg) + bytes(BANK)
+    hooks, far, seeds = {}, {}, {FIXED: set(), HACK_BANK: set()}
+    fixed_range = None
+    for bank, start, end, name, code in assemble_15():
+        num = FIXED if bank == 0x3F else bank
+        if (num, start) in HOOKS:
+            # The hook's first instruction is the JSR to the far call: it goes through a switch.
+            if code[0] != 0x20:
+                sys.exit("1.5's hook at %02X:%04X is not a JSR" % (num, start))
+            label = HOOKS[(num, start)]
+            hooks[(num, start)] = (label, code)
+            far[FAR_NAMES[label]] = code[1] | code[2] << 8
+            continue
+        at = num * BANK + (start & 0x1FFF)
+        out[at:at + len(code)] = code
+        if num == FIXED:
+            fixed_range = (start, end)
+        elif num == HACK_BANK:
+            # HackEntry, then its table of routines (each less 1, for an RTS).
+            seeds[HACK_BANK].add(start)
+            at = code.find(bytes([0x60])) + 1
+            for i in range(5):
+                seeds[HACK_BANK].add((code[at + i * 2] | code[at + i * 2 + 1] << 8) + 1)
+    seeds[FIXED] = set(far.values())
+    return bytes(out), hooks, far, seeds, fixed_range
+
+
 # ---- The world map in Mode 7 ---------------------------------------------------------
 
 MODE7_HALF = 26             # src/runtime.s has the same number, as $DA
@@ -483,7 +537,7 @@ M7_FRAMES = 72
 def build_mode7(chr_rom):
     """Mode 7 has one map byte for each cell and one palette for all its tiles, so each tile
     and palette the world map uses becomes a tile: 32 KB, the map and then its tiles."""
-    d = open(os.path.join(OUT, "survey_map", "map_0.bin"), "rb").read()
+    d = open(os.path.join(OUT, "survey", "map_0.bin"), "rb").read()
     ids = {}
     tiles = bytearray(16384)     # tile 0 stays clear
     grid = bytearray(16384)
@@ -528,7 +582,11 @@ def mode7_frames():
 
 # ---- The notices on the title screen ------------------------------------------------
 
-NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"]
+NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY", "SELECT - OPTIONS"]
+MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
+MENU_MAP, MENU_LEFT = 0x7800, 5     # src/runtime.s has the first; the cursor's column
+MENU_ROWS = [11, 13, 15, 17, 19]
+TILE_ARROW = 94             # src/runtime.s has the same number
 FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
 OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
 TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
@@ -549,6 +607,9 @@ CLOUD_BANK = {
     14: {0: ("L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C, "L", "L", "L"), 14: (0x08, 0x18)},
     15: {0: (0x29, "W", "W", "W", "W", "W", "W", 0x3D, "L", "L", 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B, 0x0A, 0x1A,
              0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
+    16: {0: ("W",) * 8 + (0x20, 0x23, "L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C) + ("L",) * 12 + (0x38, 0x2A, 0x3A)},
+    17: {0: ("W",) * 10 + (0x29,) + ("W",) * 6 + (0x3D,) + ("L",) * 13 + (0x29,)},
+    18: {0: ("W",) * 18 + (0x20, 0x23, 0x22, 0x32, 0x20, 0x23, 0x20, 0x23) + ("W",) * 6},
 }
 
 
@@ -628,10 +689,14 @@ def build_overlay(chr_rom):
         if fill_from is not None:
             for r in range(fill_from, 22):
                 for c in range(32):
-                    out[r][c] = cell("W" if r > 17 else "L")
+                    out[r][c] = cell("W")
         return b"".join(w for row in out for w in row)
 
-    maps = cloud_map([PUFFS, CLOUD_BANK], 16) + cloud_map([PUFFS], None)
+    maps = cloud_map([PUFFS, CLOUD_BANK], 19) + cloud_map([PUFFS], None)
+    arrow = bytearray(16)
+    for y, v in enumerate((0x60, 0x70, 0x78, 0x7C, 0x78, 0x70, 0x60, 0x00)):
+        arrow[y], arrow[8 + y] = v, v
+    tiles[TILE_ARROW * 16:(TILE_ARROW + 1) * 16] = recolour(bytes(arrow))
 
     word = lambda t, front=True: bytes([t, 0x01 | 0x08 | (0x20 if front else 0)])  # tile 256 + t, palette 2
     screen = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
@@ -646,7 +711,22 @@ def build_overlay(chr_rom):
         for i, ch in enumerate(text):
             t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
             screen[top + n * 2][c + i] = word(t)
-    return bytes(tiles) + b"".join(w for row in screen for w in row) + maps
+    menu = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
+    for r in range(7, 24):
+        for c in range(3, 29):
+            menu[r][c] = word(TILE_BLANK)
+
+    def text(r, c, s):
+        for i, ch in enumerate(s):
+            t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
+            menu[r][c + i] = word(t)
+
+    text(8, 12, "OPTIONS")
+    for row, item in zip(MENU_ROWS, MENU_ITEMS):
+        text(row, MENU_LEFT + 2, item)
+        text(row, MENU_LEFT + 18, "OFF")
+    text(22, 9, "SELECT - BACK")
+    return bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)
 
 
 def attr_table():
@@ -657,6 +737,39 @@ def attr_table():
         v |= (a & 3) << 1
         out.append(v)
     return out
+
+
+# For a look in an emulator with no way to press its buttons (TEST_AUTOPLAY=1): Start on a
+# slow beat until play begins, then right. The game reads A, B, Select, Start, Up, Down,
+# Left, Right. It takes the place of the read of the first pad.
+AUTOPLAY_STUB = """
+.export test_pad
+test_bit: .byte 0
+test_t: .byte 0
+test_pad:
+        lda test_bit
+        inc test_bit
+        and #7
+        bne @not_first
+        inc test_t
+        lda #0
+@not_first:
+        cmp #3
+        bne @other
+        lda test_t
+        and #$3F
+        cmp #$04
+        bcc @on
+        bra @off
+@other: cmp #7
+        bne @off
+        lda $90
+        beq @off
+@on:    lda #1
+        rts
+@off:   lda #0
+        rts
+"""
 
 
 # ---- The build ----------------------------------------------------------------------
@@ -678,9 +791,21 @@ def main():
     os.makedirs(GEN, exist_ok=True)
     seen, entries, combos = load_survey()
     windows, instrs = decode(prg, seen)
+    prg15, hooks15, far15, seeds15, fixed15 = apply_15(prg)
+    win15, ins15 = decode(prg15, seeds15)
+    # What was the game's in the block 1.5 took over is gone: nothing reaches it any more.
+    for pc in [pc for pc in instrs[FIXED] if fixed15[0] <= pc < fixed15[1]]:
+        del instrs[FIXED][pc]
+    instrs[HACK_BANK] = ins15[HACK_BANK]
+    instrs[FIXED].update({pc: i for pc, i in ins15[FIXED].items() if fixed15[0] <= pc < fixed15[1]})
+    windows[HACK_BANK] = 0xA000
+    combos += [(0x1E, HACK_BANK, 3, 1), (0x1D, HACK_BANK, 3, 1)]
     stubs = Stubs()
     patches, bad = find_patches(instrs, stubs)
+    patches[FIXED][PAD_READ] = "pad_read"
     patches[FIXED][SOUND_HOOK] = "sound_hook"
+    if os.environ.get("TEST_AUTOPLAY"):
+        patches[FIXED][0xF2D7] = "test_pad"
     for line in bad[:40]:
         print("  cannot translate:", line)
     print("%d instructions; %d stubs; %d patched" % (sum(len(c) for c in instrs.values()), len(stubs.made),
@@ -711,11 +836,19 @@ def main():
     for name, at in (("NesNmi", 0x1FFA), ("NesReset", 0x1FFC), ("NesIrq", 0x1FFE)):
         s += bytes_asm(name, [fixed[at], fixed[at + 1]])
     spc = build_spc(prg)
+    for name, at in far15.items():
+        s += ".export %s\n%s = $%04X\n" % (name, name, at)
+    rows = [MENU_MAP + r * 32 + MENU_LEFT for r in MENU_ROWS]
+    s += bytes_asm("MenuRowLo", [a & 0xFF for a in rows])
+    s += bytes_asm("MenuRowHi", [a >> 8 for a in rows])
     s += bytes_asm("SpcAddr", [SPC_ORIGIN & 0xFF, SPC_ORIGIN >> 8])
     s += bytes_asm("SpcEntry", [SPC_CODE & 0xFF, SPC_CODE >> 8])
     s += bytes_asm("SpcSize", [len(spc) & 0xFF, len(spc) >> 8])
+    autoplay = os.environ.get("TEST_AUTOPLAY")
     s += '.segment "WCODE"\n.import apu_regs, apu_kick, apu_indexed\n.p816\n.a8\n.i8\n.smart off\n'
     s += "\n".join(stubs.lines) + "\n"
+    if autoplay:
+        s += AUTOPLAY_STUB
     gen_s = os.path.join(GEN, "gen.s")
     open(gen_s, "w").write(".p816\n" + s)
 
@@ -735,14 +868,19 @@ def main():
 
     # The NES banks with their hardware accesses changed
     patched = {}
-    for num in range(32):
-        data = bytearray(prg[num * BANK:(num + 1) * BANK])
+    for num in range(33):
+        data = bytearray(prg15[num * BANK:(num + 1) * BANK])
         for pc, label in patches.get(num, {}).items():
             w = windows[num]
             t = addr[label]
             if not 0x0800 <= t < 0x2000:
                 sys.exit("stub %s at $%04X" % (label, t))
             data[pc - w:pc - w + 3] = bytes([0x20, t & 0xFF, t >> 8])
+        for (bank, pc), (label, code) in hooks15.items():
+            if bank == num:
+                t = addr[label]
+                at = pc - windows[num]
+                data[at:at + len(code)] = bytes([0x20, t & 0xFF, t >> 8]) + code[3:]
         if num == FIXED:
             t = addr["frame_done"]
             for pc in FRAME_DONE:

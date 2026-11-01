@@ -1,12 +1,13 @@
 # Romhacks
 
-NES romhacks, one per folder. Each folder is its own project, with its own README, build,
-tests and license. All of these hacks are AI-assisted, using Claude.
+NES romhacks and ports, one per folder. Each folder is its own project, with its own README,
+build, tests and license. All of these hacks are AI-assisted, using Claude.
 
 | Hack | What it is | Get it |
 |---|---|---|
 | [Gimmick! 1.5](gimmick-1.5/) | *Gimmick!* with features from *Gimmick! 2*: summon a new star while one is out, skip stars across water, tap to summon, coyote time and jump buffering. | A BPS patch for your *Gimmick! (Japan)* ROM, from the releases named Gimmick! 1.5 |
 | [SMB3 Gimmick](smb3-gimmick/) | Yumetaro from *Gimmick!* in the worlds of *Super Mario Bros. 3*, with his own jump, star and health. | A BPS patch for your *Super Mario Bros. 3* ROM, from the releases named SMB3 Gimmick |
+| [Gimmick! for SNES](gimmick-snes/) | *Gimmick!* running natively on the Super Nintendo, with its sound, parallax clouds, a Mode 7 world map and Gimmick! 1.5's features as options. | Build it from your *Gimmick! (Japan)* ROM |
 | [Metroidvania](metroidvania/) | Samus from *Metroid* in *Castlevania*, moving, shooting and rolling exactly as in Metroid, with Metroid's HUD and sounds. | A BPS patch for your *Castlevania* ROM, from the releases named Metroidvania |
 
 Downloads are on the [releases](https://github.com/Pigmassacre/romhacks/releases) page. Release
@@ -21,6 +22,8 @@ sounds. Metroidvania includes sound effect data recorded from *Metroid*, and con
 graphics from your own Metroid ROM when it builds. Every hack builds from copies of the games
 you provide, put in that hack's folder. Each `.gitignore` keeps ROMs, emulators and build
 output out of git.
+
+Gimmick! for SNES has no patch: it builds a whole new ROM from your copy of the game.
 
 The patches copy everything they can from the player's own ROM. Gimmick! 1.5's holds only new
 code and tiles. SMB3 Gimmick's also carries Yumetaro's graphics, his star and the logo from

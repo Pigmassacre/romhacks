@@ -44,7 +44,7 @@ def main():
     for c in sorted(set(na) & set(nb)):
         x, y = na[c][0], nb[c][0]
         diffs = [i for i in range(0x800) if x[i] != y[i] and not 0x100 <= i < 0x170 and not 0x190 <= i < 0x200
-                 and not 0x56 <= i < 0x80 and not 0xF5 <= i < 0xF9 and not i >= 0x600]    # the sound driver counts all NMIs
+                 and not 0x56 <= i < 0x80 and not 0xF5 <= i < 0xF9 and i != 0x44 and not i >= 0x600]    # the sound driver counts all NMIs
         if diffs:
             print("frame %d: %d bytes differ" % (c, len(diffs)))
             for i in diffs[:24]:

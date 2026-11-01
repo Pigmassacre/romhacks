@@ -54,6 +54,12 @@ irq_flag:    .res 1
 irq_line:    .res 1         ; the SNES line the current split belongs on
 irq_next:    .res 1         ; and the next one's: it becomes irq_line when it starts
 .export irq_line, irq_next
+opt_flags:   .res 1         ; Gimmick! 1.5's features: bit 0 up, in the menu's order
+raw_pad:     .res 1         ; the pad, in the same order as the game's $F5
+pad_prev:    .res 1
+menu_open:   .res 1
+menu_at:     .res 1
+is_title:    .res 1
 scroll_done: .res 1
 map7:        .res 1         ; the world map is showing, in Mode 7
 map7_t:      .res 1
@@ -175,11 +181,11 @@ fme_done:
         rts
 
 fme_prg8:
-        and #$1F
+        and #$3F
         sta b8
         bra fme_switch
 fme_prgA:
-        and #$1F
+        and #$3F
         sta bA
         bra fme_switch
 fme_prgC:
@@ -662,6 +668,7 @@ nmi_work2:
         sta HDMAEN
         jsr scroll_now
         jsr bg2_now
+        jsr menu_tick
         lda force_blank
         bne :+
         jsr load_page
@@ -687,6 +694,116 @@ nmi_work2:
         dex
         cpx #4
         bcs :-
+        rts
+
+; The options menu, from the title screen. It sits on BG3 in place of the notices.
+MENU_MAP   = $7800
+MENU_ITEMS = 5
+.import MenuRowLo, MenuRowHi
+menu_tick:
+        lda raw_pad
+        tay
+        eor pad_prev
+        sty pad_prev
+        and raw_pad
+        sta itmp            ; newly pressed
+        lda is_title
+        bne @title
+        stz menu_open
+        rts
+@title: lda menu_open
+        bne @open
+        lda itmp
+        and #$20            ; Select
+        beq @out
+        inc menu_open
+        stz menu_at
+        jmp menu_draw
+@open:  lda itmp
+        beq @out
+        and #$20
+        beq :+
+        stz menu_open
+        rts
+:       lda itmp
+        and #$08            ; Up
+        beq :+
+        dec menu_at
+        bpl @moved
+        lda #MENU_ITEMS - 1
+        sta menu_at
+        bra @moved
+:       lda itmp
+        and #$04            ; Down
+        beq :+
+        inc menu_at
+        lda menu_at
+        cmp #MENU_ITEMS
+        bcc @moved
+        stz menu_at
+        bra @moved
+:       lda itmp
+        and #$D3            ; A, B, Start, Left, Right: switch it
+        beq @out
+        ldx menu_at
+        lda f:menu_bits,x
+        eor opt_flags
+        sta opt_flags
+        ; Tap mode is the game's now: this is where it starts from, and Select changes it.
+        ldx #0
+        and #OPT_TAP
+        beq :+
+        inx
+:       stx TAP_MODE
+@moved: jmp menu_draw
+@out:   rts
+
+menu_bits:
+        .byte OPT_RECALL, OPT_SKIP, OPT_TAP, OPT_COYOTE, OPT_BUFFER
+
+; The cursor and every item's ON or OFF, in the low bytes of the map.
+menu_draw:
+        stz VMAINC
+        ldy #0
+@row:   tyx
+        lda f:MenuRowLo,x
+        sta itmp + 1
+        lda f:MenuRowHi,x
+        sta itmp + 2
+        lda itmp + 1
+        sta VMADDL
+        lda itmp + 2
+        sta VMADDH
+        ldx #0              ; blank
+        cpy menu_at
+        bne :+
+        ldx #94             ; the arrow
+:       stx VMDATAL
+        lda itmp + 1
+        clc
+        adc #18
+        sta VMADDL
+        lda itmp + 2
+        adc #0
+        sta VMADDH
+        tyx
+        lda f:menu_bits,x
+        and opt_flags
+        beq @off
+        lda #15             ; O
+        sta VMDATAL
+        lda #14             ; N
+        sta VMDATAL
+        stz VMDATAL
+        bra @next
+@off:   lda #15             ; O
+        sta VMDATAL
+        lda #6              ; F
+        sta VMDATAL
+        sta VMDATAL
+@next:  iny
+        cpy #MENU_ITEMS
+        bne @row
         rts
 
 ; The world map, in Mode 7. It is the screen with $4A = 0 and these pages for the background.
@@ -930,6 +1047,7 @@ scroll_now:
 bg2_now:
         ldx #0
         stx parallax
+        stx is_title
         bra @begin
 @off:   jmp @really_off
 @done2: jmp @done
@@ -940,8 +1058,14 @@ bg2_now:
         bne @not_title
         lda $90             ; the title the first time; the credits have this set
         bne @off
-@title: lda #$6C
-        sta BG3SC
+@title: lda #1
+        sta is_title
+        lda menu_open
+        beq :+
+        lda #$78
+        bra :++
+:       lda #$6C
+:       sta BG3SC
         stz BG3HOFS
         stz BG3HOFS
         stz BG3VOFS
@@ -2241,6 +2365,109 @@ convert_oam:
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
         plp
+        rts
+
+; ---- Gimmick! 1.5, as options ---------------------------------------------------------
+
+; Its hooks come here. Off: what the game had there. On: 1.5's own routine, by its far call.
+; The carry says what 1.5's routines say, for the branch after the hook.
+OPT_RECALL = 1
+OPT_SKIP   = 2
+OPT_TAP    = 4
+OPT_COYOTE = 8
+OPT_BUFFER = 16
+FLOOR_F    = $0487          ; 1.5's RAM: see gimmick-1.5/src/defs.asm
+JUMPBUF_ON = $048A
+TAP_MODE   = $048B
+
+.import Far_StarButton, Far_Jump, Far_FxDraw, Far_Water, Far_BHeld
+.export opt_flags
+.export opt_jump, opt_star, opt_bheld, opt_fx, opt_water, pad_read
+
+; "A newly pressed and on the floor?" Coyote time, buffering and Select share a routine, so
+; those that are off are kept from happening: no memory of the floor or of the press.
+opt_jump:
+        lda opt_flags
+        and #OPT_TAP | OPT_COYOTE | OPT_BUFFER
+        bne @on
+        lda $F5
+        and $036E
+        cmp #1              ; carry set if not 0
+        rts
+@on:    lda opt_flags
+        and #OPT_TAP
+        bne :+
+        lda $F5
+        and #$DF            ; Select does nothing
+        sta $F5
+:       lda opt_flags
+        and #OPT_COYOTE
+        bne :+
+        lda $ED
+        sec
+        sbc #8
+        sta FLOOR_F
+:       lda opt_flags
+        and #OPT_BUFFER
+        bne :+
+        stz JUMPBUF_ON
+:       jmp Far_Jump
+
+; Skip the charge code while a star is thrown, in a tube or vanishing?
+opt_star:
+        lda opt_flags
+        and #OPT_RECALL
+        beq :+
+        jmp Far_StarButton
+:       lda $91
+        cmp #1
+        beq @skip
+        cmp #2
+        beq @skip
+        cmp #$D0
+        rts                 ; carry set from $D0
+@skip:  sec
+        rts
+
+opt_bheld:
+        lda opt_flags
+        and #OPT_TAP
+        beq :+
+        jmp Far_BHeld
+:       lda $F7
+        and #$40
+        cmp #$40
+        rts
+
+opt_fx:
+        lda opt_flags
+        and #OPT_RECALL | OPT_SKIP
+        beq :+
+        jmp Far_FxDraw
+:       lda $9B
+        sta $0424
+        rts
+
+opt_water:
+        lda opt_flags
+        and #OPT_SKIP
+        beq :+
+        jmp Far_Water
+:       lda $C3
+        sta $0397
+        rts
+
+; The game reads the pad here. A copy for the menu; with the menu open, the game sees nothing.
+pad_read:
+        lda $4016
+        lsr a
+        rol raw_pad
+        lda menu_open
+        beq :+
+        lda #0
+        rts
+:       lda raw_pad
+        and #1
         rts
 
 ; ---- Sound ------------------------------------------------------------------------

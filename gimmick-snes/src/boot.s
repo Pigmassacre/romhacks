@@ -181,6 +181,7 @@ fast:
         stx VMADDL
         ldx #$1000
         stx A1T7L
+        ldx #$1800          ; and the options menu's
         stx DAS7L
         lda #$80
         sta MDMAEN
