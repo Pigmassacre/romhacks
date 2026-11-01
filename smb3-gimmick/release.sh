@@ -80,7 +80,9 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null || [[ -n "$(git ls-re
 fi
 
 notes="$(mktemp)"
-cat > "$notes" << 'EOF'
+{
+	../release-notes.sh smb3-gimmick
+	cat << 'EOF'
 Yumetaro, from Sunsoft's *Gimmick!*, in the worlds of *Super Mario Bros. 3*.
 
 You need your own copy of Super Mario Bros. 3, the original US release (not Revision A). Apply `smb3-gimmick.bps` to it with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/).
@@ -91,6 +93,7 @@ You need your own copy of Super Mario Bros. 3, the original US release (not Revi
 
 The result is a 640 KB ROM on the MMC3 mapper (mapper 4). It has been tested in Mesen.
 EOF
+} > "$notes"
 
 git tag "$tag"
 git push origin "$tag"
