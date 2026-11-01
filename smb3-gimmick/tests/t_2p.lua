@@ -18,7 +18,6 @@ INPUT = function(f)
     return {}
   end
   if phase == "first" or phase == "second" then return walk(f - t) end
-  if phase == "last" then return (f % 8 < 3) and {a = true} or {} end
   return {}
 end
 FRAME = function(f)
@@ -43,13 +42,12 @@ FRAME = function(f)
     check(r(0x219) == 0x31 and r(0x21D) == 0x31, "both with horns")
     shot("battle")
     phase = "wait"
+    -- then a level with the second player's turn, through a pipe to load its colours
     onexec(function()
-      local h = io.open(OUT .. "map.mss", "rb"); local d = h:read("a"); h:close()
-      emu.loadSavestate(d); F = 0; ws("Player_Current", 1); phase = "last"
-      for _, n in ipairs({"World_Map_X", "World_Map_Y", "World_Map_XHi"}) do ws(n, rs(n), 1) end
-      ws("World_Map_X", 0xC0)   -- apart, or they'd battle
+      local h = io.open(OUT .. "lv_W101L.mss", "rb"); local d = h:read("a"); h:close()
+      emu.loadSavestate(d); F = 0; ws("Player_Current", 1); ws("Level_JctCtl", 1); phase = "last"
     end)
-  elseif phase == "last" and rs("Level_Tileset") ~= 0 and rs("Player_XStart") ~= 0 and f > 150 then
+  elseif phase == "last" and f == 200 then
     check(pal(17) == 0x01 and pal(18) == 0x21, string.format("and in a level, the second's colours: %02x %02x", pal(17), pal(18)))
     shot("level")
     done()
