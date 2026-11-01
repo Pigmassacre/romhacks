@@ -10,7 +10,7 @@ tests and license. All of these hacks are AI-assisted, using Claude.
 | [Metroidvania](metroidvania/) | Samus from *Metroid* in *Castlevania*, moving, shooting and rolling exactly as in Metroid, with Metroid's HUD and sounds. | A BPS patch for your *Castlevania* ROM, from the releases named Metroidvania |
 
 Downloads are on the [releases](https://github.com/Pigmassacre/romhacks/releases) page. Release
-tags start with the folder's name, like `gimmick-1.5-v1.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
+tags start with the folder's name, like `gimmick-1.5-v1.0.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
 
 ## Your own ROMs
 
