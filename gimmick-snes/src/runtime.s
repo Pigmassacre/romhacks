@@ -60,6 +60,15 @@ split_n:     .res 1         ; how many splits have changed the background's tile
 split_open:  .res 1         ; a split has changed tiles and not yet shown them
 split_flip:  .res 1         ; the second sprite tables are showing
 tmp:         .res 4
+itmp:        .res 4         ; the same, for code that interrupts may run
+vf_left:     .res 1
+attr_until:  .res 1
+attr_ch:     .res 1
+attr_pg:     .res 1
+attr_head:   .res 1
+attr_tail:   .res 1
+attr_chg:    .res 128       ; the shadow's bits that the map has yet to get
+attr_q:      .res 128
 attr_new:    .res 1
 attr_col:    .res 1
 attr_row:    .res 1
@@ -72,6 +81,9 @@ set_have:    .res 12
 obj2_want:   .res 8         ; the sprite pages below a split
 obj2_have:   .res 8
 obj_base:    .res 1
+obj_used:    .res 8         ; sprites use this slot of the second table: see convert_oam
+set_wr:      .res 12        ; a split wrote this slot itself, so it must be copied soon
+nmi_count:   .res 1
 .export obj2_have
 .export apu_regs, sb_cmd, sb_regs, apu_kick
 apu_regs:    .res 32
@@ -256,13 +268,13 @@ arm_irq:
         lsr a
         clc
         adc RDMPYL
-        sta tmp
+        sta itmp
         lda RDMPYH
         adc #0
         lsr a
-        ror tmp
+        ror itmp
         lsr a
-        ror tmp             ; lines from now
+        ror itmp             ; lines from now
         cmp #0
         bne @never          ; 256 or more
         ; From vblank, count from the NES's line 241, 21 before its line 0. From a split,
@@ -271,7 +283,7 @@ arm_irq:
         cmp #225
         bcc @line
         ; lines - 29 is the first line on the SNES, unless that is before the picture.
-        lda tmp
+        lda itmp
         sec
         sbc #21 + CROP_TOP
         bcs @set
@@ -279,7 +291,7 @@ arm_irq:
         bra @set
 @line:  lda irq_line
         clc
-        adc tmp
+        adc itmp
         bcs @never
 @set:   cmp #225
         bcs @never
@@ -290,15 +302,15 @@ arm_irq:
         sbc #IRQ_EARLY
         bcs :+
         lda #0
-:       sta tmp
+:       sta itmp
         jsr beam
-        cmp tmp
+        cmp itmp
         bcc :+
         cmp #225
         bcs :+
         ina
-        sta tmp
-:       lda tmp
+        sta itmp
+:       lda itmp
         sta VTIMEL
         stz VTIMEH
         lda #$20
@@ -315,19 +327,17 @@ arm_irq:
 beam:
         lda SLHV
         lda OPVCT
-        sta tmp + 3
+        sta itmp + 3
         lda OPVCT
         and #1
         beq :+
         lda #$FF
         rts
-:       lda tmp + 3
+:       lda itmp + 3
         rts
 
 ; Wait for the line the current split is meant for, then for its hblank.
 wait_line:
-        lda in_split
-        beq wait_hblank     ; a late write from the NMI: it waits for nothing
 :       jsr beam
         cmp irq_line
         bcc :-
@@ -359,11 +369,11 @@ may_dma:
         bne @yes
         lda SLHV
         lda OPVCT
-        sta tmp + 3
+        sta itmp + 3
         lda OPVCT
         and #1
         bne @no             ; lines 256-261
-        lda tmp + 3
+        lda itmp + 3
         cmp #225
         bcc @no
         cmp #248
@@ -431,6 +441,8 @@ fme_chr:
         tax
         tya
         sta set_want,x
+        lda #1
+        sta set_wr,x
 @flip:  jsr flip_sprites
         jmp fme_done
 
@@ -454,7 +466,11 @@ load_top_slot:
         ora #BGSET_HI
         sta VMADDH
         jsr dma_bg_page
-@obj:   tya
+@obj:   cpx #4
+        bcc :+
+        lda obj_used,x
+        beq @out
+:       tya
         cmp chr_obj,x
         beq @out
         jsr may_dma
@@ -536,12 +552,14 @@ show_split_set:
         asl a
         tax
         ldy #4
-:       lda set_want,x
+:       lda set_wr,x
+        beq :+
+        lda set_want,x
         cmp set_have,x
         bne @out
-        inx
+:       inx
         dey
-        bne :-
+        bne :--
         ldx split_n
         lda set_hi,x
         lsr a
@@ -555,7 +573,7 @@ show_split_set:
 flip_sprites:
         lda split_flip
         bne @out
-        ldx #7
+        ldx #4              ; the other slots follow when there is time
 :       lda obj2_want,x
         cmp obj2_have,x
         bne @out
@@ -572,6 +590,25 @@ flip_sprites:
 ; and start the frame from the sets above the split.
 .export nmi_work
 nmi_work:
+        lda tmp
+        pha
+        lda tmp + 1
+        pha
+        lda tmp + 2
+        pha
+        lda tmp + 3
+        pha
+        jsr nmi_work2
+        pla
+        sta tmp + 3
+        pla
+        sta tmp + 2
+        pla
+        sta tmp + 1
+        pla
+        sta tmp
+        rts
+nmi_work2:
         jsr commit_palette
         stz split_n
         stz split_open
@@ -583,31 +620,132 @@ nmi_work:
         sta BG12NBA
         lda #$40
         sta HDMAEN
+        jsr scroll_now
         lda force_blank
         bne :+
         jsr load_page
+        lda #234
+        jsr attr_work
 :       ldx #7
 :       lda chr_want,x
         sta obj2_want,x
         dex
         bpl :-
+        ldx #11
+:       stz set_wr,x
+        dex
+        cpx #4
+        bcs :-
         rts
 
+; The game writes its scroll near the end of its NMI, later than the SNES's vblank allows.
+; It has already decided: $FD, $FC and $FF if it finished the frame, or last time's.
+scroll_now:
+        lda $29
+        bne @out            ; the picture is going off
+        ldx #0
+        lda $F0
+        cmp #$AC
+        beq :+
+        ldx #$BA            ; $42 is $FC - $BA, the wrong way round
+:       txa
+        beq @done_frame
+        lda $42
+        ldx $43
+        ldy $44
+        bra @set
+@done_frame:
+        lda $FD
+        ldx $FC
+        ldy $FF
+@set:   pha
+        and #7
+        sta ppu_finex
+        pla
+        lsr a
+        lsr a
+        lsr a
+        sta tmp + 2
+        txa
+        and #$38
+        asl a
+        asl a
+        ora tmp + 2
+        sta ppu_tlo
+        txa
+        and #7
+        asl a
+        asl a
+        asl a
+        asl a
+        sta tmp + 2
+        txa
+        and #$C0
+        asl a
+        rol a
+        rol a
+        ora tmp + 2
+        sta tmp + 2
+        tya
+        and #3
+        asl a
+        asl a
+        ora tmp + 2
+        sta ppu_thi
+        jsr apply_scroll
+@out:   rts
+
+; One page, what matters most first: what the last frame's splits wrote, then the sprites'
+; second table above the split, then the rest of the split sets and second sprite tables.
 load_page:
+        inc nmi_count
         ldx #4
-@next:  lda set_want,x
+@next:  lda set_wr,x
+        beq :+
+        lda set_want,x
         cmp set_have,x
         bne @load
-        inx
+:       inx
         cpx #12
         bne @next
-        ldx #7
+        ldx #4
 @obj:   lda obj2_want,x
         cmp obj2_have,x
         bne @load_obj
         dex
         bpl @obj
-        rts
+        ; Sprites' second table for the top of the picture
+        ldx #7
+@top:   lda obj_used,x
+        beq :+
+        lda chr_want,x
+        cmp chr_obj,x
+        beq :+
+        sta chr_obj,x
+        tay
+        jmp dma_obj_page
+:       dex
+        cpx #4
+        bcs @top
+        ; Now and then, what no one has shown yet
+        lda nmi_count
+        and #7
+        bne @out
+        ldx #4
+@rest:  lda set_want,x
+        cmp set_have,x
+        bne @load
+        inx
+        cpx #12
+        bne @rest
+        ldx #7
+@rest2: lda obj2_want,x
+        cmp obj2_have,x
+        bne @load_obj
+        dex
+        cpx #5
+        bcs @rest2
+@out:   rts
 @load_obj:
         sta obj2_have,x
         tay
@@ -636,6 +774,32 @@ load_page:
         ora tmp
         sta VMADDH
         jmp dma_bg_page
+
+; $F06B in the game: slots 0-7 from $E1-$E8, in vblank. The same, without eight trips
+; through the FME-7's registers. X and Y are the caller's.
+.export chr_all
+chr_all:
+        phx
+        phy
+        ldx #7
+@slot:  lda $E1,x
+        cmp chr_want,x
+        beq @same
+        sta chr_want,x
+        cpx #4
+        bcc :+
+        sta set_want - 4,x
+:       lda force_blank
+        bne @same
+        jsr load_top_slot
+@same:  dex
+        bpl @slot
+        lda #7
+        sta fme_cmd
+        ply
+        plx
+        lda $E8
+        rts
 
 ; ---- PPU registers ----------------------------------------------------------------
 
@@ -1013,13 +1177,22 @@ apply_scroll:
 
 ; A scroll register written with the picture on: from the next line, x comes from t.
 mid_scroll:
+        ; A late write from the NMI: nmi_work has already set this frame's scroll.
+        lda in_split
+        beq :+
         jsr wait_line
+        jsr apply_h
+        jmp show_split_set
+:       rts
         jsr apply_h
         jmp show_split_set
 
 ; $2006 with the picture on moved v, so y jumps too: this line shows row y of the map.
 mid_scroll_v:
-        jsr t_y
+        lda in_split
+        bne :+
+        rts
+:       jsr t_y
         lda SLHV
         lda OPVCT
         sta tmp + 2
@@ -1257,7 +1430,112 @@ plan_run:
         sta ppu_vhi
         rts
 
-; An attribute byte (in y) sets the palette of the 16 tiles in its 4 quarters.
+; $F3D3 in the game: write the buffer of VRAM updates at $0170 in vblank. Each entry is
+; high and low address, then a count with bit 7 for stepping down, then the bytes. A high
+; byte of 0 stands for a reset of the VRAM address. This does the job of its loop with
+; the tiles going straight to VRAM. It may change X, Y and A, as that does.
+.export vram_flush
+vram_flush:
+        stz ppu_w
+        ldy #0
+        ldx #$FF
+        stx data_left
+@entry: cpy $FA
+        bcc :+
+        stz $FA
+        lda #252
+        jmp attr_work
+:       lda $0170,y
+        bne :+
+        iny
+        bra @entry
+:       sta ppu_vhi
+        sta ppu_thi
+        iny
+        lda $0170,y
+        sta ppu_vlo
+        sta ppu_tlo
+        iny
+        lda $0170,y
+        iny
+        tax
+        ; The step goes in the shadow too, as the game's write to $2000 would do.
+        lda $FF
+        and #$FB
+        cpx #$80
+        bcc :+
+        ora #4
+:       sta ppu_ctrl
+        txa
+        and #$7F
+        sta vf_left
+        cpx #$80
+        lda #0
+        rol a
+        sta vram_step
+        ; Tiles on the way across or down stay in the map, unless they reach attributes.
+        lda ppu_vhi
+        cmp #$3F
+        bcs @slow
+        and #3
+        cmp #3
+        bne @fast
+        lda ppu_vlo
+        cmp #$C0 - 64       ; well short of the attributes, on the last page
+        bcs @slow
+@fast:  lda vram_step
+        bne @slow           ; down: a column may reach attributes
+        ; Would it leave the page?
+        lda ppu_vlo
+        clc
+        adc vf_left
+        bcs @slow
+        phy
+        lda ppu_vhi
+        and #$0C
+        lsr a
+        lsr a
+        sta tmp
+        lda mirror
+        asl a
+        asl a
+        ora tmp
+        tax
+        lda mirror_nt,x
+        asl a
+        asl a
+        sta tmp
+        lda ppu_vhi
+        and #3
+        ora tmp
+        ora #MAP_HI
+        stz VMAINC
+        sta VMADDH
+        lda ppu_vlo
+        sta VMADDL
+        ply
+        ldx vf_left
+:       lda $0170,y
+        sta VMDATAL
+        iny
+        dex
+        bne :-
+        jmp @entry
+@slow:  ; palettes, attributes and columns, a byte at a time as the game would
+        lda #$FF
+        sta data_left
+:       lda $0170,y
+        phy
+        jsr ppu_data_a
+        ply
+        iny
+        dec vf_left
+        bne :-
+        jmp @entry
+
+; An attribute byte (in y) sets the palette of the 16 tiles in its 4 quarters. That is too
+; much work for vblank when a column of them comes along, so they queue up. The tiles
+; are mostly off screen so far: a frame or two of delay does not show.
 ppu_attr:
         lda tmp
         beq :+
@@ -1265,34 +1543,92 @@ ppu_attr:
 :       sta tmp + 1
         lda ppu_vlo
         and #$3F
-        sta tmp + 2         ; index 0-63
         clc
         adc tmp + 1
         tax
         tya
         eor attr_shadow,x
-        bne :+
-        jmp @out
-:
-        sta tmp + 3         ; the bits that changed
+        beq @out
+        pha
         tya
         sta attr_shadow,x
+        pla
+        ldy attr_chg,x
+        bne @queued
+        ldy attr_tail
+        sta attr_chg,x
+        txa
+        sta attr_q,y
+        iny
+        tya
+        and #$7F
+        sta attr_tail
+        bra @run
+@queued:
+        ora attr_chg,x
+        sta attr_chg,x
+@run:   lda force_blank
+        beq @out
+        lda #$FF
+        jmp attr_work
+@out:   rts
+
+; Work through the queue until the beam reaches line a, or to the end with the picture off.
+.export attr_work
+attr_work:
+        sta attr_until
+@item:  ldx attr_head
+        cpx attr_tail
+        beq @done
+        lda force_blank
+        bne @go
+        jsr beam
+        cmp #225
+        bcc @done
+        cmp attr_until
+        bcs @done
+@go:    ldx attr_head
+        lda attr_q,x
+        tay
+        inx
+        txa
+        and #$7F
+        sta attr_head
+        jsr attr_item
+        bra @item
+@done:  rts
+
+; y = the shadow's index
+attr_item:
+        tyx
+        lda attr_chg,x
+        sta attr_ch
+        stz attr_chg,x
+        lda attr_shadow,x
         sta attr_new
+        ; map A or B
+        tya
+        and #$40
+        beq :+
+        lda #4
+:       ora #MAP_HI
+        sta attr_pg
         lda #$80
         sta VMAINC
-        lda tmp + 2
+        tya
         and #7
         asl a
         asl a
         sta attr_col
-        lda tmp + 2
+        tya
+        and #$38
         lsr a
         lsr a
         lsr a
         sta attr_row
         ldx #0
 @quarter:
-        lda tmp + 3
+        lda attr_ch
         and #3
         beq @same
         ; word = map + group row * 128 + (quarter bit 1) * 64 + col * 4 + (quarter bit 0) * 2
@@ -1318,8 +1654,7 @@ ppu_attr:
         bcc :+
         inc attr_hi
 :       lda attr_hi
-        ora tmp
-        ora #MAP_HI
+        ora attr_pg
         sta attr_hi
         lda attr_new
         and #3
@@ -1341,22 +1676,21 @@ ppu_attr:
         sta VMADDH
         sty VMDATAH
         sty VMDATAH
-@same:  lsr tmp + 3
-        lsr tmp + 3
+@same:  lsr attr_ch
+        lsr attr_ch
         lsr attr_new
         lsr attr_new
         inx
         cpx #4
-        beq @out
-        jmp @quarter
-@out:   rts
+        bne @quarter
+        rts
 
 ; ---- $4014: sprites ---------------------------------------------------------------
 
 ; NES sprites 8x16 each become two SNES sprites, since it has no size that shape. Each
 ; keeps its place in the order, so priority comes out the same.
 .macro convert_sprites buf, first
-.local @sprite, @hide, @stored, @flip, @next
+.local @sprite, @hide, @stored, @flip, @next, @even
         ldx #first
         ldy #0
 @sprite:
@@ -1376,7 +1710,21 @@ ppu_attr:
         lda $0201,x
         and #1
         sta tmp + 1
-        lda $0202,x
+        beq @even
+        ; The second table: most slots there go unused, and loading them costs time.
+        lda $0201,x
+        phx
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        tax
+        lda #1
+        sta obj_used + 4,x
+        plx
+@even:  lda $0202,x
         phx
         tax
         lda f:AttrTable,x
@@ -1411,7 +1759,9 @@ ppu_attr:
         inx
         txa
         and #$7F
-        bne @sprite
+        beq :+
+        jmp @sprite
+:
 .endmacro
 
 .export oam_dma_a
@@ -1471,6 +1821,10 @@ frame_done:
 
 convert_oam:
         php
+        stz obj_used + 4
+        stz obj_used + 5
+        stz obj_used + 6
+        stz obj_used + 7
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
         plp

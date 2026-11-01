@@ -5,8 +5,10 @@ function r(a) return emu.read(a, M) end
 local nmi, i = 0, 1
 local NMI_AT = 0xE9C6
 local log = io.open(OUT .. "log.txt", "w")
+local passes = 0
 local function on_nmi()
   nmi = nmi + 1
+  if r(0x90) ~= 0 and r(0xF0) == 0xAC then passes = passes + 1 end
   if nmi % 100 == 0 then
     log:write(string.format("%d 90=%02X F0=%02X 1B=%02X 4A=%02X 28=%02X FF=%02X FE=%02X\n", nmi, r(0x90), r(0xF0), r(0x1B), r(0x4A), r(0x28), r(0xFF), r(0xFE))); log:flush()
   end
@@ -19,13 +21,21 @@ else
   emu.addMemoryCallback(on_nmi, emu.callbackType.exec, NMI_AT, NMI_AT)
 end
 emu.addEventCallback(function()
-  local inp = PICK and PICK(nmi) or {}
+  local jump, shoot = SNES and "b" or "a", SNES and "y" or "b"
+  local inp
+  if r(0x90) == 0 then
+    inp = {start = nmi % 60 < 5}
+  else
+    inp = {right = passes % 400 < 300, left = passes % 400 >= 320 and passes % 400 < 390}
+    inp[jump] = passes % 53 < 20
+    inp[shoot] = passes % 150 < 60
+  end
   emu.setInput(inp, 0)
 end, emu.eventType.inputPolled)
 local frames = 0
 emu.addEventCallback(function()
   frames = frames + 1
-  if nmi >= AT[i] then
+  if passes >= AT[i] then
     local h = io.open(OUT .. string.format("%s_%06d.png", SNES and "snes" or "nes", AT[i]), "wb")
     h:write(emu.takeScreenshot()); h:close()
     i = i + 1

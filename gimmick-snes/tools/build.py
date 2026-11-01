@@ -30,6 +30,8 @@ LAST_CODE_BANK = 63
 BG_HALF, OBJ_HALF = 1, 8    # which banks' lower halves hold the converted tiles
 PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
+# Routines of the game's that do many PPU writes in vblank, done directly instead.
+REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush"}
 
 # 2C02 colours.
 NES_RGB = [
@@ -387,6 +389,9 @@ def main():
             t = addr["frame_done"]
             for pc in FRAME_DONE:
                 data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x20, t & 0xFF, t >> 8, 0xEA])
+            for pc, label in REPLACED.items():
+                t = addr[label]
+                data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x4C, t & 0xFF, t >> 8, 0xEA])
         patched[num] = bytes(data)
 
     image = bytearray(b"\xFF" * ROM_SIZE)

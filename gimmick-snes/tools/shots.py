@@ -19,13 +19,7 @@ def main():
     script = OUT + ("nes" if nes else "snes") + ".lua"
     with open(script, "w") as f:
         f.write("OUT = %r\nSNES = %s\nAT = {%s}\n" % (OUT, "false" if nes else "true", ",".join(args)))
-        f.write("""PICK = function(f)
-  if r(0x90) == 0 then return {start = f % 60 < 5} end
-  local k = SNES and {right = f % 400 < 300, b = f % 53 < 20, y = f % 150 < 60} or {right = f % 400 < 300, a = f % 53 < 20, b = f % 150 < 60}
-  return k
-end
-MAX_FRAMES = 40000
-""")
+        f.write("MAX_FRAMES = 40000\n")
         f.write(open(os.path.join(REPO, "tests", "s_shots.lua")).read())
     rom = os.path.join(REPO, "Gimmick! (Japan).nes") if nes else os.path.join(REPO, "out", "gimmick.sfc")
     subprocess.run([os.path.join(REPO, "Mesen"), "--testRunner", "--timeout=200", rom, script], cwd=REPO, timeout=240,
