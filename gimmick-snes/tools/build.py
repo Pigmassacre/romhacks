@@ -509,8 +509,11 @@ def assemble_15():
         for i, (bank, start, end, name, lines) in enumerate(segs):
             f.write(".dw __seg%d_end - $%04X\n" % (i, start))
     binary = os.path.join(work, "build.bin")
+    asm6 = os.path.join(REPO, "tools", "asm6")
+    if not os.path.exists(asm6):
+        sys.exit("asm6 is missing: put it at tools/asm6 (https://www.romhacking.net/utilities/674/)")
     # asm6 reads arguments that start with "/" as options, so the paths are relative.
-    r = subprocess.run([os.path.join(REPO, "tools", "asm6"), "-q", os.path.relpath(gen, src), os.path.relpath(binary, src)],
+    r = subprocess.run([asm6, "-q", os.path.relpath(gen, src), os.path.relpath(binary, src)],
                        cwd=src, capture_output=True, text=True)
     if r.returncode:
         sys.exit("asm6 failed: " + r.stdout + r.stderr)
