@@ -133,9 +133,13 @@ split_cnt:   .res 1         ; scroll changes in this frame's splits
 bg_at:       .res 1         ; the one that changed the tile set last frame
 bg_at_new:   .res 1
 bg_flipped:  .res 1
+flip_v:      .res 1         ; for BG12NBA after the wait for a line
+h_lo:        .res 1
+h_hi:        .res 1
 spr_y:       .res 1         ; the sprite spr_body is working on
 spr_mirror:  .res 1         ; for spr_raw: which routine it was
 spr_iy:      .res 1
+spr_neg:     .res 1         ; a cloud has used the high table
 spr_more:    .res 1         ; more than one sprite page is stale
 .ifdef SPR_SHADOW
 spr_t:       .res 1
@@ -496,7 +500,14 @@ fme_chr:
         ora tmp
         tax
         tya
-        sta set_want,x
+        ; With parallax, the version with solid black: the sky must not show below the split.
+        ldy parallax
+        beq :+
+        phx
+        tax
+        lda f:PageAlias,x
+        plx
+:       sta set_want,x
         lda #1
         sta set_wr,x
 @flip:  jsr show_split_set
@@ -603,14 +614,16 @@ dma_obj_page:
 ; The tile sets, by the high byte of their VRAM address.
 set_hi: .byte BGSET_HI, $30
 
-; At the next line, show the tiles and sprites a split changed to, once they are copied.
+; At the next line, show the tiles and sprites a split changed to, once they are copied. hblank
+; is about 33 cycles from RAM, and a write after it spoils the first pixels of the line, so
+; everything is worked out first and the writes come straight after the wait.
 show_split_set:
-        jsr flip_sprites
-flip_bg:
+        lda #0
+        sta flip_v
         lda bg_flipped
-        bne flip_out        ; no need to wait for a line again
+        bne @sprites        ; once a frame, with no more waits for a line
         lda split_n
-        beq flip_out
+        beq @sprites
         asl a
         asl a
         tax
@@ -619,37 +632,52 @@ flip_bg:
         beq :+
         lda set_want,x
         cmp set_have,x
-        bne flip_out
+        bne @sprites
 :       inx
         dey
         bne @wr
+        jsr set_value
+@sprites:
+        ldy #0
+        lda split_flip
+        bne :+
+        lda obj2_ready
+        beq :+
+        ldy #OBJ2_HI >> 5
+:       tya
+        ora flip_v
+        beq @out
+        ; Sprites are fetched in the hblank before their line, and tiles a line after that.
         jsr wait_line
-        ldx split_n
-flip_set:
+        tya
+        beq :+
+        sty OBSEL
+        inc split_flip
+:       lda flip_v
+        beq @out
+        jsr wait_hblank
+        sta BG12NBA
+@out:   rts
+
+; Set flip_v to the value for BG12NBA that shows the second tile set.
+set_value:
         inc bg_flipped
+        ldx #1
         lda set_hi,x
         lsr a
         lsr a
         lsr a
         lsr a
-        sta BG12NBA
-        ; Below the split the backdrop is the game's again, not the sky, and no clouds.
-        lda parallax
-        beq flip_out
-        lda tm_now
-        sta TM
-        stz CGADD
-        lda cg_bg
-        sta CGDATA
-        lda cg_bg + 1
-        sta CGDATA
+        sta flip_v
 flip_out:
         rts
 
 ; A split changes scroll and then tiles, and those stubs take lines to get through, where the
 ; NES takes moments. So on the scroll change that was followed by new tiles last frame, the
-; tiles change too, if they are copied. The beam is in this line's hblank.
+; tiles change too, if they are copied.
 split_early:
+        lda #0
+        sta flip_v
         inc split_cnt
         lda split_cnt
         cmp bg_at
@@ -661,21 +689,23 @@ split_early:
         inx
         cpx #8
         bne :-
-        ldx #1
-        bra flip_set
+        jmp set_value
 
-; Below the first split, the sprites use what the splits left the pages as last frame.
-flip_sprites:
-        lda split_flip
-        bne @out
-        lda obj2_ready
-        beq @out
-        jsr wait_line
-        lda #OBJ2_HI >> 5
-        sta OBSEL
-        inc split_flip
-@out:   rts
-
+; The horizontal scroll from t, for writing after a wait.
+h_prep:
+        lda ppu_tlo
+        and #$1F
+        asl a
+        asl a
+        asl a
+        ora ppu_finex
+        sta h_lo
+        lda ppu_thi
+        and #4
+        lsr a
+        lsr a
+        sta h_hi
+        rts
 
 .segment "BOOT"             ; only ever called from the NMI, in bank 0: there is room here
 
@@ -2004,9 +2034,17 @@ mid_scroll:
         ; A late write from the NMI: nmi_work has already set this frame's scroll.
         lda in_split
         beq :+
-        jsr wait_line
-        jsr apply_h
+        jsr h_prep
         jsr split_early
+        jsr wait_line
+        lda flip_v
+        beq @scroll
+        sta BG12NBA
+@scroll:
+        lda h_lo
+        sta BG1HOFS
+        lda h_hi
+        sta BG1HOFS
         jmp show_split_set
 :       rts
 
@@ -2027,12 +2065,24 @@ mid_scroll_v:
         lda tmp + 1
         sbc #0
         tax
+        phx
+        phy
+        jsr h_prep
+        jsr split_early
+        ply
+        plx
         jsr wait_line
+        lda flip_v
+        beq @scroll
+        sta BG12NBA
+@scroll:
         stz HDMAEN
         sty BG1VOFS
         stx BG1VOFS
-        jsr apply_h
-        jsr split_early
+        lda h_lo
+        sta BG1HOFS
+        lda h_hi
+        sta BG1HOFS
         jmp show_split_set
 
 ; Which SNES nametable each NES one lands on, for each FME-7 mirroring mode.
@@ -2565,6 +2615,8 @@ frame_done:
         beq @on
         jsr convert_oam
         jsr end_run
+        ; The picture may come on at the next NMI, with these pages: all of them, now.
+        jsr chr_all
         ldx #7
 :       jsr load_top_slot
         dex
@@ -2592,7 +2644,7 @@ frame_done:
 ; NES sprites 8x16 each become two SNES sprites, since it has no size that shape. Each
 ; keeps its place in the order, so priority comes out the same.
 .macro convert_sprites buf, first
-.local @sprite, @hide, @flip, @next, @check, @fine, @same
+.local @sprite, @hide, @flip, @next, @check, @fine, @same, @keep
         ldx #first
         ldy #0
 @sprite:
@@ -2617,7 +2669,15 @@ frame_done:
 @check: jsr spr_check
         bcs @hide
 @fine:  lda $0203,x
-        sta buf,y
+        bne :+
+        ; The status bar's spare sprites wait at X = 0 with a tile that is blank only if the
+        ; pages below the split have arrived. Nothing needs them drawn.
+        lda $0201,x
+        cmp #$29
+        bne @keep
+        jmp @hide
+@keep:  lda $0203,x
+:       sta buf,y
         sta buf + 4,y
         lda $0201,x
         and #$FE
@@ -2883,21 +2943,13 @@ self:
         jmp self
 .endmacro
 
-; On, the way the game takes turns from frame to frame for which sprites come first. x is $EF.
+; On to the next slot. x is $EF. The game reverses the order every other frame, so that with the
+; NES's limit of 8 sprites on a line none vanishes for good. There is no such limit here, and
+; overlapping sprites would swap places each frame, so it always goes this way: see ORDER_FIXED.
 .macro jsr_free_advance
-.local @up, @set
-        lda $ED
-        lsr a
+.local @set
         txa
-        bcc @up
-        sec
-        sbc #4
-        cmp #$20
-        bcs @set
-        lda #$FC
-        inc $6F
-        bra @set
-@up:    clc
+        clc
         adc #4
         bne @set
         lda #$20
@@ -2953,12 +3005,66 @@ spr_raw:
         jsr_free_advance
 @out:   rts
 
+; The title's clouds, at $1B:8116: is this sprite on the screen? The game's X is 9 bits, carry and
+; $07, and it hides one as soon as that goes negative, since a NES sprite cannot be part way off
+; the left edge, which leaves a gap there. A SNES sprite can, with the X bit of the high table.
+.export cloud_x
+cloud_x:
+        lda $07
+        adc #0
+        and #1
+        beq @plain
+        cpy #$F8
+        bcc @off            ; not yet at the left edge, from the far side
+        lda #$50
+        sta spr_neg
+        bra @bits
+@plain: lda #0
+@bits:  ; x / 4 is the NES sprite, whose two SNES ones have a high table byte's two nibbles.
+        sta spr_iy
+        phx
+        txa
+        lsr a
+        lsr a
+        lsr a
+        bcs :+              ; odd sprites: the top nibble
+        tax
+        lda oam_buf + 512,x
+        and #$F0
+        sta oam_buf + 512,x
+        lda spr_iy
+        beq @done
+        lda oam_buf + 512,x
+        ora #$05
+        sta oam_buf + 512,x
+        bra @done
+:       tax
+        lda oam_buf + 512,x
+        and #$0F
+        ora spr_iy
+        sta oam_buf + 512,x
+@done:  plx
+        lda #0              ; shown
+        rts
+@off:   lda #1
+        rts
+
 ; A frame's sprites are done. This has to come before the game can go on. Sprites on a CHR page
 ; that is not loaded: one such page will be, at the next NMI; sprites on any other go off for
 ; now, rather than draw garbage. The second table's are convert_oam's, by way of spr_check.
 spr_prep:
         php
-        lda #$FF
+        ; The title's clouds have gone: nothing else uses the high table.
+        lda is_title
+        bne @title
+        lda spr_neg
+        beq @title
+        stz spr_neg
+        ldx #31
+:       stz oam_buf + 512,x
+        dex
+        bpl :-
+@title: lda #$FF
         sta load_first
         stz spr_more
         stz obj_used + 4

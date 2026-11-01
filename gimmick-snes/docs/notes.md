@@ -62,6 +62,10 @@ says the frame is done, in time the game would spend waiting. `$0200` no longer 
 wrote, so anything reading them from it sees old values. `TEST_SPR_SHADOW=1 python3 tools/build.py` makes a ROM that still fills it in,
 to compare the two.
 
+**Sprites keep their order.** The game reverses the sprites' order every other frame, to spread out the flicker of the
+NES's 8 sprites on a line. The SNES has no such limit, and overlapping sprites would swap in front and behind 30
+times a second, so `ORDER_FIXED` in `tools/build.py` makes every frame an even one for that.
+
 **Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
 code the game itself calls can go there and run faster than from RAM. The sprite code does.
 
@@ -82,6 +86,9 @@ and `band_now` turns sprites off for those lines, by HDMA on TM.
 lines. So `split_early` changes tiles along with the scroll that came before them last frame. A handler's `$2005` just
 before a `$2000` becomes `ppu_scroll_hold`, so that both apply at once and no line shows the wrong nametable.
 
+**hblank is short.** About 33 cycles from RAM, and a write after that spoils the first pixels of the line, as old tiles
+at the status bar's top left showed. So `mid_scroll` and `show_split_set` work out their values first and write them straight after the wait.
+
 **The status bar.** The game takes an FME-7 interrupt, counted in CPU cycles, and changes CHR pages and
 scroll for what is below. The SNES interrupts on a line (`arm_irq`). Its handler takes much longer here,
 so the interrupt comes 12 lines early, and what shows waits for the line (`wait_line`). CHR cannot be
@@ -95,8 +102,7 @@ is 16 colours in Mode 1 so both can work: in the versions of pages made by `buil
 0 becomes solid colour 4 (the backdrop's colour) and sky tiles and the cloud tiles BG3 draws are blank. The rest
 of the clouds' page stays, because it holds foreground too, such as the shadows under platforms. The sky's colour
 becomes the backdrop's. The clouds are on BG3, at half the camera's speed (`bg2_now`). Their bank is the title
-screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`. Below the status bar's split BG3 goes off and the
-backdrop goes back.
+screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`. The status bar's pages have solid black too, so nothing changes colour at the split.
 
 ## The world map
 
