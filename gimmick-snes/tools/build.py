@@ -472,6 +472,60 @@ def build_spc(prg):
     return bytes(blob)
 
 
+# ---- The world map in Mode 7 ---------------------------------------------------------
+
+MODE7_HALF = 26             # src/runtime.s has the same number, as $DA
+MAP_PAGES = (0x54, 0x55, 0x02, 0x2C)    # what the game maps at PPU $1000 there
+MAP_AT = 48                 # the map's cell where the NES's top left goes
+M7_FRAMES = 72
+
+
+def build_mode7(chr_rom):
+    """Mode 7 has one map byte for each cell and one palette for all its tiles, so each tile
+    and palette the world map uses becomes a tile: 32 KB, the map and then its tiles."""
+    d = open(os.path.join(OUT, "survey_map", "map_0.bin"), "rb").read()
+    ids = {}
+    tiles = bytearray(16384)     # tile 0 stays clear
+    grid = bytearray(16384)
+    for r in range(30):
+        for c in range(32):
+            t = d[r * 32 + c]
+            a = d[0x3C0 + (r >> 2) * 8 + (c >> 2)]
+            pal = a >> (((r & 2) << 1) | (c & 2)) & 3
+            key = (t, pal)
+            if key not in ids:
+                ids[key] = len(ids) + 1
+                page = MAP_PAGES[t >> 6]
+                off = page * 0x400 + (t & 63) * 16
+                for y in range(8):
+                    for x in range(8):
+                        v = (chr_rom[off + y] >> (7 - x) & 1) | (chr_rom[off + 8 + y] >> (7 - x) & 1) << 1
+                        tiles[ids[key] * 64 + y * 8 + x] = pal * 16 + v if v else 0
+            # The game has a vertical scroll of $E8 here, 8 lines short of a whole screen.
+            sr = (r + 1) % 30
+            grid[(MAP_AT + sr) * 128 + MAP_AT + c] = ids[key]
+    if len(ids) > 255:
+        sys.exit("too many tiles for Mode 7: %d" % len(ids))
+    print("world map: %d Mode 7 tiles" % len(ids))
+    return bytes(grid) + bytes(tiles)
+
+
+def mode7_frames():
+    """The island's arrival: a turn and a half, from a long way off, slowing to rest."""
+    import math
+    out = []
+    for i in range(M7_FRAMES):
+        t = 1 - i / M7_FRAMES
+        t = t * t
+        ang = t * math.pi * 3
+        scale = 1 + t * 5
+        a = int(math.cos(ang) * scale * 256) & 0xFFFF
+        b = int(math.sin(ang) * scale * 256) & 0xFFFF
+        c = int(-math.sin(ang) * scale * 256) & 0xFFFF
+        out += [a & 0xFF, a >> 8, b & 0xFF, b >> 8, c & 0xFF, c >> 8, a & 0xFF, a >> 8]
+    return out
+
+
 # ---- The notices on the title screen ------------------------------------------------
 
 NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"]
@@ -643,6 +697,7 @@ def main():
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
+    s += bytes_asm("M7Anim", mode7_frames())
     alias, alias_tiles = build_parallax_pages(chr_rom)
     s += bytes_asm("PageAlias", alias)
     s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)]
@@ -710,6 +765,8 @@ def main():
     for n in range(len(alias_tiles) // 0x800):
         at = (ALIAS_HALF + n // 16) * 0x10000 + (n % 16) * 0x800
         image[at:at + 0x800] = alias_tiles[n * 0x800:(n + 1) * 0x800]
+    m7 = build_mode7(chr_rom)
+    image[MODE7_HALF * 0x10000:MODE7_HALF * 0x10000 + len(m7)] = m7
     overlay = build_overlay(chr_rom)
     image[OVERLAY_HALF * 0x10000:OVERLAY_HALF * 0x10000 + len(overlay)] = overlay
     for num in range(32):

@@ -13,7 +13,7 @@
 
 .include "hw.inc"
 
-.import ColorLo, ColorHi, AttrTable, ChrObjBanks, PageAlias
+.import ColorLo, ColorHi, AttrTable, ChrObjBanks, PageAlias, M7Anim
 .import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
@@ -55,6 +55,9 @@ irq_line:    .res 1         ; the SNES line the current split belongs on
 irq_next:    .res 1         ; and the next one's: it becomes irq_line when it starts
 .export irq_line, irq_next
 scroll_done: .res 1
+map7:        .res 1         ; the world map is showing, in Mode 7
+map7_t:      .res 1
+tm_mask:     .res 1         ; layers it allows
 parallax:    .res 1
 band_pal:    .res 1
 cam_lo:      .res 1
@@ -466,6 +469,8 @@ fme_chr:
 load_top_slot:
         cpx #4
         bcc @obj
+        lda map7
+        bne @obj            ; the tile sets' place is the island's, for now
         lda set_want - 4,x
         cmp set_have - 4,x
         beq @obj
@@ -642,6 +647,12 @@ nmi_work:
         rts
 nmi_work2:
         jsr commit_palette
+        jsr map_now
+        lda map7
+        beq :+
+        jsr bg2_now
+        rts
+:
         stz split_n
         stz split_open
         stz split_flip
@@ -669,6 +680,171 @@ nmi_work2:
         dex
         cpx #4
         bcs :-
+        rts
+
+; The world map, in Mode 7. It is the screen with $4A = 0 and these pages for the background.
+MODE7_BANK = $DA
+M7_FRAMES  = 72
+M7_AT      = 48 * 8
+map_now:
+        lda map7
+        bne @on
+        lda $4A
+        bne @out
+        lda $90
+        cmp #1
+        bne @out
+        lda $E5
+        cmp #$54
+        bne @out
+        lda $E6
+        cmp #$55
+        bne @out
+        jmp map_enter
+@on:    lda $4A
+        bne @leave
+        lda $E5
+        cmp #$54
+        bne @leave
+        lda map7_t
+        cmp #M7_FRAMES
+        bcs @rest
+        ; Matrix for this frame
+        asl a
+        asl a
+        asl a
+        tax
+        ldy #0
+:       lda f:M7Anim,x
+        sta M7A,y
+        lda f:M7Anim + 1,x
+        sta M7A,y
+        inx
+        inx
+        iny
+        cpy #4
+        bne :-
+        inc map7_t
+@out:   rts
+@rest:  bne @out
+        ; The last frame: square on, and the sprites line up with it.
+        inc map7_t
+        stz M7A
+        lda #1
+        sta M7A
+        stz M7B
+        stz M7B
+        stz M7C
+        stz M7C
+        stz M7D
+        lda #1
+        sta M7D
+        lda #$FF
+        sta tm_mask
+        lda tm_now
+        sta TM
+        rts
+@leave: stz map7
+        lda #$09
+        sta BGMODE
+        stz M7SEL
+        stz OBSEL
+        stz obj_base
+        lda #$FF
+        sta tm_mask
+        ; Everything in the first half of VRAM has gone: ask for it again.
+        ldx #7
+:       sta set_have,x
+        sta chr_obj,x
+        sta obj2_have,x
+        dex
+        bpl :-
+        rts
+
+map_enter:
+        ; This takes more than a frame: no NMI inside this NMI.
+        stz NMITIMEN
+        lda #$80
+        sta INIDISP
+        stz HDMAEN
+        ; Mode 7's map bytes then its tile bytes, 16 KB each
+        stz VMAINC
+        stz VMADDL
+        stz VMADDH
+        lda #0
+        sta DMAP7
+        lda #<VMDATAL
+        sta BBAD7
+        stz A1T7L
+        stz A1T7H
+        lda #MODE7_BANK
+        sta A1B7
+        stz DAS7L
+        lda #$40
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
+        sta VMAINC
+        stz VMADDL
+        stz VMADDH
+        lda #<VMDATAH
+        sta BBAD7
+        stz A1T7L
+        lda #$40
+        sta A1T7H
+        lda #MODE7_BANK
+        sta A1B7
+        stz DAS7L
+        lda #$40
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
+        ; Sprites from the second tables, as the first half of VRAM is the island now.
+        lda #OBJ2_HI
+        sta obj_base
+        lda #OBJ2_HI >> 5
+        sta OBSEL
+        ldx #7
+:       lda $E1,x
+        sta chr_want,x
+        sta chr_obj,x
+        tay
+        jsr dma_obj_page
+        dex
+        bpl :-
+        lda #7
+        sta BGMODE
+        lda #$80            ; nothing outside the map
+        sta M7SEL
+        lda #<(M7_AT + 128)
+        sta M7X
+        lda #>(M7_AT + 128)
+        sta M7X
+        lda #<(M7_AT + 112 + 7)
+        sta M7Y
+        lda #>(M7_AT + 112 + 7)
+        sta M7Y
+        lda #<M7_AT
+        sta BG1HOFS
+        lda #>M7_AT
+        sta BG1HOFS
+        lda #<(M7_AT + 7)
+        sta BG1VOFS
+        lda #>(M7_AT + 7)
+        sta BG1VOFS
+        lda #1
+        sta map7
+        stz map7_t
+        sta tm_mask         ; the island alone, until it has arrived
+        sta TM
+        lda force_blank
+        bne :+
+        lda #$0F
+        sta INIDISP
+:       bit RDNMI
+        lda nmi_flags
+        ora irq_flag
+        sta NMITIMEN
         rts
 
 ; The game writes its scroll near the end of its NMI, later than the SNES's vblank allows.
@@ -856,6 +1032,7 @@ bg2_now:
         lda tm_now
         beq :+
         ora overlay
+        and tm_mask
         sta TM
 :       rts
 
@@ -1136,6 +1313,7 @@ ppu_mask_w:
         ora tmp
         sta tm_now
         ora overlay
+        and tm_mask
         sta TM
         stz force_blank
         lda #$0F
@@ -1302,9 +1480,11 @@ apply_h:
 ; by the next one's on the NES, and by 2 rows that are not drawn in the SNES map, so an
 ; HDMA table adds 16 lines where the picture crosses them.
 apply_scroll:
+        lda map7
+        bne :+
         lda scroll_done
-        beq :+
-        rts                 ; nmi_work has set this frame's, and $2006 has since upset t
+        beq :++
+:       rts                 ; nmi_work has set this frame's, and $2006 has since upset t
 :       jsr apply_h
         jsr t_y
         lda tmp
@@ -2195,6 +2375,7 @@ runtime_init:
         lda #$80
         sta force_blank
         lda #$FF
+        sta tm_mask
         sta w6_bank
         sta data_left
         ldx #7
