@@ -36,7 +36,7 @@ PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has th
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
 SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 # Routines of the game's that do many PPU writes in vblank, done directly instead.
-REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush"}
+REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip"}
 
 # 2C02 colours.
 NES_RGB = [tuple(bytes.fromhex(c)) for c in """
@@ -946,7 +946,8 @@ def main():
     objs = []
     for src in (os.path.join(REPO, "src", "boot.s"), os.path.join(REPO, "src", "runtime.s"), gen_s):
         o = os.path.join(GEN, os.path.basename(src) + ".o")
-        run("ca65", "-g", "-I", os.path.join(REPO, "src"), src, "-o", o)
+        defs = ["-D", "SPR_SHADOW"] if os.environ.get("TEST_SPR_SHADOW") else []
+        run("ca65", "-g", *defs, "-I", os.path.join(REPO, "src"), src, "-o", o)
         objs.append(o)
     boot = os.path.join(GEN, "bank0.bin")
     labels = os.path.join(GEN, "labels.txt")

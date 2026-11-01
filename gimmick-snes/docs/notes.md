@@ -53,14 +53,17 @@ buffer, sprites' CHR pages, colours, then second-set pages. Anything written to 
 must not start where it cannot finish, and a line number from the next picture is not "early". `vram_flush` writes runs
 and columns directly, as the game resends a column of 24 tiles every frame. The game's own calls then find little left.
 
-**Sprites never hold up the game.** `frame_done` tells the game its frame is done and then converts sprites, in the
-time it would spend waiting. If the NMI comes first the frame still counts, the old sprites stay up, and the conversion is
-dropped, once: dropped every time, sprites might never change. So a busy frame costs its sprites a frame, not the
-game a frame.
+**Sprites are written directly.** NES sprites are a different shape and format, and converting a whole list every frame
+was the biggest cost that grew with what is on screen, where the NES only copies them. So the game's general sprite routine, `$F4CA` and its
+mirrored twin `$F52F`, is replaced: `spr_body` reads the same tables and writes the SNES's
+sprites at once, field by field, and marks `spr_flag`. Tiles for the second table and the portal's blanks take the slow way. `convert_oam` then only has to deal with slots without that mark: what the game's
+other routines wrote, such as the status bar's sprites and the portal's blanks, and empty slots. It runs after `frame_done`
+says the frame is done, in time the game would spend waiting. `$0200` no longer holds sprites that `spr_body`
+wrote, so anything reading them from it sees old values. `TEST_SPR_SHADOW=1 python3 tools/build.py` makes a ROM that still fills it in,
+to compare the two.
 
 **Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
-code the game itself calls can go there and run faster than from RAM. `convert_oam` does: the more sprites, the more
-it costs, where the NES only copies them, and that is what slows the game when the screen is busy.
+code the game itself calls can go there and run faster than from RAM. The sprite code does.
 
 **CHR pages.** The NES's bank switch is instant and a page here takes 12 lines of vblank, so the game's own
 order, with CHR last, is usually too late. `top_pages` runs first in `nmi_work`, from what the game has at `$E1-$E8`:
