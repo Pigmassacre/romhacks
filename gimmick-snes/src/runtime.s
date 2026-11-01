@@ -133,9 +133,16 @@ split_cnt:   .res 1         ; scroll changes in this frame's splits
 bg_at:       .res 1         ; the one that changed the tile set last frame
 bg_at_new:   .res 1
 bg_flipped:  .res 1
-spr_busy:    .res 1         ; frame_done is converting sprites, in the game's spare time
-spr_abort:   .res 1         ; the NMI came first, so stop
-spr_skipped: .res 1         ; and that has happened since sprites last changed
+spr_y:       .res 1         ; the sprite spr_body is working on
+spr_mirror:  .res 1         ; for spr_raw: which routine it was
+spr_iy:      .res 1
+spr_more:    .res 1         ; more than one sprite page is stale
+.ifdef SPR_SHADOW
+spr_t:       .res 1
+spr_a:       .res 1
+spr_x:       .res 1
+.endif
+spr_flag:    .res 256       ; by the slot's offset: spr_body has written this one this frame
 spr_full:    .res 1         ; every sprite needs spr_check this frame
 spr_pri:     .res 1         ; $20 to put them all in front of the background
 spr_attr:    .res 2         ; the last sprite's attributes, as they came and as they went
@@ -518,9 +525,7 @@ load_top_slot:
         ora #BGSET_HI
         sta VMADDH
         jsr dma_bg_page
-@obj:   lda spr_busy
-        bne @out            ; these sprites are to stay on the pages they have
-        ldy chr_want,x
+@obj:   ldy chr_want,x
         cpx #4
         bcc :+
         lda obj_used,x
@@ -699,25 +704,12 @@ nmi_work:
 nmi_work2:
         ; Sprites before anything that could use up vblank. The game would send them next, if
         ; it has finished the frame.
-        lda spr_busy
-        beq @not_busy
-        ; Still converting them. Drop that if it is the first time, so the game gets its time
-        ; back, or let it finish, or there might never again be any new sprites.
-        lda spr_skipped
-        bne @not_done
-        inc spr_abort
-        inc spr_skipped
-        bra @not_done
-@not_busy:
-        lda oam_ready
-        beq @not_done
         lda $F0
         cmp #$AC
-        beq @send
-        ; Sprites that finished late go now, unless one waits on a page yet to be copied.
-        lda load_first
-        bpl @not_done
-@send:  jsr oam_send
+        bne @not_done       ; part way through: the buffer is being written
+        lda oam_ready
+        beq @not_done
+        jsr oam_send
         lda #1
         sta oam_sent
 @not_done:
@@ -756,9 +748,6 @@ nmi_work2:
         bne @all_done
         stz vf_limit
         jsr vram_flush_now
-        ; The sprites on screen stay as they are, on the pages they have. The game is short of time.
-        lda spr_busy
-        bne @all_done
         ; Then sprites' pages, colours, the pages for below a split, and more colours.
         jsr top_pages
         bcs @copied         ; that was the time there was
@@ -2530,9 +2519,7 @@ oam_dma_a:
         beq :+
         stz oam_sent
         bra @out
-:       lda spr_busy
-        bne @out
-        lda oam_ready
+:       lda oam_ready
         bne @ready
         jsr convert_oam
 @ready: jsr oam_send
@@ -2571,6 +2558,9 @@ oam_send:
 frame_done:
         phx
         phy
+        jsr spr_prep
+        lda #1
+        sta oam_ready
         lda force_blank
         beq @on
         jsr convert_oam
@@ -2579,27 +2569,14 @@ frame_done:
 :       jsr load_top_slot
         dex
         bpl :-
-        lda #1
-        sta oam_ready
         lda #$AC
         sta $F0
         bra @out
-        ; The frame counts as done from here: the game only waits now, so this is spare time.
-        ; If the NMI comes first the game goes on at full speed, and its sprites are a frame
-        ; late, rather than the whole game. See nmi_work.
-@on:    lda #1
-        sta spr_busy
-        lda #$AC
+        ; The frame counts as done from here: the game only waits now, so what convert_oam does
+        ; takes spare time. If the NMI comes first its few sprites are a frame late.
+@on:    lda #$AC
         sta $F0
         jsr convert_oam
-        stz spr_busy
-        lda spr_abort
-        beq :+
-        stz spr_abort
-        bra @out
-:       stz spr_skipped
-        lda #1
-        sta oam_ready
 @out:   lda #$AC
         ply
         plx
@@ -2619,10 +2596,15 @@ frame_done:
         ldx #first
         ldy #0
 @sprite:
-        lda $0200,x
+        lda spr_flag,x      ; spr_body has done this one
+        beq :+
+        stz spr_flag,x
+        jmp @next
+:       lda $0200,x
         cmp #$EF
-        bcs @hide
-        sbc #CROP_TOP - 2   ; carry is clear: subtract one more
+        bcc :+
+        jmp @hide
+:       sbc #CROP_TOP - 2   ; carry is clear: subtract one more
         sta spr_tmp
         ; Most of the time no page is stale and only odd tiles and the portal need a closer look.
         lda spr_full
@@ -2644,7 +2626,6 @@ frame_done:
         sta buf + 6,y
         lda $0201,x
         and #1
-        ora spr_pri
         sta spr_tmp + 1
         ; Sprites next to each other mostly have the same attributes.
         lda $0202,x
@@ -2655,6 +2636,7 @@ frame_done:
         tax
         lda f:AttrTable,x
         plx
+        ora spr_pri
         sta spr_attr + 1
 @same:  lda spr_attr + 1
         ora spr_tmp + 1
@@ -2676,10 +2658,7 @@ frame_done:
 @hide:  lda #HIDDEN_Y
         sta buf + 1,y
         sta buf + 5,y
-@next:  lda spr_abort
-        beq :+
-        jmp convert_out
-:       inx
+@next:  inx
         inx
         inx
         inx
@@ -2771,35 +2750,254 @@ spr_check:
         clc
         rts
 
-convert_oam:
+; The game's general sprite routine, $F4CA and its mirrored twin $F52F, in the game's own order,
+; with the SNES's sprites as the result: there is nothing left to convert for these. $08 points to
+; Y, tile, attributes and X of each sprite, a Y of 0 ends the list, and $EF is the next slot.
+; It runs in the game's time for every sprite on screen, so each field goes straight to where it
+; ends up. Tiles for the second table and the portal's blanks take the slow way, spr_raw, by way
+; of $0200 and convert_oam, which knows about them. There are four copies, as the two halves of
+; OAM are more than an index register's reach and mirroring changes how X comes out.
+.macro spr_body self, other, mirrored, buf, upper
+.local @sprite, @skip, @fine, @same, @down, @commit, @neg, @on, @up, @set, @slow
+self:
+        lda $EF
+        asl a
+        tax
+.if upper
+        bcs @sprite
+.else
+        bcc @sprite
+.endif
+        jmp other
+@slow:  jsr spr_raw
+        jmp self
+@sprite:
+        lda ($08),y
+        bne :+
+        rts
+:       clc
+        adc $02
+        cmp #$BF
+        bcc :+
+        jmp @skip
+:       sta spr_y
+        iny
+        lda ($08),y
+        lsr a
+        bcs @slow
+        cmp #$40
+        beq @slow
+        asl a
+        sta buf + 2,x
+.ifdef SPR_SHADOW
+        sta spr_t
+.endif
+        ina
+        sta buf + 6,x
+        iny
+        lda ($08),y
+        eor $0B
+.ifdef SPR_SHADOW
+        sta spr_a
+.endif
+        cmp spr_attr
+        beq @same
+        sta spr_attr
+        phx
+        tax
+        lda f:AttrTable,x
+        plx
+        ora spr_pri
+        sta spr_attr + 1
+@same:  lda spr_attr + 1    ; its top bit is the vertical flip, as on the NES
+        sta buf + 3,x
+        sta buf + 7,x
+        bmi @down
+        lda spr_y
+        sec
+        sbc #CROP_TOP - 1
+        sta buf + 1,x
+        clc
+        adc #8
+        sta buf + 5,x
+        bra @fine
+@down:  lda spr_y
+        sec
+        sbc #CROP_TOP - 1
+        sta buf + 5,x
+        clc
+        adc #8
+        sta buf + 1,x
+@fine:  iny
+.if mirrored
+        lda #$FA
+        sec
+        sbc ($08),y
+.else
+        lda ($08),y
+.endif
+        bmi @neg
+        clc
+        adc $04
+        sta buf,x
+        sta buf + 4,x
+.ifdef SPR_SHADOW
+        sta spr_x
+.endif
+        iny
+        lda $05
+        adc #0
+        bra @on
+@neg:   clc
+        adc $04
+        sta buf,x
+        sta buf + 4,x
+.ifdef SPR_SHADOW
+        sta spr_x
+.endif
+        iny
+        lda $05
+        adc #$FF
+@on:    beq @commit
+        jmp self            ; off the screen: the slot is still free
+@skip:  iny
+        iny
+        iny
+        iny
+        jmp self
+@commit:
+        ldx $EF
+        lda #1
+        sta spr_flag,x
+.ifdef SPR_SHADOW
+        lda spr_y
+        sta $0200,x
+        lda spr_t
+        sta $0201,x
+        lda spr_a
+        sta $0202,x
+        lda spr_x
+        sta $0203,x
+.endif
+        jsr_free_advance
+        jmp self
+.endmacro
+
+; On, the way the game takes turns from frame to frame for which sprites come first. x is $EF.
+.macro jsr_free_advance
+.local @up, @set
+        lda $ED
+        lsr a
+        txa
+        bcc @up
+        sec
+        sbc #4
+        cmp #$20
+        bcs @set
+        lda #$FC
+        inc $6F
+        bra @set
+@up:    clc
+        adc #4
+        bne @set
+        lda #$20
+        inc $6F
+@set:   sta $EF
+.endmacro
+
+.export spr_draw, spr_flip
+spr_draw:
+        stz spr_mirror
+        jmp spr_lo
+spr_flip:
+        lda #1
+        sta spr_mirror
+        jmp spr_lo_m
+
+spr_body spr_lo, spr_hi, 0, oam_buf, 0
+spr_body spr_hi, spr_lo, 0, oam_buf + 256, 1
+spr_body spr_lo_m, spr_hi_m, 1, oam_buf, 0
+spr_body spr_hi_m, spr_lo_m, 1, oam_buf + 256, 1
+
+; A sprite for $0200, as the game has it: y is at its tile, and spr_y is its Y.
+spr_raw:
+        ldx $EF
+        lda spr_y
+        sta $0200,x
+        lda ($08),y
+        sta $0201,x
+        iny
+        lda ($08),y
+        eor $0B
+        sta $0202,x
+        iny
+        lda #0
+        sta $0A
+        lda spr_mirror
+        bne @mirrored
+        lda ($08),y
+        bra :+
+@mirrored:
+        lda #$FA
+        sec
+        sbc ($08),y
+:       bpl :+
+        dec $0A
+:       clc
+        adc $04
+        sta $0203,x
+        iny
+        lda $0A
+        adc $05
+        bne @out            ; off the screen: the slot is still free
+        jsr_free_advance
+@out:   rts
+
+; A frame's sprites are done. This has to come before the game can go on. Sprites on a CHR page
+; that is not loaded: one such page will be, at the next NMI; sprites on any other go off for
+; now, rather than draw garbage. The second table's are convert_oam's, by way of spr_check.
+spr_prep:
         php
         lda #$FF
         sta load_first
-        stz band_n
+        stz spr_more
+        stz obj_used + 4
+        stz obj_used + 5
+        stz obj_used + 6
+        stz obj_used + 7
         ; Behind the background means nothing with parallax: its black is solid, and its sky
         ; is not there, so such a sprite would vanish in a pipe's mouth and show through sky.
         lda parallax
         beq :+
         lda #$20
 :       sta spr_pri
-        ; Anything for spr_check to find, for every sprite? A stale page, or the status bar's.
+        ; The attributes spr_body last saw, with that in.
+        stz spr_attr
+        lda f:AttrTable
+        ora spr_pri
+        sta spr_attr + 1
+        ; Anything for spr_check to find, for sprites from the game's other routines?
+        ldy #0
         lda force_blank
         ora map7
         bne @calm
         ldx #7
-:       lda $E1,x
+@slot:  lda $E1,x
         cmp chr_obj,x
-        bne @full
-        dex
+        beq @next
+        ldy #1
         cpx #4
-        bcs :-
-        ldx #3
-:       lda $E1,x
-        cmp chr_obj,x
+        bcs @next
+        lda load_first
+        bpl :+
+        stx load_first
+        bra @next
+:       inc spr_more
+@next:  dex
+        bpl @slot
+@calm:  tya
         bne @full
-        dex
-        bpl :-
-@calm:  lda obj2_ready
+        lda obj2_ready
         bne :+
         lda $4A
         cmp #1
@@ -2808,17 +3006,57 @@ convert_oam:
         bra :++
 :       lda #0
 :       sta spr_full
-        stz obj_used + 4
-        stz obj_used + 5
-        stz obj_used + 6
-        stz obj_used + 7
-        lda #0
-        sta spr_attr
-        lda f:AttrTable
-        sta spr_attr + 1
+        lda spr_more
+        beq :+
+        jsr spr_hide_stale
+:       plp
+        rts
+
+; More than one page has just changed, which is rare: sprites on those not to be loaded go off.
+.macro spr_hide_half buf
+.local @each, @next
+        ldy #0
+@each:  lda buf + 3,y
+        and #1
+        asl a
+        asl a
+        sta spr_iy
+        lda buf + 2,y
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        ora spr_iy
+        tax
+        cmp load_first
+        beq @next
+        lda $E1,x
+        cmp chr_obj,x
+        beq @next
+        lda #HIDDEN_Y
+        sta buf + 1,y
+        sta buf + 5,y
+@next:  tya
+        clc
+        adc #8
+        tay
+        bne @each
+.endmacro
+
+spr_hide_stale:
+        spr_hide_half oam_buf
+        spr_hide_half oam_buf + 256
+        rts
+
+; What is left: sprites the game's other routines wrote, such as the status bar's, which are
+; few, and the slots that are empty.
+convert_oam:
+        php
+        stz band_n
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
-convert_out:
         plp
         rts
 
