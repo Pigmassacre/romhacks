@@ -97,6 +97,7 @@ set_have:    .res 12
 obj2_want:   .res 8         ; the sprite pages below a split
 obj2_have:   .res 8
 obj_base:    .res 1
+obj2_ready:  .res 1         ; the second tables hold what the last frame's splits asked for
 obj_used:    .res 8         ; sprites use this slot of the second table: see convert_oam
 set_wr:      .res 12        ; a split wrote this slot itself, so it must be copied soon
 nmi_count:   .res 1
@@ -427,7 +428,7 @@ fme_chr:
 @split: tya
         sta obj2_want,x
         cpx #4
-        bcc @flip
+        bcc @out            ; a wait for the line here would make what follows late
         ; A further tile set for what comes below. It can only be copied in vblank, so
         ; the first frame of a new set still shows the old one.
         lda split_open
@@ -604,16 +605,12 @@ flip_bg:
         sta CGDATA
 @out:   rts
 
-; The game sets the sprites' pages one by one: flip when the last one is right.
+; Below the first split, the sprites use what the splits left the pages as last frame.
 flip_sprites:
         lda split_flip
         bne @out
-        ldx #4              ; the other slots follow when there is time
-:       lda obj2_want,x
-        cmp obj2_have,x
-        bne @out
-        dex
-        bpl :-
+        lda obj2_ready
+        beq @out
         jsr wait_line
         lda #OBJ2_HI >> 5
         sta OBSEL
@@ -670,6 +667,16 @@ nmi_work2:
         jsr load_page
         lda #234
         jsr attr_work
+        ; Ready, if the slots that matter have what they asked for.
+        ldy #1
+        ldx #4
+@rdy:   lda obj2_want,x
+        cmp obj2_have,x
+        beq @rdy2
+        ldy #0
+@rdy2:  dex
+        bpl @rdy
+        sty obj2_ready
 :       ldx #7
 :       lda chr_want,x
         sta obj2_want,x
@@ -918,8 +925,8 @@ scroll_now:
         sta cam_hi
 @out:   rts
 
-; BG3: the notices on the title screen, clouds behind stages that have them. $4A is 3 and
-; $90 is 0 on the title; $4A is 1 in play, where the clouds' page is at $E6 or $E7.
+; BG3: the notices on the title screen, clouds behind stages that have them. $4A is 1 in
+; play, where the clouds' page is at $E6 or $E7.
 bg2_now:
         ldx #0
         stx parallax
@@ -927,11 +934,13 @@ bg2_now:
 @off:   jmp @really_off
 @done2: jmp @done
 @begin: lda $4A
+        cmp #2              ; the title, coming back to it
+        beq @title
         cmp #3
         bne @not_title
-        lda $90
+        lda $90             ; the title the first time; the credits have this set
         bne @off
-        lda #$6C
+@title: lda #$6C
         sta BG3SC
         stz BG3HOFS
         stz BG3HOFS
