@@ -31,8 +31,8 @@ up and down, and the title and cutscenes show the part with something on it.
 ## Known limits
 
 - It has been run in mGBA, and not on a real GBA.
-- Normal play takes about 75-80% of the GBA's time for a frame, and the busiest stretches measured
-  (with extra enemies from warping around a stage) about 105%.
+- Normal play takes about 70% of the GBA's time for a frame, and the busiest about 85%. Some single
+  frames take more, up to about 140%, mostly where the NES itself runs long.
 - A heavy frame can run over the GBA's time for a frame. Then that frame is not drawn and the next
   starts straight away. The next is always drawn, so under a sustained load the game slows, as it
   does on the NES, and the sound repeats. Loading a room can take a few frames.
@@ -86,6 +86,7 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 | `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play |
 | `tools/compare_screens.py` | Every marked moment of the tour as the GBA would show it, beside Mesen's screenshot of that frame, on contact sheets in `out/screens/` |
 | `tools/compare_sound.py` | The sound chips' state in Mesen against `runtime/apu.c`'s, frame by frame |
+| `tools/record.py --audio 2600`, then `tools/compare_audio.py` | The sound itself: what each of Mesen's channels outputs, through Mesen's mixer formulas, against this port's, for loudness and spectrum |
 | `tools/press_keys.py` | Runs the real build in mGBA and presses its keys |
 
 ## Credits

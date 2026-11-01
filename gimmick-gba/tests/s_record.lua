@@ -13,10 +13,25 @@ local cpu = io.open(OUT_DIR .. "cpu.txt", "w")
 local ram = io.open(OUT_DIR .. "ram.bin", "wb")
 
 -- Where execution arrives other than from just after the last instruction: jump
--- targets, returns, and interrupts. The translator starts blocks at these.
-local entries, last = {}, -1
+-- targets and returns. The translator starts blocks at these. Not where an RTI goes:
+-- interrupts land anywhere, and it would cut the code up at every place they did.
+local entries, last = {}, 0
 local trace = TRACE_FROM and io.open(OUT_DIR .. "steps.txt", "w")
+-- For tools/compare_sound.py: what each channel outputs, sampled every few instructions.
+local audio_log = AUDIO_LOG and io.open(OUT_DIR .. "channels.txt", "w")
+local audio_tick = 0
+local function log_channels()
+  local s = emu.getState()
+  audio_log:write(string.format("%d %d %d %d %d %d %d\n", s["cpu.cycleCount"], s["apu.square1.timer.lastOutput"],
+    s["apu.square2.timer.lastOutput"], s["apu.triangle.timer.lastOutput"], s["apu.noise.timer.lastOutput"],
+    s["apu.dmc.timer.lastOutput"], s["mapper.audio.lastOutput"]))
+end
+
 emu.addMemoryCallback(function(a, v)
+  if audio_log then
+    audio_tick = audio_tick + 1
+    if audio_tick % 12 == 0 then log_channels() end
+  end
   if not started then
     -- RAM at power-on is random, so the replay starts from the same values.
     started = true
@@ -29,7 +44,7 @@ emu.addMemoryCallback(function(a, v)
     local s = emu.getState()
     trace:write(string.format("%04X %02X %02X %02X %02X\n", a, s["cpu.a"], s["cpu.x"], s["cpu.y"], s["cpu.sp"]))
   end
-  if a < last or a > last + 3 then entries[a] = true end
+  if (a < last or a > last + 3) and emu.read(last, M) ~= 0x40 then entries[a] = true end
   last = a
   local c = emu.convertAddress(a, M)
   local k = (c and c.address or -1) * 65536 + a
@@ -63,7 +78,7 @@ local function finish()
   h = io.open(OUT_DIR .. "entries.txt", "w")
   for a in pairs(entries) do h:write(a, "\n") end
   h:close()
-  if trace then trace:close() end; if apu_log then apu_log:close() end; pokes:close(); pad_reads:close(); pads:close(); cpu:close(); ram:close()
+  if audio_log then audio_log:close() end; if trace then trace:close() end; if apu_log then apu_log:close() end; pokes:close(); pad_reads:close(); pads:close(); cpu:close(); ram:close()
   emu.stop(0)
 end
 

@@ -72,6 +72,19 @@ FAR u32 hot_run(u32 index);
 extern const u16 *hot_maps[32];
 extern u8 prg_map[3];
 
+FAR void ppu_data_write(u8 v);
+
+// A read or write whose address is only known at run time, without a call for what is
+// not hardware.
+#define RD_ANY(ea_) ({ u32 ea = (ea_); \
+  ea < 0x800 ? ram[ea] : ea >= 0xE000 ? fixed[ea - 0xE000] : \
+  ea >= 0x8000 ? window[(ea - 0x8000) >> 13][ea & 0x1FFF] : \
+  ea >= 0x6000 ? w6000[ea - 0x6000] : rd(ea); })
+#define WR_ANY(ea_, v_) do { u32 ea = (ea_); u8 v = (v_); \
+  if (ea < 0x800) ram[ea] = v; \
+  else if (ea - 0x6000u < 0x2000u) w6000w[ea - 0x6000] = v; \
+  else wr(ea, v); } while (0)
+
 // Which fast-RAM block starts at this PC, or 0.
 static inline __attribute__((always_inline)) u32 hot_lookup(u32 pc) {
   const u16 *m = hot_maps[pc >= 0xE000 ? 0x1F : prg_map[(pc - 0x8000) >> 13] & 31];

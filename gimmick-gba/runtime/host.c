@@ -261,6 +261,7 @@ int main(int argc, char **argv) {
   }
   if (getenv("DUMP_FRAME")) dump_frame = atoi(getenv("DUMP_FRAME"));
   apu_init(18157);
+  if (getenv("APU_ONLY")) { extern int apu_only; apu_only = atoi(getenv("APU_ONLY")); }
   if (getenv("APU_LOG")) apu_log = fopen(getenv("APU_LOG"), "w");
   if (getenv("SHOTS") && getenv("SHOT_DIR")) {
     FILE *l = fopen(getenv("SHOTS"), "r");

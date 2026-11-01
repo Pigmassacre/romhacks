@@ -172,7 +172,8 @@ HOT static u8 ppu_read_data(void) {
   return v;
 }
 
-HOT static void ppu_write_data(u8 v) {
+HOT void ppu_data_write(u8 v) {
+  ppu_latch = v;
   u16 a = ppu_v & 0x3FFF;
   if (a >= 0x2000 && a < 0x3F00) { ciram[nt_index(a)] = v; nt_dirty = 1; }
   else if (a >= 0x3F00) { palette[(a & 3) ? a & 31 : a & 15] = v; palette_dirty = 1; }
@@ -278,7 +279,7 @@ HOT void wr(u16 a, u8 v) {
         ppu_w ^= 1;
         mid_frame();
         break;
-      case 7: ppu_write_data(v); break;
+      case 7: ppu_data_write(v); break;
     }
     return;
   }
