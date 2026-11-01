@@ -2376,7 +2376,7 @@ OPT_SKIP   = 2
 OPT_TAP    = 4
 OPT_COYOTE = 8
 OPT_BUFFER = 16
-FLOOR_F    = $0487          ; 1.5's RAM: see gimmick-1.5/src/defs.asm
+FLOOR_F    = $0487          ; 1.5's RAM: see src/gimmick-1.5/defs.asm
 JUMPBUF_ON = $048A
 TAP_MODE   = $048B
 

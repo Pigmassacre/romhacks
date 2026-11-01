@@ -481,19 +481,47 @@ FAR_NAMES = {"opt_jump": "Far_Jump", "opt_star": "Far_StarButton", "opt_bheld": 
 PAD_READ = 0xF2D7           # lda $4016: the first pad, in the game's read loop
 
 
+SEG_RE = re.compile(r"^\s*;@\s*seg\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s*(.*)$")
+
+
 def assemble_15():
-    """Gimmick! 1.5's own source and its own build's assembler step. Its title screen and its
-    bigger ROM stay out of it: the fixed bank is still $1F here."""
-    import importlib.util
-    root = os.path.join(os.path.dirname(REPO), "gimmick-1.5")
-    spec = importlib.util.spec_from_file_location("build_15", os.path.join(root, "tools", "build.py"))
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    m.OUT = os.path.join(GEN, "gimmick-1.5")
-    os.makedirs(m.OUT, exist_ok=True)
-    m.ASM6 = os.path.join(REPO, "tools", "asm6")
-    prologue, segs = m.split_segments(os.path.join(m.SRC, "main.asm"))
-    return m.assemble(prologue, segs)
+    """Its source is split by `;@ seg <bank> <start> <end>` lines into pieces for each place in
+    the ROM. They are assembled in one run of asm6, so that labels resolve across them, with
+    a table of their lengths after them that says where each one ends."""
+    src = os.path.join(REPO, "src", "gimmick-1.5")
+    work = os.path.join(GEN, "gimmick-1.5")
+    os.makedirs(work, exist_ok=True)
+    prologue, segs, cur = [], [], None
+    for line in open(os.path.join(src, "main.asm")):
+        m = SEG_RE.match(line)
+        if m:
+            cur = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16), m.group(4).strip(), [])
+            segs.append(cur)
+        else:
+            (cur[4] if cur else prologue).append(line)
+    gen = os.path.join(work, "build.asm")
+    with open(gen, "w") as f:
+        f.writelines(prologue)
+        for i, (bank, start, end, name, lines) in enumerate(segs):
+            f.write("\n.base $%04X\n" % start)
+            f.writelines(lines)
+            f.write("\n__seg%d_end:\n.if __seg%d_end > $%04X\n.error \"%s is too long\"\n.endif\n" % (i, i, end, name))
+        for i, (bank, start, end, name, lines) in enumerate(segs):
+            f.write(".dw __seg%d_end - $%04X\n" % (i, start))
+    binary = os.path.join(work, "build.bin")
+    # asm6 reads arguments that start with "/" as options, so the paths are relative.
+    r = subprocess.run([os.path.join(REPO, "tools", "asm6"), "-q", os.path.relpath(gen, src), os.path.relpath(binary, src)],
+                       cwd=src, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("asm6 failed: " + r.stdout + r.stderr)
+    blob = open(binary, "rb").read()
+    table = len(blob) - 2 * len(segs)
+    out, pos = [], 0
+    for i, (bank, start, end, name, lines) in enumerate(segs):
+        n = blob[table + 2 * i] | blob[table + 2 * i + 1] << 8
+        out.append((bank, start, end, name, blob[pos:pos + n]))
+        pos += n
+    return out
 
 
 def apply_15(prg):
@@ -513,7 +541,7 @@ def apply_15(prg):
             far[FAR_NAMES[label]] = code[1] | code[2] << 8
             continue
         if num not in (FIXED, HACK_BANK):
-            continue            # its title screen: this port has its own notices
+            sys.exit("a part of Gimmick! 1.5 at %02X:%04X that this build does not know" % (num, start))
         at = num * BANK + (start & 0x1FFF)
         out[at:at + len(code)] = code
         if num == FIXED:

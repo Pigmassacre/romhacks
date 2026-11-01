@@ -23,7 +23,7 @@ This hack is AI-assisted, using Claude.
 
 Put `Gimmick! (Japan).nes` and the Linux build of [Mesen 2](https://www.mesen.ca/) (as `Mesen`) in
 this folder. It also needs Python 3 with Pillow, [cc65](https://cc65.github.io/) (`ca65`, `ld65`), and
-loopy's asm6 at `tools/asm6`, which assembles Gimmick! 1.5's source from `../gimmick-1.5/src/`.
+loopy's asm6 at `tools/asm6`, for Gimmick! 1.5's source in `src/gimmick-1.5/`.
 
 ```bash
 python3 tools/survey.py
@@ -49,7 +49,7 @@ Each tool plays both machines with the same buttons, in Mesen.
 - `tools/tour.py` warps through every checkpoint of every stage, the ending and a game over, taking
   screenshots and nametables on both, and `tools/tourdiff.py` and `tools/tourmontage.py` compare them.
 - `tools/sounddiff.py` compares each sound channel with its DSP voice.
-- `tools/test15.py` runs Gimmick! 1.5's own tests here, with the options off (they expect the original
+- `tools/test15.py` runs Gimmick! 1.5's tests here (`tests/gimmick-1.5/`), with the options off (they expect the original
   game) and on (they expect 1.5).
 
 `tools/shots.py` and `tools/montage.py` take and pair screenshots at given frames, and

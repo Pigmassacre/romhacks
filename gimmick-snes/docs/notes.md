@@ -68,10 +68,12 @@ a table of matrices, then sets the identity, at which it lines up with the sprit
 
 ## Gimmick! 1.5, as options
 
-`assemble_15` in `tools/build.py` assembles `../gimmick-1.5/src/` as it is. Its code becomes bank `$20`
-and its far calls go where they do there, in the fixed bank's dead block; its title screen and bigger ROM are
-left out. Its hooks in banks `$1D` and `$1E` go through switches in `src/runtime.s` (`opt_jump` and so on): off
-runs what the game had there, on runs 1.5's routine. Hack and game then share the RAM 1.5 already keeps to.
+`src/gimmick-1.5/` and `tests/gimmick-1.5/` are copies of that hack's source and tests, so this folder
+builds alone. The source has lost its title screen and nothing else; a fix to one copy has to be made in the
+other by hand. `assemble_15` in `tools/build.py` assembles it. Its code becomes bank `$20` and its far calls go
+where they do there, in the fixed bank's dead block; its bigger ROM is left out. Its hooks in banks `$1D` and
+`$1E` go through switches in `src/runtime.s` (`opt_jump` and so on): off runs what the game had there, on runs
+1.5's routine. Hack and game then share the RAM 1.5 already keeps to.
 
 Coyote time, buffering and Select's tap toggle are one routine, `JumpCheck`, so `opt_jump` keeps what is off
 from happening: an old stamp for the floor, no memory of the press, no Select bit. With all three off it does not
