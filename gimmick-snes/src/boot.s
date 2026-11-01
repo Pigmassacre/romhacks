@@ -159,7 +159,7 @@ fast:
         ina
 :       sta APUIO0
 
-        ; The notices for the title screen: BG3's tiles and map.
+        ; The notices for the title screen: tiles and map, for BG2 and BG4.
         lda #$80
         sta VMAINC
         ldx #$6800
@@ -177,18 +177,26 @@ fast:
         lda #$80
         sta MDMAEN
         ; The clouds' two maps, for parallax
-        ldx #$7000
+        ldx #$7800
         stx VMADDL
         ldx #$1000
         stx A1T7L
-        ldx #$1800          ; and the options menu's
+        stx DAS7L
+        lda #$80
+        sta MDMAEN
+        ; and the options menu's
+        ldx #$3C00
+        stx VMADDL
+        ldx #$2000
+        stx A1T7L
+        ldx #$0800
         stx DAS7L
         lda #$80
         sta MDMAEN
         lda #$6C
-        sta BG3SC
-        ; Black, grey and white, for the notices. Palette 1 is the clouds'.
-        lda #9
+        sta BG2SC
+        ; Black, grey and white, for the notices: BG2's palette 2.
+        lda #41
         sta CGADD
         stz CGDATA
         stz CGDATA
@@ -201,20 +209,23 @@ fast:
         lda #$7F
         sta CGDATA
 
-        ; The picture: mode 1, for 16 colours on BG1 and BG3 on top where it asks to be.
-        lda #$09
-        sta BGMODE
-        lda #$60 | 1        ; maps at $6000, side by side to start with
+        ; The picture: Mode 0. BG1 is the NES's background, with nothing in front of it but
+        ; sprites and BG2, the notices. With parallax, BG3 has what is black in BG1, on the same
+        ; map, with sprites that go behind the background between them, and BG4 is the sky.
+        stz BGMODE
+        lda #$70 | 1        ; maps at $7000, side by side to start with
         sta BG1SC
-        lda #$02            ; BG1's tiles at $2000
+        sta BG3SC
+        lda #$62            ; BG1's tiles at $2000, BG2's at $6000 (they start at tile 256)
         sta BG12NBA
-        lda #$06            ; BG3's at $6000 (its own start at tile 256)
+        lda #$66            ; BG3's at $6000, BG4's as BG2's
         sta BG34NBA
         lda #$00            ; sprite tables at 0, 8x8 and 16x16
         sta OBSEL
         ; One window, over the leftmost 8 pixels, for when the game hides them.
         lda #$02
         sta W12SEL
+        sta W34SEL
         lda #$02
         sta WOBJSEL
         stz WH0
@@ -228,6 +239,14 @@ fast:
         ldx #hdma_tab
         stx A1T6L
         stz A1B6
+        ; BG3 scrolls as BG1 does
+        lda #$02
+        sta DMAP7 - $40
+        lda #<BG3VOFS
+        sta BBAD6 - $30
+        ldx #hdma_tab
+        stx A1T6L - $30
+        stz A1B6 - $30
         ; TM by line, for the portal: see band_now
         stz DMAP7 - $30
         lda #<TM

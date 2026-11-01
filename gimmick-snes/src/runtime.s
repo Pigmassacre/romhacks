@@ -13,14 +13,15 @@
 
 .include "hw.inc"
 
-.import ColorLo, ColorHi, AttrTable, ChrObjBanks, PageAlias, M7Anim
+.import ColorLo, ColorHi, AttrTable, ChrObjBanks, BgBanks, BgOffs, PageAlias, M7Anim
 .import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
 OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
 BGSET_HI   = $20            ; the first tile set of three: see set_hi
 CLOUD_PAGE = 1              ; the CHR page of clouds, for parallax
-MAP_HI     = $60            ; nametable A at $6000, B at $6400
+MAP_HI     = $70            ; nametable A at $7000, B at $7400
+MASK_HI    = $60            ; BG3's tiles: what is black in the first tile set, for parallax
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
 IRQ_EARLY  = 10             ; lines ahead of time to start a split's interrupt
@@ -71,7 +72,7 @@ cam_hi:      .res 1
 cam_prev:    .res 2
 cam_acc:     .res 2
 tm_now:      .res 1         ; what the game has switched on
-overlay:     .res 1         ; and BG3, on the title screen or behind clouds
+overlay:     .res 1         ; and BG2 on the title screen, or BG3 and BG4 with clouds
 in_split:    .res 1         ; a split's interrupt has run this frame
 .export in_split
 .export irq_flag
@@ -134,6 +135,9 @@ bg_at:       .res 1         ; the one that changed the tile set last frame
 bg_at_new:   .res 1
 bg_flipped:  .res 1
 flip_v:      .res 1         ; for BG12NBA after the wait for a line
+flip_tm:     .res 1         ; and TM with it, below the status bar on a stage with parallax
+dma_hi:      .res 1
+mask_zero:   .res 1         ; stays 0
 h_lo:        .res 1
 h_hi:        .res 1
 spr_y:       .res 1         ; the sprite spr_body is working on
@@ -148,7 +152,6 @@ spr_x:       .res 1
 .endif
 spr_flag:    .res 256       ; by the slot's offset: spr_body has written this one this frame
 spr_full:    .res 1         ; every sprite needs spr_check this frame
-spr_pri:     .res 1         ; $20 to put them all in front of the background
 spr_attr:    .res 2         ; the last sprite's attributes, as they came and as they went
 spr_tmp:     .res 3         ; not tmp: a split's interrupt can land in the middle of the sprites, and uses that
 load_first:  .res 1         ; the one stale sprite page this frame's sprites may wait on: see spr_check
@@ -284,6 +287,7 @@ fme_mirror:
         tax
         lda mirror_sc,x
         sta BG1SC
+        sta BG3SC
         jmp fme_done
 mirror_sc:
         .byte MAP_HI | 1, MAP_HI | 2, MAP_HI, MAP_HI | 4
@@ -500,14 +504,7 @@ fme_chr:
         ora tmp
         tax
         tya
-        ; With parallax, the version with solid black: the sky must not show below the split.
-        ldy parallax
-        beq :+
-        phx
-        tax
-        lda f:PageAlias,x
-        plx
-:       sta set_want,x
+        sta set_want,x
         lda #1
         sta set_wr,x
 @flip:  jsr show_split_set
@@ -526,15 +523,7 @@ load_top_slot:
         bcc @obj
         sta set_have - 4,x
         tay
-        lda #$80
-        sta VMAINC
-        stz VMADDL
-        txa
-        and #3
-        asl a
-        asl a
-        ora #BGSET_HI
-        sta VMADDH
+        lda #BGSET_HI
         jsr dma_bg_page
 @obj:   ldy chr_want,x
         cpx #4
@@ -550,20 +539,26 @@ load_top_slot:
         jsr dma_obj_page
 @out:   rts
 
-; Page in y; the VRAM address is set. Keeps y. Background tiles are 4 bits a pixel, as
-; sprites are, and come from the same place: pages from $80 are the versions for parallax.
+; Page in y for slot x & 3 of the tile set whose VRAM address starts at a. Keeps x and y. A page is
+; 1 KB of 2 bit tiles, at slot * $200 words. Pages from $80 are the versions for parallax, with
+; sky and clouds blank, and go with another 1 KB for BG3: what is black in them. BG3 sits
+; below the sprites that go behind the background, so they show in the black as on the NES.
 dma_bg_page:
-        tya
+        sta dma_hi
+        lda #$80
+        sta VMAINC
+        stz VMADDL
+        txa
+        and #3
+        asl a
+        ora dma_hi
+        sta VMADDH
         phx
-        tax
-        lda f:ChrObjBanks,x
-        plx
+        tyx
+        lda f:BgBanks,x
         sta A1B7
-        tya
-        and #$0F
-        asl a
-        asl a
-        asl a
+        lda f:BgOffs,x
+        plx
         sta A1T7H
         stz A1T7L
         lda #1
@@ -571,11 +566,38 @@ dma_bg_page:
         lda #<VMDATAL
         sta BBAD7
         stz DAS7L
-        lda #$08
+        lda #$04
         sta DAS7H
         lda #$80
         sta MDMAEN
-        rts
+        ; Only the set above the status bar has any.
+        lda dma_hi
+        cmp #BGSET_HI
+        bne @out
+        cpy #$80
+        bcs @mask
+        lda parallax
+        beq @out
+        ; An ordinary page with parallax: none of it is solid.
+        lda #$09
+        sta DMAP7
+        lda #<mask_zero
+        sta A1T7L
+        lda #>mask_zero
+        sta A1T7H
+        stz A1B7
+@mask:  txa
+        and #3
+        asl a
+        ora #MASK_HI
+        sta VMADDH
+        stz VMADDL
+        stz DAS7L
+        lda #$04
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
+@out:   rts
 
 ; Page in y, slot in x. 2 KB for 64 sprite tiles, at slot * $400 words.
 dma_obj_page:
@@ -657,6 +679,9 @@ show_split_set:
         beq @out
         jsr wait_hblank
         sta BG12NBA
+        lda flip_tm
+        beq @out
+        sta TM
 @out:   rts
 
 ; Set flip_v to the value for BG12NBA that shows the second tile set.
@@ -668,7 +693,13 @@ set_value:
         lsr a
         lsr a
         lsr a
+        ora #$60            ; BG2's tiles, which stay
         sta flip_v
+        ; Below the status bar there is no parallax, and the backdrop is the game's own.
+        lda parallax
+        beq :+
+        lda tm_now
+:       sta flip_tm
 flip_out:
         rts
 
@@ -761,7 +792,7 @@ nmi_work2:
         stz irq_line
         stz in_split
         stz OBSEL
-        lda #BGSET_HI >> 4
+        lda #$60 | (BGSET_HI >> 4)
         sta BG12NBA
         lda #$40
         sta HDMAEN
@@ -852,15 +883,7 @@ top_pages:
         bcs @done
         sta set_have - 4,x
         tay
-        lda #$80
-        sta VMAINC
-        stz VMADDL
-        txa
-        and #3
-        asl a
-        asl a
-        ora #BGSET_HI
-        sta VMADDH
+        lda #BGSET_HI
         jsr dma_bg_page
         inc tmp
 @bg_next:
@@ -920,9 +943,13 @@ top_room:
 ; those lines. The table is lines, then TM's value for them.
 band_now:
         lda #$40
+        ldx parallax
+        beq :+
+        ora #$08            ; BG3 scrolls with BG1
+:       sta tmp + 3
         ldx band_n
         cpx #8
-        bcc @off
+        bcc @off2
         lda tm_now
         ora overlay
         and tm_mask
@@ -950,15 +977,15 @@ band_now:
         lda tmp + 2
         sta band_tab + 5
         stz band_tab + 6
-        lda #$50
-@off:   sta HDMAEN
+        lda tmp + 3
+        ora #$10
+        sta HDMAEN
         rts
-@off2:  lda #$40
+@off2:  lda tmp + 3
         sta HDMAEN
         rts
 
-; The options menu, from the title screen. It sits on BG3 in place of the notices.
-MENU_MAP   = $7800
+; The options menu, from the title screen. It sits on BG2 in place of the notices.
 MENU_ITEMS = 5
 .import MenuRowLo, MenuRowHi
 menu_tick:
@@ -1125,8 +1152,27 @@ map_now:
         sta TM
         rts
 @leave: stz map7
-        lda #$09
-        sta BGMODE
+        stz BGMODE
+        ; The menu's map was in the first half of VRAM, which the island took.
+        lda #$80
+        sta VMAINC
+        stz VMADDL
+        lda #$3C
+        sta VMADDH
+        lda #1
+        sta DMAP7
+        lda #<VMDATAL
+        sta BBAD7
+        stz A1T7L
+        lda #$20
+        sta A1T7H
+        lda #$DE
+        sta A1B7
+        stz DAS7L
+        lda #$08
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
         stz M7SEL
         stz OBSEL
         stz obj_base
@@ -1311,7 +1357,7 @@ scroll_now:
         sta cam_hi
 @out:   rts
 
-; BG3: the notices on the title screen, clouds behind stages that have them. $4A is 1 in
+; BG2: the notices on the title screen. BG4: sky and clouds behind stages that have them. $4A is 1 in
 ; play, where the clouds' page is at $E6 or $E7.
 bg2_now:
         ldx #0
@@ -1334,15 +1380,15 @@ bg2_now:
         sta is_title
         lda menu_open
         beq :+
-        lda #$78
+        lda #$3C
         bra :++
 :       lda #$6C
-:       sta BG3SC
-        stz BG3HOFS
-        stz BG3HOFS
-        stz BG3VOFS
-        stz BG3VOFS
-        ldx #4
+:       sta BG2SC
+        stz BG2HOFS
+        stz BG2HOFS
+        stz BG2VOFS
+        stz BG2VOFS
+        ldx #2
         bra @done2
 @not_title:
         cmp #1
@@ -1360,7 +1406,7 @@ bg2_now:
         bcs @off
         lda cloud_sc,y
         beq @off
-        sta BG3SC
+        sta BG4SC
         inc parallax
         lda cloud_pal,y
         cmp band_pal
@@ -1369,9 +1415,9 @@ bg2_now:
         lda #1
         sta pal_dirty
 :       lda cloud_y,y
-        sta BG3VOFS
+        sta BG4VOFS
         lda cloud_yh,y
-        sta BG3VOFS
+        sta BG4VOFS
         ; Half the camera's speed: a jump is a new screen, not movement.
         lda cam_lo
         sec
@@ -1408,31 +1454,14 @@ bg2_now:
         sta tmp + 3
         lda cam_acc
         ror a
-        sta BG3HOFS
+        sta BG4HOFS
         lda tmp + 3
         and #3
-        sta BG3HOFS
-        ; The sky is the backdrop now: the colour that was its tile.
-        lda band_pal
-        asl a
-        asl a
-        asl a
-        tax
-        stz CGADD
-        lda cg_bg + 2,x
-        sta CGDATA
-        lda cg_bg + 3,x
-        sta CGDATA
-        ldx #4
+        sta BG4HOFS
+        ldx #$0C
         bra @done
 @really_off:
         ldx #0
-        ; Without parallax the backdrop is the game's own.
-        stz CGADD
-        lda cg_bg
-        sta CGDATA
-        lda cg_bg + 1
-        sta CGDATA
 @done:  stx overlay
         lda tm_now
         beq :+
@@ -1502,29 +1531,24 @@ load_page:
         rts
 @load:  sta set_have,x
         tay
-        lda #$80
-        sta VMAINC
-        stz VMADDL
-        ; x = 4 + slot, and slots are $400 words.
-        txa
-        and #3
-        asl a
-        asl a
-        ora #$30
-        sta VMADDH
+        lda #$30
         jmp dma_bg_page
 
-; Send the colours the game has changed. From the NMI.
+; Send the colours the game has changed. From the NMI. In Mode 0 each BG has 8 palettes of 4: BG1
+; from 0, BG2 from 32, BG3 from 64 and BG4 from 96.
 commit_palette:
         lda pal_dirty
-        beq @out
-        stz pal_dirty
-        ; BG1 is 16 colours a palette: the NES's three, then the backdrop's colour for its
-        ; black when that has to be solid. BG3's are in the gaps, 5-7 for the clouds.
+        bne :+
+        rts
+:       stz pal_dirty
+        stz CGADD
+        lda cg_bg
+        sta CGDATA
+        lda cg_bg + 1
+        sta CGDATA
+        ; BG1: the NES's four palettes.
         ldy #0
 @pal:   tya
-        asl a
-        asl a
         asl a
         asl a
         ina
@@ -1546,19 +1570,29 @@ commit_palette:
         sta CGDATA
         lda cg_bg + 7,x
         sta CGDATA
+        iny
+        cpy #4
+        bne @pal
+        ; BG3: its one colour, in whichever of those palettes the map says, is the backdrop's.
+        ldy #65
+@mask:  sty CGADD
         lda cg_bg
         sta CGDATA
         lda cg_bg + 1
         sta CGDATA
-        iny
-        cpy #4
-        bne @pal
+        tya
+        clc
+        adc #4
+        tay
+        cmp #81
+        bne @mask
+        ; BG4: the clouds.
         lda band_pal
         asl a
         asl a
         asl a
         tax
-        lda #5
+        lda #101
         sta CGADD
         inx
         inx
@@ -1587,8 +1621,8 @@ commit_palette:
 
 .segment "WCODE"
 
-; For each stage: BG2's map (0 for none), the palette its clouds use and where they sit.
-cloud_sc:  .byte $70, $70, $00, $74, $00, $00, $00
+; For each stage: BG4's map (0 for none), the palette its clouds use and where they sit.
+cloud_sc:  .byte $78, $78, $00, $7C, $00, $00, $00
 cloud_pal: .byte 1, 1, 0, 3, 0, 0, 0
 cloud_y:   .byte <(7), <(7 - 40), 0, <(7), 0, 0, 0
 cloud_yh:  .byte >(7), >(7 - 40), 0, >(7), 0, 0, 0
@@ -1773,8 +1807,9 @@ ppu_mask_w:
         ; Hide the left 8 pixels where the game asks: bits 1 and 2 show them.
         and #2
         eor #2
-        lsr a
-        sta tmp
+        beq :+
+        lda #$05            ; BG1 and BG3
+:       sta tmp
         tya
         and #4
         eor #4
@@ -1952,20 +1987,17 @@ t_y:
         sta tmp + 1
         rts
 
-; Horizontal scroll from t.
+; Horizontal scroll from t. These registers share a latch: each gets both its bytes in turn.
 apply_h:
-        lda ppu_tlo
-        and #$1F
-        asl a
-        asl a
-        asl a
-        ora ppu_finex
+        jsr h_prep
+        lda h_lo
         sta BG1HOFS
-        lda ppu_thi
-        and #4
-        lsr a
-        lsr a
+        lda h_hi
         sta BG1HOFS
+        lda h_lo
+        sta BG3HOFS
+        lda h_hi
+        sta BG3HOFS
         rts
 
 ; Write t to the SNES scroll, for the frame to come. A nametable's 30 rows are followed
@@ -2040,11 +2072,19 @@ mid_scroll:
         lda flip_v
         beq @scroll
         sta BG12NBA
+        lda flip_tm
+        beq @scroll
+        sta TM
 @scroll:
+        ; These registers share a latch: each gets both its bytes in turn.
         lda h_lo
         sta BG1HOFS
         lda h_hi
         sta BG1HOFS
+        lda h_lo
+        sta BG3HOFS
+        lda h_hi
+        sta BG3HOFS
         jmp show_split_set
 :       rts
 
@@ -2075,14 +2115,24 @@ mid_scroll_v:
         lda flip_v
         beq @scroll
         sta BG12NBA
+        lda flip_tm
+        beq @scroll
+        sta TM
 @scroll:
         stz HDMAEN
         sty BG1VOFS
         stx BG1VOFS
+        sty BG3VOFS
+        stx BG3VOFS
+        ; These registers share a latch: each gets both its bytes in turn.
         lda h_lo
         sta BG1HOFS
         lda h_hi
         sta BG1HOFS
+        lda h_lo
+        sta BG3HOFS
+        lda h_hi
+        sta BG3HOFS
         jmp show_split_set
 
 ; Which SNES nametable each NES one lands on, for each FME-7 mirroring mode.
@@ -2696,7 +2746,6 @@ frame_done:
         tax
         lda f:AttrTable,x
         plx
-        ora spr_pri
         sta spr_attr + 1
 @same:  lda spr_attr + 1
         ora spr_tmp + 1
@@ -2867,7 +2916,6 @@ self:
         tax
         lda f:AttrTable,x
         plx
-        ora spr_pri
         sta spr_attr + 1
 @same:  lda spr_attr + 1    ; its top bit is the vertical flip, as on the NES
         sta buf + 3,x
@@ -3071,16 +3119,9 @@ spr_prep:
         stz obj_used + 5
         stz obj_used + 6
         stz obj_used + 7
-        ; Behind the background means nothing with parallax: its black is solid, and its sky
-        ; is not there, so such a sprite would vanish in a pipe's mouth and show through sky.
-        lda parallax
-        beq :+
-        lda #$20
-:       sta spr_pri
-        ; The attributes spr_body last saw, with that in.
+        ; The attributes spr_body last saw.
         stz spr_attr
         lda f:AttrTable
-        ora spr_pri
         sta spr_attr + 1
         ; Anything for spr_check to find, for sprites from the game's other routines?
         ldy #0

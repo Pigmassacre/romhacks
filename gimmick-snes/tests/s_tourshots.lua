@@ -5,7 +5,7 @@ function poke(a, v) emu.write(a, v, SNES and emu.memType.snesWorkRam or emu.memT
 function DUMP_NT(what)
   local t = {}
   for a = 0, 0xFFF do
-    if SNES then t[#t + 1] = string.char(emu.read(0xC000 + a, emu.memType.snesVideoRam))
+    if SNES then t[#t + 1] = string.char(emu.read(0xE000 + a, emu.memType.snesVideoRam))
     else t[#t + 1] = string.char(emu.read(0x2000 + a, emu.memType.nesPpuMemory)) end
   end
   local h = io.open(OUT .. "nt_" .. what .. ".bin", "wb"); h:write(table.concat(t)); h:close()

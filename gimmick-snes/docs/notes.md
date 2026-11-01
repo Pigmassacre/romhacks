@@ -95,14 +95,22 @@ so the interrupt comes 12 lines early, and what shows waits for the line (`wait_
 copied during the picture, so a second tile set and second sprite tables hold what the last frame's
 splits asked for (`load_page`), and the split flips to them.
 
-## Parallax
+## Parallax and layers
 
-Sky is a solid tile on the NES, and black outlines are colour 0, which the SNES would see through. BG1
-is 16 colours in Mode 1 so both can work: in the versions of pages made by `build_parallax_pages`, colour
-0 becomes solid colour 4 (the backdrop's colour) and sky tiles and the cloud tiles BG3 draws are blank. The rest
-of the clouds' page stays, because it holds foreground too, such as the shadows under platforms. The sky's colour
-becomes the backdrop's. The clouds are on BG3, at half the camera's speed (`bg2_now`). Their bank is the title
-screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`. The status bar's pages have solid black too, so nothing changes colour at the split.
+The picture is Mode 0, for its order of layers, front to back: sprites in front of the background, BG1, sprites behind
+the background, BG3, BG4. BG2 is above them all, for the title's notices and menu. On the NES a sprite behind the
+background shows through colour 0 and is hidden by the rest, so with sky behind everything colour 0 has to be black over
+the sky and yet behind that sprite: only a layer of its own can do that.
+
+- **BG1** is the NES's background, 2 bits a pixel as it is on the NES, in 4 palettes of 4.
+- **BG3** uses BG1's map, with its own tiles: colour 1, always the backdrop's colour, where the NES has colour 0.
+- **BG4** is sky and clouds, at half the camera's speed (`bg2_now`). The bank of cloud is the title screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`.
+
+BG3 and BG4 are on only for stages with clouds, and go off at the status bar's split, where the backdrop, the game's own,
+shows again. In the versions of pages made by `build_parallax_pages` the sky and the cloud tiles BG4 draws are blank in both BG1 and BG3,
+and slopes lose the white of the clouds behind them. A page is 1 KB, or 2 KB with its BG3 tiles.
+
+The BG scroll registers share one latch, as the Mode 7 ones do: each gets both its bytes in turn.
 
 ## The world map
 
