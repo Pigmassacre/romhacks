@@ -1,6 +1,6 @@
--- The title screen says "Gimmick! 1.5": its background uses the copied CHR
--- pages $80-$83, and the "1.5" tiles are in the nametable. Starting the game
--- from it still works.
+-- The title screen says "Gimmick! 1.5" and AI SLOP - DO NOT PLAY: its background
+-- uses the copied CHR pages $80-$83, and the "1.5" and notice tiles are in the
+-- nametable. Starting the game from it still works.
 NO_BOOT = true
 BOOT_MAX = 100000
 local f0, started = 0, false
@@ -18,12 +18,28 @@ emu.addEventCallback(function()
       local t = emu.read(0x2000 + 9 * 32 + 24, emu.memType.nesPpuMemory)
       check(t ~= 0x01 and t ~= 0x10, string.format("the 1.5 is in the nametable (tile %02x at row 9, column 24)", t))
       check(emu.read(0x2000 + 6 * 32 + 1, emu.memType.nesPpuMemory) == 0x01, "the panel reaches column 1")
+      -- the notice: letters on row 2, centred, and sky on the rows around it
+      local first, last = nil, nil
+      for c = 0, 31 do
+        if emu.read(0x2040 + c, emu.memType.nesPpuMemory) ~= 0x10 then first = first or c; last = c end
+      end
+      check(first ~= nil and first + last == 31, string.format("the notice is centred on row 2 (columns %s-%s)", first, last))
+      local sky = true
+      for c = 0, 31 do
+        if emu.read(0x2020 + c, emu.memType.nesPpuMemory) ~= 0x10 or emu.read(0x2060 + c, emu.memType.nesPpuMemory) ~= 0x10 then sky = false end
+      end
+      check(sky, "rows 1 and 3 are still sky")
       -- sprites 0 and 1 hide behind the white margins, as in the original
       local s0 = emu.read(3, emu.memType.nesSpriteRam)
       local s1 = emu.read(7, emu.memType.nesSpriteRam)
       check(s0 == 0x08 and s1 == 0xF0, string.format("sprites 0 and 1 on the new margins (x=%02x, %02x)", s0, s1))
     else
       check(banks == "00 65 66 67", "original: pages " .. banks)
+      local sky = true
+      for c = 0, 31 do
+        if emu.read(0x2040 + c, emu.memType.nesPpuMemory) ~= 0x10 then sky = false end
+      end
+      check(sky, "original: row 2 is sky")
     end
   end
   if f0 > 800 and r(0x90) == 1 and not started then

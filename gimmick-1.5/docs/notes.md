@@ -104,6 +104,9 @@ Bank `$1B`, mapped at `$8000`; its entry is `$8003`.
   `$D8`: on the panel's white side margins, where they cannot be seen. Nothing reads the
   sprite-0 hit, so what they are for is not known. Moved onto black pixels they show as blue
   dots. START and CONTINUE are sprites too.
+- Everything from y 120 down (row 15 on) scrolls. The only sky that stays put is rows 0-3, above
+  the panel. Those are the fill's plain `$10`, not loaded, so the hack draws its AI SLOP notice on
+  row 2 with a hook at `$8082`, after the copies and with the screen still off.
 
 ## Sound
 

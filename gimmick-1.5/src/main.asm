@@ -34,6 +34,9 @@ Far_Water:
         .db $2C
 Far_BHeld:
         ldy #8
+        .db $2C
+Far_TitleNotice:
+        ldy #10
 
 ; Map the hack bank at $A000, call routine Y, and put back what was there.
 ; X is kept. The routine's carry is returned; A and Y are not.
@@ -111,7 +114,16 @@ FarCall:
         nop
 
 ; =============================================================================
-;@ seg $20 $A000 $C000 hack bank
+;@ seg $1B $8082 $8086 title: after its nametables
+; =============================================================================
+; Was: lda #3 / sta $4A. TitleNotice draws the notice above the panel and then
+; does those two instructions.
+
+        jsr Far_TitleNotice
+        nop
+
+; =============================================================================
+;@ seg $20 $A000 $BF00 hack bank
 ; =============================================================================
 
 HackEntry:
@@ -127,6 +139,26 @@ HackTable:
         .dw FxDraw-1
         .dw WaterSkip-1
         .dw BHeld-1
+        .dw TitleNotice-1
+
+; The rendering is off here, as for the copies this follows. Writing with Y
+; going up from 0 draws one whole row; tools/title.py fills in NoticeRow.
+TitleNotice:
+        bit $2002
+        lda #>NOTICE_PPU
+        sta $2006
+        lda #<NOTICE_PPU
+        sta $2006
+        ldy #0
+@row:
+        lda NoticeRow,y
+        sta $2007
+        iny
+        cpy #32
+        bne @row
+        lda #3
+        sta $4A
+        rts
 
 .include "recall.asm"
 .include "fx.asm"
