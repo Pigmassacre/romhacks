@@ -53,6 +53,11 @@ buffer, sprites' CHR pages, colours, then second-set pages. Anything written to 
 must not start where it cannot finish, and a line number from the next picture is not "early". `vram_flush` writes runs
 and columns directly, as the game resends a column of 24 tiles every frame. The game's own calls then find little left.
 
+**Sprites never hold up the game.** `frame_done` tells the game its frame is done and then converts sprites, in the
+time it would spend waiting. If the NMI comes first the frame still counts, the old sprites stay up, and the conversion is
+dropped, once: dropped every time, sprites might never change. So a busy frame costs its sprites a frame, not the
+game a frame.
+
 **Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
 code the game itself calls can go there and run faster than from RAM. `convert_oam` does: the more sprites, the more
 it costs, where the NES only copies them, and that is what slows the game when the screen is busy.

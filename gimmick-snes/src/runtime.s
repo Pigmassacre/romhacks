@@ -133,6 +133,9 @@ split_cnt:   .res 1         ; scroll changes in this frame's splits
 bg_at:       .res 1         ; the one that changed the tile set last frame
 bg_at_new:   .res 1
 bg_flipped:  .res 1
+spr_busy:    .res 1         ; frame_done is converting sprites, in the game's spare time
+spr_abort:   .res 1         ; the NMI came first, so stop
+spr_skipped: .res 1         ; and that has happened since sprites last changed
 spr_full:    .res 1         ; every sprite needs spr_check this frame
 spr_pri:     .res 1         ; $20 to put them all in front of the background
 spr_attr:    .res 2         ; the last sprite's attributes, as they came and as they went
@@ -515,7 +518,9 @@ load_top_slot:
         ora #BGSET_HI
         sta VMADDH
         jsr dma_bg_page
-@obj:   ldy chr_want,x
+@obj:   lda spr_busy
+        bne @out            ; these sprites are to stay on the pages they have
+        ldy chr_want,x
         cpx #4
         bcc :+
         lda obj_used,x
@@ -694,12 +699,25 @@ nmi_work:
 nmi_work2:
         ; Sprites before anything that could use up vblank. The game would send them next, if
         ; it has finished the frame.
-        lda $F0
-        cmp #$AC
+        lda spr_busy
+        beq @not_busy
+        ; Still converting them. Drop that if it is the first time, so the game gets its time
+        ; back, or let it finish, or there might never again be any new sprites.
+        lda spr_skipped
         bne @not_done
+        inc spr_abort
+        inc spr_skipped
+        bra @not_done
+@not_busy:
         lda oam_ready
         beq @not_done
-        jsr oam_send
+        lda $F0
+        cmp #$AC
+        beq @send
+        ; Sprites that finished late go now, unless one waits on a page yet to be copied.
+        lda load_first
+        bpl @not_done
+@send:  jsr oam_send
         lda #1
         sta oam_sent
 @not_done:
@@ -738,6 +756,9 @@ nmi_work2:
         bne @all_done
         stz vf_limit
         jsr vram_flush_now
+        ; The sprites on screen stay as they are, on the pages they have. The game is short of time.
+        lda spr_busy
+        bne @all_done
         ; Then sprites' pages, colours, the pages for below a split, and more colours.
         jsr top_pages
         bcs @copied         ; that was the time there was
@@ -2509,7 +2530,9 @@ oam_dma_a:
         beq :+
         stz oam_sent
         bra @out
-:       lda oam_ready
+:       lda spr_busy
+        bne @out
+        lda oam_ready
         bne @ready
         jsr convert_oam
 @ready: jsr oam_send
@@ -2548,19 +2571,36 @@ oam_send:
 frame_done:
         phx
         phy
-        jsr convert_oam
         lda force_blank
         beq @on
+        jsr convert_oam
         jsr end_run
         ldx #7
 :       jsr load_top_slot
         dex
         bpl :-
-@on:
         lda #1
         sta oam_ready
         lda #$AC
         sta $F0
+        bra @out
+        ; The frame counts as done from here: the game only waits now, so this is spare time.
+        ; If the NMI comes first the game goes on at full speed, and its sprites are a frame
+        ; late, rather than the whole game. See nmi_work.
+@on:    lda #1
+        sta spr_busy
+        lda #$AC
+        sta $F0
+        jsr convert_oam
+        stz spr_busy
+        lda spr_abort
+        beq :+
+        stz spr_abort
+        bra @out
+:       stz spr_skipped
+        lda #1
+        sta oam_ready
+@out:   lda #$AC
         ply
         plx
         rts
@@ -2636,7 +2676,10 @@ frame_done:
 @hide:  lda #HIDDEN_Y
         sta buf + 1,y
         sta buf + 5,y
-@next:  inx
+@next:  lda spr_abort
+        beq :+
+        jmp convert_out
+:       inx
         inx
         inx
         inx
@@ -2775,6 +2818,7 @@ convert_oam:
         sta spr_attr + 1
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
+convert_out:
         plp
         rts
 
