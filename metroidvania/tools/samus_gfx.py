@@ -43,11 +43,12 @@ ANIMS = {
     "SamusJumpPntUp": 0x35, "SamusRunPntUp": 0x37, "SamusRunPntUpFire1": 0x3B,
     "SamusRunPntUpFire2": 0x3D, "SamusRunPntUpFire3": 0x3F, "MissileLeft": 0x8B,
     "MissileRight": 0x8D, "MissileUp": 0x8F, "MissileExplode": 0x91,
-    "BombTick": 0x7F, "BombExplode": 0x82,
+    "BombTick": 0x7F, "BombExplode": 0x82, "WaveBeam": 0x7D,
 }
 # Frames drawn as other frames, for want of tile pairs: a bomb's blast looks like
-# a missile's. (Frame $4A, between them, shows nothing.)
-FRAME_ALIASES = {0x3C: 0x67, 0x49: 0x68, 0x4D: 0x69}
+# a missile's (frame $4A, between them, shows nothing), and the Wave Beam like the
+# power beam, in other colours.
+FRAME_ALIASES = {0x3C: 0x67, 0x49: 0x68, 0x4D: 0x69, 0x4B: 0x28}
 FRAME_NAMES = {
     0x4E: "Bomb0", 0x4F: "Bomb1",
     0x03: "SamusRun0", 0x04: "SamusRun1", 0x05: "SamusRun2", 0x07: "SamusFront",

@@ -12,7 +12,7 @@ The whole game runs in the NMI (`$C052`); the main loop only stirs a random numb
 
 ### RAM the hack uses
 
-Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D9`, so the hack uses `$01B2-$01CC` only. `tests/t_ramguard.lua` checks both.
+Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D5`, so the hack uses `$01B2-$01D1` only. `tests/t_ramguard.lua` checks both.
 
 ### Objects
 
@@ -128,6 +128,12 @@ Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirr
 ### Bombs
 
 `CheckBombLaunch` is called in the ball handler. A bomb takes a projectile slot: `wa_LayBomb`, then `wa_BombCount` with a fuse of `$18` counted on odd frames, then `wa_BombExplode`. Metroid looks for Samus touching a blast in its collision pass, before projectiles next update, with the radii of the frame the bomb then shows, which is 0 on its blank frames. A hit there is a knockback with no health change, away from the bomb (straight up if at the same x), and the same i-frames as a hit, but no blinking. `tests/physics_inputs.lua`'s three bomb sequences hold the throw to Metroid frame by frame. Castlevania's subweapon test only knows points: the hack moves a dagger around the blast from frame to frame, and puts it back after each hit up to twice a blast.
+
+### Wave Beam and Screw Attack
+
+The Wave Beam's path is a table of 12 steps, one a frame, sideways at 3 pixels a frame or up at 3, with the middle shot starting halfway. It collides with walls as the power beam does. The Screw Attack is only a palette cycle in Metroid's drawing, a sound and a check in its collision pass: nothing about her movement changes. Both are held to Metroid by `tests/physics_inputs.lua`. The hack keeps `$5B` set while it's active, which stops enemies touching her but not items being picked up (`$E6BB` looks at items first), and it hurts through a dagger in a free shot slot, with `$10` frames between hits: a hit every frame would end any boss on contact.
+
+The candles' items are objects of AI `$28`, with what they hold in `$0584` (`tests/s_candles.lua`). Along the bot's route the first axe (`$0D`) is on stage 3 and the first cross (`$09`) on stage 4. Picking up a subweapon sets `CurrentWeapon` (`$015B`) to its type, whichever the hack looks at each frame in play. With the stack at `$01D5` at its lowest, in a whole game with both upgrades, `$01B2-$01D1` is the hack's.
 
 ### Sound effects
 

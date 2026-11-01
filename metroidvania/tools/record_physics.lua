@@ -24,6 +24,7 @@ end
 local function begin()
   w(0x30E, SEQUENCES[si].x or 0x30)
   w(0x2D, 0)   -- the frame count: bombs' fuses go by it
+  w(0x6878, (r(0x6878) & 0xB7) | (SEQUENCES[si].gear or 0))   -- Screw Attack, Wave Beam
   x0, y0 = pos(); steps = 0; state = "run"
   out:write("seq " .. SEQUENCES[si].name .. "\n")
 end

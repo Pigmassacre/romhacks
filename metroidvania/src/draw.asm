@@ -34,6 +34,11 @@ DrawAll:
         clc
         rts
 @game:
+        cmp #$0D                ; Game Over: the upgrades go
+        bne @notOver
+        jsr ForgetUpgrades
+        lda GameMode
+@notOver:
         cmp #$0E                ; down the shaft: no status bar, no sprite 0
         bne @split
         lda #$F8
@@ -73,7 +78,10 @@ DrawAll:
         lda HackState
         and #~HS_SAMUS
         sta HackState
+        jmp @outOfPlay
 @inPlay:
+        jsr CheckUpgradePickup
+@outOfPlay:
         lda HackState
         and #HS_SAMUS
         bne @samus
@@ -81,6 +89,13 @@ DrawAll:
         bcc @draw
         jmp @shots              ; hidden, as Simon is
 @samus:
+        jsr IsScrewAttackActive ; her colours cycle, as in Metroid
+        bcs @noScrew
+        lda FrameCounter
+        lsr
+        and #$03
+        sta DrawAttr
+@noScrew:
         lda SamusXLo
         sec
         sbc ScrollLo
@@ -95,6 +110,8 @@ DrawAll:
         ; Metroid's own blink after a hit
         lda Invincible
         beq @shown
+        jsr IsScrewAttackActive ; (it isn't blinking: Screw Attack keeps them off)
+        bcc @shown
         lda SamusInvincible     ; (not thrown by her own bomb: Metroid doesn't blink)
         beq @blink
         lda SamusKnockBomb77
@@ -113,6 +130,12 @@ DrawAll:
 @shot:
         lda BulStatus,x
         beq @next
+        ldy #0
+        cmp #wa_WaveBeam        ; the Wave Beam: Metroid's looks purple
+        bne @shotAttr
+        iny
+@shotAttr:
+        sty DrawAttr
         stx $05                 ; free until the object loop starts
         jsr BulletScreenX
         bcs @next1
@@ -148,12 +171,40 @@ InPlay:
 ; On the title: whatever the demo or the last game left, Samus starts the
 ; next one afresh (ImportSimon does the rest).
 NewGame:
+        jsr ForgetUpgrades
         jsr FillHealth
         lda #0
         sta MissileToggle
         lda HackState
         and #~HS_SAMUS
         sta HackState
+        rts
+
+; The subweapons do nothing for Samus. The axe and the cross unlock things, for good.
+CheckUpgradePickup:
+        lda CurrentWeapon
+        and #$0F
+        ldy #UP_SCREW
+        cmp #WEAPON_AXE
+        beq @have
+        ldy #UP_WAVE
+        cmp #WEAPON_CROSS
+        bne @rts
+@have:
+        tya
+        and Upgrades
+        bne @rts
+        tya
+        ora Upgrades
+        sta Upgrades
+        jmp SFX_MissilePickup
+@rts:
+        rts
+
+ForgetUpgrades:
+        lda #0
+        sta Upgrades
+        sta CurrentWeapon
         rts
 
 ; Castlevania is moving Simon (walking in, through a door, up stairs):

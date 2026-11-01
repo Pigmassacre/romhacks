@@ -140,6 +140,12 @@ BlastDagger:
         lda BulSpeedX,x
         beq @free
         jsr CvShotSync
+        jmp BlastPlace
+@free:
+        jmp FreeCvShot
+
+; The dagger, off to one side or the other as the frames go.
+BlastPlace:
         lda FrameCounter
         and #$03
         tay
@@ -152,8 +158,6 @@ BlastDagger:
         adc ObjY+$14,x
         sta ObjY+$14,x
         rts
-@free:
-        jmp FreeCvShot
 BlastDx:
         .db 0, -12, 12, 0
 BlastDy:
@@ -172,7 +176,9 @@ UpdateBulletExplode:
 UpdateBullet:
         ; UpdateBullet_DeleteIfOffScreen
         jsr BulletScreenX
-        bcs @delete
+        bcc @onScreen
+        jmp @delete
+@onScreen:
         ; UpdateBullet_ExplodeIfHitSprite: did Castlevania's dagger hit?
         lda ObjAI+$14,x
         cmp #CV_SHOT_AI
@@ -194,6 +200,11 @@ UpdateBullet:
 @gone:
         jsr FreeCvShot          ; CvShotSync puts it back
 @noHit:
+        lda BulStatus,x
+        cmp #wa_WaveBeam
+        bne @notWave
+        jsr WaveSpeeds
+@notWave:
         ; UpdateBullet_CollisionWithBG
         lda BulXLo,x
         sta ColXLo
@@ -292,8 +303,6 @@ FreeCvShot:
 ClearShots:
         ldx #2
 @shot:
-        lda BulStatus,x
-        beq @next
         lda #0
         sta BulStatus,x
         lda ObjAI+$14,x
@@ -459,3 +468,161 @@ CheckBombsTouchSamus:
         ora SamusIsHit
         sta SamusIsHit
         jmp @next
+
+; ---- Wave Beam ----------------------------------------------------------------------
+; Metroid's UpdateWaveBullet: a new step of its path each frame, up or forwards.
+; BulWave: bit 7 fired up, bit 6 fired left, the rest the step.
+WAVE_STEPS = 12
+
+; Y = the shot.
+CheckHorizontalWaveBulletFire:
+        lda SamusDir
+        beq CheckWaveFire
+        lda #$40
+        bne CheckWaveFire
+CheckVerticalWaveBulletFire:
+        lda #$80
+CheckWaveFire:
+        sta BulWave,y
+        lda Upgrades
+        and #UP_WAVE
+        beq @rts
+        lda MissileToggle
+        bne @rts
+        cpy #1                  ; (the middle shot weaves the other way)
+        bne @step
+        lda BulWave,y
+        ora #WAVE_STEPS / 2
+        sta BulWave,y
+@step:
+        lda #wa_WaveBeam
+        sta BulStatus,y
+        lda #ObjAnim_WaveBeam
+        jsr SetBulletAnim
+        jmp SFX_WaveFire
+@rts:
+        rts
+
+; Shot X's speeds this frame.
+WaveSpeeds:
+        lda BulWave,x
+        and #$0F
+        tay
+        lda BulWave,x
+        bmi @up
+        lda WaveTbl,y
+        sta BulSpeedY,x
+        lda BulWave,x
+        and #$40
+        beq @right
+        lda #-3
+        bne @x
+@right:
+        lda #3
+@x:
+        sta BulSpeedX,x
+        jmp @next
+@up:
+        lda #0
+        sec
+        sbc WaveTbl,y
+        sta BulSpeedX,x
+        lda #-3
+        sta BulSpeedY,x
+@next:
+        inc BulWave,x
+        lda BulWave,x
+        and #$0F
+        cmp #WAVE_STEPS
+        bne @rts
+        lda BulWave,x
+        and #$C0
+        sta BulWave,x
+@rts:
+        rts
+WaveTbl:
+        .db -7, -5, -1, 1, 5, 7, 7, 5, 1, -1, -5, -7
+
+; ---- Screw Attack -------------------------------------------------------------------
+; Metroid's IsScrewAttackActive: carry clear while she spins with it, or rises in a
+; straight jump.
+IsScrewAttackActive:
+        sec
+        ldy SamusStatus
+        dey
+        bne @rts
+        lda Upgrades
+        and #UP_SCREW
+        beq @rts
+        lda SamusAnimReset
+        cmp #ObjAnim_SamusSalto
+        beq @active
+        cmp #ObjAnim_SamusJump
+        sec
+        bne @rts
+        bit SamusSpeedY
+        bpl @rts
+@active:
+        cmp SamusAnimIndex
+@rts:
+        rts
+
+; Enemies can't touch her while it's active. It hurts them as a blast does, with a
+; dagger in a free shot slot, moved around her, and a rest after each hit: a hit every
+; frame would end any boss on contact.
+SCREW_REST = $10
+
+ScrewAttackUpdate:
+        ldx #2
+@free:
+        lda BulStatus,x
+        bne @nextFree
+        lda ObjAI+$14,x
+        beq @nextFree
+        cmp #CV_SPARK_AI
+        bne @remove
+        lda #SCREW_REST         ; it hit
+        sta ScrewWait
+        jsr SFX_EnemyHit
+@remove:
+        jsr FreeCvShot
+@nextFree:
+        dex
+        bpl @free
+        lda ScrewWait
+        beq @noWait
+        dec ScrewWait
+@noWait:
+        jsr IsScrewAttackActive
+        bcs @rts
+        lda Invincible
+        cmp #2
+        bcs @touch
+        lda #2
+        sta Invincible
+@touch:
+        lda ScrewWait
+        bne @rts
+        ldx #2
+@slot:
+        lda BulStatus,x
+        beq @place
+        dex
+        bpl @slot
+@rts:
+        rts
+@place:
+        lda SamusXLo
+        sta BulXLo,x
+        lda SamusXHi
+        sta BulXHi,x
+        lda SamusY
+        sta BulY,x
+        jsr BulletScreenX
+        bcs @rts
+        cmp #$10
+        bcc @rts
+        cmp #$F0
+        bcs @rts
+        jsr CvShotSync
+        jmp BlastPlace

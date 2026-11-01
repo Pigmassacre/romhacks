@@ -55,6 +55,18 @@ SEQUENCES = {
       if f <= 4 then return pad("D") end
       if f % 12 == 10 then return pad("B") end
       return {} end},
+  {name = "wave", gear = 0x40, len = 60, input = function(f) return (f % 20 == 2) and pad("B") or {} end},
+  {name = "waveleft", gear = 0x40, x = 0xD0, len = 40, input = function(f)
+      if f <= 3 then return pad("L") end
+      return f == 10 and pad("B") or {} end},
+  {name = "waves", gear = 0x40, len = 40, input = function(f) return (f % 4 == 2) and pad("B") or {} end},
+  {name = "waveup", gear = 0x40, len = 40, input = function(f)
+      if f == 8 then return pad("U B") end
+      return pad("U") end},
+  {name = "screw", gear = 0x08, x = 0x10, len = 90, input = function(f)
+      if f <= 20 then return pad("R") end
+      if f <= 70 then return pad("R A") end
+      return pad("R") end},
   {name = "jumpaim", len = 70, input = function(f)
       if f <= 40 then return (f > 25 and f % 6 == 0) and pad("A U B") or pad("A U") end
       return {} end},
