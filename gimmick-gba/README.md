@@ -34,7 +34,7 @@ up and down, and the title and cutscenes show the part with something on it.
 - Normal play takes about 75-80% of the GBA's time for a frame, and the busiest stretches measured
   (with extra enemies from warping around a stage) about 105%.
 - A heavy frame can run over the GBA's time for a frame. Then that frame is not drawn and the next
-  starts straight away, so the game keeps its speed. Under a sustained load the game slows, as it
+  starts straight away. The next is always drawn, so under a sustained load the game slows, as it
   does on the NES, and the sound repeats. Loading a room can take a few frames.
 - The sound runs on the NES's frame clock, so changes land at most a frame apart from the NES.
 - A few things are simplified: a sprite that crosses a mid-frame graphics change uses the upper

@@ -7,7 +7,6 @@
 #include "hw.h"
 
 #define FRAME_CYCLES 280896u
-#define MAX_FRAMES_BEHIND 3
 
 extern const u8 rom_prg[], rom_chr[], chr4_data[];
 
@@ -61,6 +60,7 @@ struct result {
   u32 magic, frames, cycles_sum, cycles_max, over_budget, checked, first_bad, done, untranslated;
 };
 volatile struct result result;
+static u32 window_gap, window_drawn;
 static u32 frame_start, window_sum, window_max, window_over, window_mix, window_draw, last_mix;
 static int nmi_index;
 
@@ -114,6 +114,9 @@ void plat_nmi(void) {
     log_text("avg_500=", window_sum / 500);
     log_text("max_500=", window_max);
     log_text("over_500=", result.over_budget - window_over);
+    log_text("gap_500=", window_gap);
+    log_text("drawn_500=", window_drawn);
+    window_gap = window_drawn = 0;
     log_text("mix_500=", window_mix / 500);
     log_text("draw_500=", window_draw / 500);
     window_mix = window_draw = 0;
@@ -170,22 +173,32 @@ void plat_vblank(void) {
   last_mix = now() - mix_start;
   window_mix += last_mix;
 #endif
-  // A frame that ran late skips drawing and starts straight away, to catch up: most
-  // are only slightly over, so the game keeps its speed and the sound its place. A long
-  // stall, or too many in a row, starts counting again from now, as a slowdown.
+  // A frame that ran late can skip its drawing and start straight away, to catch up.
+  // But only one in a row: the next is always drawn, and if that means falling behind,
+  // the game runs slow for a moment, as it does on the NES. Skipping until it had
+  // caught up froze the picture for up to a second while the game ran on unseen.
   static u32 nes_frames;
+  static int skipped;
   nes_frames++;
-  int behind = vblank_count - nes_frames;
-  if (behind > MAX_FRAMES_BEHIND) {
-    nes_frames = vblank_count + 1;
-  } else if (behind >= 0) {
+  if ((int)(vblank_count - nes_frames) >= 0) {
+    if (!skipped) {
+      skipped = 1;
 #ifdef REPLAY
-    frame_start = now();
+      frame_start = now();
 #endif
-    return;
+      return;
+    }
+    nes_frames = vblank_count + 1;
   }
+  skipped = 0;
   wait_vblank();
 #ifdef REPLAY
+  // How long the screen went without a new picture, which is what a player sees.
+  static u32 last_drawn;
+  u32 gap = vblank_count - last_drawn;
+  last_drawn = vblank_count;
+  if (gap > window_gap) window_gap = gap;
+  window_drawn++;
   frame_start = now();  // a frame's load is drawing, the game and the sound
 #endif
   video_present();
