@@ -35,6 +35,11 @@ SPC_BANK = 24               # all of it: src/boot.s has the same number, as $D8
 PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
 SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
+# and #1 of the frame counter, for the order of sprites: as if every frame were an even one, since
+# the SNES has no limit of 8 sprites on a line for the reversal to spread out. (bank, the immediate)
+ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
+# Other places that call the runtime, with how many bytes of the game's they take: (bank, pc).
+CALLS = {(0x1B, 0x8116): ("cloud_x", 8)}
 # Routines of the game's that do many PPU writes in vblank, done directly instead.
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip"}
 
@@ -705,7 +710,7 @@ CLOUD_TILES = set(range(64)) - {0x0F, 0x21, 0x28, 0x30, 0x31, 0x39}
 SLOPE_TILES = {0x02: {t for t in range(64) if t & 15 >= 4}}
 PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
                   CLOUD_PAGE: CLOUD_TILES}
-for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
+for _p in (0x0F, 0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
     PARALLAX_PAGES[_p] = ()
 
 
@@ -973,6 +978,15 @@ def main():
                 t = addr[label]
                 at = pc - windows[num]
                 data[at:at + len(code)] = bytes([0x20, t & 0xFF, t >> 8]) + code[3:]
+        for (bank, pc), (label, size) in CALLS.items():
+            if bank == num:
+                t = addr[label]
+                data[pc - windows[num]:pc - windows[num] + size] = bytes([0x20, t & 0xFF, t >> 8]) + bytes([0xEA]) * (size - 3)
+        for bank, pc in ORDER_FIXED:
+            if bank == num:
+                if data[pc - windows[num] - 1] != 0x29:
+                    sys.exit("no and # at %02X:%04X" % (bank, pc))
+                data[pc - windows[num]] = 0
         if num == FIXED:
             t = addr["frame_done"]
             for pc in FRAME_DONE:
