@@ -23,7 +23,7 @@ static u32 irq_count, irq_base;  // the counter's value at cycle irq_base
 static int irq_pending;
 static u32 irq_due = 0xFFFFFFFF;
 
-u8 ppu_ctrl, ppu_mask, mirror_mode, nt_dirty = 1;
+u8 ppu_ctrl, ppu_mask, mirror_mode, nt_dirty = 1, palette_dirty = 1;
 u8 ciram[0x800], palette[32], oam[256];
 static u8 ppu_status, ppu_buf, ppu_w, ppu_latch;
 static u16 ppu_v;
@@ -43,13 +43,29 @@ static u32 vbl_half = VBL_FIRST * 2;
 static u32 vbl_end, render_start;
 static int nmi_edge, ppu_w_seen;
 int split_from_top = 1;
-u32 next_event;
+
+// In the exact build, code near an event runs one instruction at a time, so that
+// interrupts land between the same instructions as on the NES. This is how far ahead
+// of an event that starts: the longest a translated block runs without stopping.
+#ifdef EXACT_TIMING
+#define BLOCK_MARGIN 96
+// DPCM playback takes the bus from the CPU for a few cycles a byte.
+static u32 dmc_due = 0xFFFFFFFF, dmc_period = 428 * 8, dmc_left, dmc_start_len;
+static u8 dmc_loop;
+#define DMC_STOLEN 4
+#else
+#define BLOCK_MARGIN 0
+#endif
 
 HOT static void set_next_event(void) {
   u32 e = vbl_half / 2;
   if (vbl_end && vbl_end < e) e = vbl_end;
   if (irq_due < e) e = irq_due;
-  next_event = e;
+#ifdef EXACT_TIMING
+  if (dmc_due < e) e = dmc_due;
+#endif
+  next_event = nmi_edge ? 0 : e;
+  block_limit = next_event > BLOCK_MARGIN ? next_event - BLOCK_MARGIN : 0;
 }
 
 static inline int rendering(void) {
@@ -72,13 +88,36 @@ static void mid_frame(void) {
   for (int i = 0; i < 8; i++) split_chr[i] = chr_map[i];
 }
 
+// Every clock here counts up from power-on and would overflow, so now and then they
+// all move back together. This is in vblank, with nothing mid-frame to disturb.
+#define REBASE_AFTER 0x20000000u
+static void rebase_timers(void) {
+  u32 by = REBASE_AFTER - 0x1000;
+  cyc -= by;
+  vbl_half -= by * 2;
+  vbl_end -= by;
+  irq_base -= by;
+  if (irq_due != 0xFFFFFFFF) irq_due -= by;
+#ifdef EXACT_TIMING
+  if (dmc_due != 0xFFFFFFFF) dmc_due -= by;
+#endif
+}
+
 HOT static void sync_vbl(void) {
+#ifdef EXACT_TIMING
+  while (cyc >= dmc_due) {
+    cyc += DMC_STOLEN;
+    if (dmc_left && --dmc_left == 0 && dmc_loop) dmc_left = dmc_start_len;
+    dmc_due = dmc_left ? dmc_due + dmc_period : 0xFFFFFFFF;
+  }
+#endif
   while (cyc >= vbl_half / 2) {
     ppu_status |= 0x80;
     ppu_status &= ~0x40;
     vbl_end = vbl_half / 2 + VBL_LENGTH;
     vbl_half += FRAME_HALF;
     plat_vblank();
+    if (cyc > REBASE_AFTER) rebase_timers();
     if (ppu_ctrl & 0x80) nmi_edge = 1;
   }
   if (vbl_end && cyc >= vbl_end) {
@@ -106,7 +145,7 @@ HOT static u8 ppu_read_data(void) {
 HOT static void ppu_write_data(u8 v) {
   u16 a = ppu_v & 0x3FFF;
   if (a >= 0x2000 && a < 0x3F00) { ciram[nt_index(a)] = v; nt_dirty = 1; }
-  else if (a >= 0x3F00) palette[(a & 3) ? a & 31 : a & 15] = v;
+  else if (a >= 0x3F00) { palette[(a & 3) ? a & 31 : a & 15] = v; palette_dirty = 1; }
   ppu_v += (ppu_ctrl & 4) ? 32 : 1;
 }
 
@@ -129,7 +168,10 @@ HOT static void fme_write(u8 v) {
     if (v & 0x40) { w6000 = wram; w6000w = (v & 0x80) ? wram : no_ram; }
     else { w6000 = prg + (v & 0x3F) * 0x2000; w6000w = no_ram; }
   }
-  else if (c <= 11) prg_map[c - 9] = v & 0x3F;
+  else if (c <= 11) {
+    prg_map[c - 9] = v & 0x3F;
+    window[c - 9] = prg + (v & 0x3F) * 0x2000;
+  }
   else if (c == 12) mirror_mode = v;
   else if (c == 13) {
     irq_count = irq_now(); irq_base = cyc; irq_ctl = v; irq_pending = 0; irq_schedule();
@@ -163,7 +205,8 @@ HOT void wr(u16 a, u8 v) {
     switch (a & 0xE000) {
       case 0x8000: fme_cmd = v; break;
       case 0xA000: fme_write(v); break;
-      default: break;  // Sunsoft 5B sound
+      case 0xC000: fiveb_select(v); break;
+      default: fiveb_write(v); break;
     }
     return;
   }
@@ -173,7 +216,7 @@ HOT void wr(u16 a, u8 v) {
     switch (a & 7) {
       case 0:
         sync_vbl();
-        if (!(ppu_ctrl & 0x80) && (v & 0x80) && (ppu_status & 0x80)) nmi_edge = 1;
+        if (!(ppu_ctrl & 0x80) && (v & 0x80) && (ppu_status & 0x80)) { nmi_edge = 1; next_event = block_limit = 0; }
         ppu_ctrl = v;
         ppu_t = (ppu_t & ~0x0C00) | (v & 3) << 10;
         mid_frame();
@@ -203,6 +246,24 @@ HOT void wr(u16 a, u8 v) {
     cyc += 513 + (cyc & 1);
     return;
   }
+#ifdef EXACT_TIMING
+  if (a == 0x4010) {
+    static const u16 rates[16] = {428,380,340,320,286,254,226,214,190,160,142,128,106,84,72,54};
+    dmc_period = rates[v & 15] * 8;
+    dmc_loop = (v >> 6) & 1;
+  } else if (a == 0x4013) {
+    dmc_start_len = v * 16 + 1;
+  } else if (a == 0x4015) {
+    if (v & 0x10) {
+      if (!dmc_left) { dmc_left = dmc_start_len; dmc_due = cyc + dmc_period; }
+    } else {
+      dmc_left = 0;
+      dmc_due = 0xFFFFFFFF;
+    }
+    set_next_event();
+  }
+#endif
+  if (a < 0x4018) apu_write(a, v);
 }
 
 HOT static void interrupt(u32 *pc, u16 vector) {
@@ -214,22 +275,32 @@ HOT static void interrupt(u32 *pc, u16 vector) {
   *pc = fixed[vector - 0xE000] | fixed[vector + 1 - 0xE000] << 8;
 }
 
+// RAM's starting values. Without this it starts as zeros.
+static const u8 *power_on;
+void cpu_power_on(const u8 *on) { power_on = on; }
+
 HOT void cpu_run(void) {
-#ifndef HOST
+#ifdef __arm__
   cs = &cpu_state_store;
 #endif
   S = 0xFD; I = 1; Z = 1;
-  w6000 = wram; w6000w = wram;
+  if (power_on) {
+    for (int i = 0; i < 0x800; i++) ram[i] = power_on[i];
+    for (int i = 0; i < 0x2000; i++) wram[i] = power_on[0x800 + i];
+  }
+  w6000 = prg; w6000w = no_ram;  // at power-on the mapper shows ROM bank 0 at $6000
   fixed = prg + 0x3E000;
+  for (int i = 0; i < 3; i++) window[i] = prg;
   u32 pc = fixed[0xFFFC - 0xE000] | fixed[0xFFFD - 0xE000] << 8;
   u32 nmi_vec = fixed[0xFFFA - 0xE000] | fixed[0xFFFB - 0xE000] << 8;
   cyc = 7;
   set_next_event();
   for (;;) {
-    if (cyc >= next_event || nmi_edge) {
+    if (cyc >= next_event) {
       sync_vbl();
       if (nmi_edge) {
         nmi_edge = 0;
+        set_next_event();
         interrupt(&pc, 0xFFFA);
       } else if (!irq_pending && cyc >= irq_due) {
         irq_pending = 1;
@@ -246,6 +317,15 @@ HOT void cpu_run(void) {
     // The game's two wait loops (lda $F0 / bne): nothing changes until an interrupt.
     if ((pc == 0xF29A || pc == 0xF2A3) && ram[0xF0] && cyc < next_event) cyc = next_event;
 #endif
+#ifdef EXACT_TIMING
+    if (cyc >= block_limit) { pc = interp_step(pc); continue; }
+#endif
+    if (pc >= 0x8000) {
+#ifndef INTERP_ONLY
+      u32 e = hot_lookup(pc);
+      if (e) { pc = hot_run(e); continue; }
+#endif
+    }
     const block_t *t = pc >= 0xE000 ? code_banks[0x1F]
                      : pc >= 0x8000 ? code_banks[prg_map[(pc - 0x8000) >> 13] & 31] : 0;
     block_t fn = t ? t[pc & 0x1FFF] : 0;

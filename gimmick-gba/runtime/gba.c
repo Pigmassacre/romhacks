@@ -22,8 +22,21 @@
 #define DMA3CNT REG32(0x040000DC)
 #define TM0CNT_L REG16(0x04000100)
 #define TM0CNT_H REG16(0x04000102)
-#define TM1CNT_L REG16(0x04000104)
-#define TM1CNT_H REG16(0x04000106)
+#define TM2CNT_L REG16(0x04000108)
+#define TM2CNT_H REG16(0x0400010A)
+#define TM3CNT_L REG16(0x0400010C)
+#define TM3CNT_H REG16(0x0400010E)
+#define SOUNDCNT_H REG16(0x04000082)
+#define SOUNDCNT_X REG16(0x04000084)
+#define FIFO_A 0x040000A0
+#define DMA1SAD REG32(0x040000BC)
+#define DMA1DAD REG32(0x040000C0)
+#define DMA1CNT_H REG16(0x040000C6)
+#define IME REG16(0x04000208)
+#define IE REG16(0x04000200)
+#define IF REG16(0x04000202)
+#define BIOS_IF REG16(0x03007FF8)
+#define IRQ_VECTOR REG32(0x03007FFC)
 #define KEYINPUT REG16(0x04000130)
 #define WAITCNT REG16(0x04000204)
 #define WIN0H REG16(0x04000040)
@@ -63,7 +76,36 @@ static const u16 nes_colors[64] = {
 static u8 loaded_play[4], loaded_status[4], loaded_obj[8];
 static int cam_y;
 
-static inline u32 now(void) { return TM0CNT_L | (u32)TM1CNT_L << 16; }
+static inline u32 now(void) { return TM2CNT_L | (u32)TM3CNT_L << 16; }
+
+// Sound: a frame is exactly 304 samples at this rate. A VBlank interrupt starts the
+// newest buffer, and plays the last one again if the game ran long.
+#define SAMPLES_PER_FRAME 304
+#define SAMPLE_PERIOD 924
+static s8 sound_buf[2][SAMPLES_PER_FRAME + 16] __attribute__((aligned(4)));
+static volatile u8 sound_ready = 0, sound_playing = 0;
+
+__attribute__((section(".iwram"), target("arm"))) static void on_vblank(void) {
+  DMA1CNT_H = 0;
+  if (sound_ready != sound_playing) sound_playing = sound_ready;
+  DMA1SAD = (u32)sound_buf[sound_playing];
+  DMA1CNT_H = 0xB640;  // repeat, 32-bit, in step with the FIFO
+  BIOS_IF |= 1;
+  IF = 1;
+}
+
+static void sound_init(void) {
+  apu_init(16777216 / SAMPLE_PERIOD);
+  SOUNDCNT_X = 0x80;
+  SOUNDCNT_H = 0x0B04;  // FIFO A at full volume, to both speakers, on timer 0
+  DMA1DAD = FIFO_A;
+  TM0CNT_L = 65536 - SAMPLE_PERIOD;
+  TM0CNT_H = 0x80;
+  IRQ_VECTOR = (u32)on_vblank;
+  DISPSTAT |= 8;
+  IE = 1;
+  IME = 1;
+}
 
 static void copy_chr(volatile u8 *dst, u8 page) {
   DMA3SAD = (u32)(chr4 + page * 0x800);
@@ -84,19 +126,28 @@ HOT __attribute__((long_call, noinline)) static int draw_bg(volatile u16 *map, u
     if (ry >= 30) { ry -= 30; nty ^= 1; }
     int col = (t & 31) + 1;  // the screen shows NES columns 8-247
     int ntx = (t >> 10) & 1;
+    if (col >= 32) { col = 0; ntx ^= 1; }
+    const u8 *nt = &ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))];
+    const u8 *tiles = nt + ry * 32;
+    const u8 *attrs = nt + 0x3C0 + (ry >> 2) * 8;
+    int attr_shift = (ry & 2) << 1;
     u16 *out = (u16 *)&map[r * 32];
     for (int c = 0; c < 31; c++, col++) {
-      if (col >= 32) { col = 0; ntx ^= 1; }
-      u16 base = 0x2000 + (nty << 11) + (ntx << 10);
-      u8 tile = ciram[nt_index(base + ry * 32 + col)];
-      u8 attr = ciram[nt_index(base + 0x3C0 + (ry >> 2) * 8 + (col >> 2))];
-      u8 pal = attr >> (((ry & 2) << 1) | (col & 2)) & 3;
-      out[c] = tile | pal << 12;
+      if (col >= 32) {
+        col = 0;
+        ntx ^= 1;
+        nt = &ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))];
+        tiles = nt + ry * 32;
+        attrs = nt + 0x3C0 + (ry >> 2) * 8;
+      }
+      u32 pal = attrs[col >> 2] >> (attr_shift | (col & 2)) & 3;
+      out[c] = tiles[col] | pal << 12;
     }
   }
   return sy & 7;
 }
 
+static int last_sprites;
 HOT __attribute__((long_call, noinline)) static void draw_sprites(int top) {
   int tall = top_ctrl & 0x20;
   int n = 0;
@@ -115,7 +166,8 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top) {
     OAM[n * 4 + 2] = a2;
     n++;
   }
-  for (; n < 128; n++) OAM[n * 4] = 0x0200;  // hidden
+  for (int i = n; i < last_sprites; i++) OAM[i * 4] = 0x0200;  // hidden
+  last_sprites = n;
 }
 
 // Keep Yumetaro on screen: the picture is taller than the GBA's.
@@ -138,8 +190,7 @@ static int camera(int play_h, int view_h) {
 }
 
 static void wait_vblank(void) {
-  while (VCOUNT >= SCREEN_H) {}
-  while (VCOUNT < SCREEN_H) {}
+  __asm__ volatile("swi 5" : : : "r0", "r1", "r2", "r3", "lr", "cc", "memory");
 }
 
 static void present(void) {
@@ -160,8 +211,11 @@ static void present(void) {
       copy_chr(OBJ_VRAM + i * 0x800, loaded_obj[i]);
     }
   }
-  for (int i = 0; i < 16; i++) BG_PAL[i & 3 ? (i >> 2) * 16 + (i & 3) : (i >> 2) * 16] = nes_colors[palette[i & 3 ? i : 0] & 63];
-  for (int i = 0; i < 16; i++) OBJ_PAL[(i >> 2) * 16 + (i & 3)] = nes_colors[palette[16 + i] & 63];
+  if (palette_dirty) {
+    palette_dirty = 0;
+    for (int i = 0; i < 16; i++) BG_PAL[(i >> 2) * 16 + (i & 3)] = nes_colors[palette[i & 3 ? i : 0] & 63];
+    for (int i = 0; i < 16; i++) OBJ_PAL[(i >> 2) * 16 + (i & 3)] = nes_colors[palette[16 + i] & 63];
+  }
 
   int play_h = split_line > 0 && split_line < 240 ? split_line : 240;
   int status_h = 240 - play_h;
@@ -171,13 +225,14 @@ static void present(void) {
 
   // Rebuild a map only when what it shows has changed.
   static u16 map_t, map_split_t;
-  static int map_top = -1, map_fine;
-  if (nt_dirty || map_t != top_t || map_top != top) {
-    map_fine = draw_bg(MAP(MAP_PLAY), top_t, top, 22);
+  static int map_row = -1;
+  int picture_y = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7) + top;
+  if (nt_dirty || (map_t & 0x0C1F) != (top_t & 0x0C1F) || map_row != picture_y >> 3) {
+    draw_bg(MAP(MAP_PLAY), top_t, top, 22);
     map_t = top_t;
-    map_top = top;
+    map_row = picture_y >> 3;
   }
-  BG0VOFS = map_fine;
+  BG0VOFS = picture_y & 7;
   BG0HOFS = top_x;
   if (status_h) {
     static int status_fine;
@@ -201,12 +256,15 @@ static void present(void) {
 #ifdef REPLAY
 extern const u8 pad_stream[], pad_stream_end[];
 extern const u32 expected[], expected_end[];
+extern const struct { u32 nmi; u16 addr, val; } pokes[], pokes_end[];
+extern const u8 power_on_ram[];
+static int poke_next;
 static const u8 *pad_at = pad_stream;
 struct result {
   u32 magic, frames, cycles_sum, cycles_max, over_budget, checked, first_bad, done, untranslated;
 };
 volatile struct result result;
-static u32 frame_start, window_sum, window_max, window_over;
+static u32 frame_start, window_sum, window_max, window_over, window_mix, window_draw, last_mix;
 static int nmi_index;
 
 static void log_text(const char *a, u32 v) {
@@ -242,6 +300,10 @@ static u32 ram_hash(void) {
 
 void plat_nmi(void) {
   u32 hash_start = now();
+  while (&pokes[poke_next] < pokes_end && (int)pokes[poke_next].nmi <= nmi_index + 1) {
+    if (pokes[poke_next].addr < 0x2000) ram[pokes[poke_next].addr & 0x7FF] = pokes[poke_next].val;
+    poke_next++;
+  }
   u32 want = expected + nmi_index < expected_end ? expected[nmi_index] : 0;
   nmi_index++;
   if (want) {
@@ -253,6 +315,9 @@ void plat_nmi(void) {
     log_text("avg_500=", window_sum / 500);
     log_text("max_500=", window_max);
     log_text("over_500=", result.over_budget - window_over);
+    log_text("mix_500=", window_mix / 500);
+    log_text("draw_500=", window_draw / 500);
+    window_mix = window_draw = 0;
     log_text("first_bad=", result.first_bad);
     window_over = result.over_budget;
     window_sum = window_max = 0;
@@ -281,6 +346,7 @@ u8 plat_pad_read(u16 a) {
 void plat_vblank(void) {
 #ifdef REPLAY
   u32 t = now() - frame_start;
+  t += last_mix;
   if (result.frames) {
     result.cycles_sum += t;
     window_sum += t;
@@ -290,11 +356,24 @@ void plat_vblank(void) {
   }
   result.frames++;
 #endif
+#ifdef REPLAY
+  u32 mix_start = now();
+#endif
+  int back = !sound_playing;
+  apu_mix(sound_buf[back], SAMPLES_PER_FRAME);
+  sound_ready = back;
+#ifdef REPLAY
+  last_mix = now() - mix_start;
+  window_mix += last_mix;
+#endif
   wait_vblank();
 #ifdef REPLAY
-  frame_start = now();  // a frame's load is drawing plus the game
+  frame_start = now();  // a frame's load is drawing, the game and the sound
 #endif
   present();
+#ifdef REPLAY
+  window_draw += now() - frame_start;
+#endif
 }
 
 u32 trap(u32 pc) {
@@ -309,9 +388,9 @@ u32 trap(u32 pc) {
 
 int main(void) {
   WAITCNT = 0x4317;  // 3/1 ROM waits with prefetch
-  TM0CNT_L = 0; TM1CNT_L = 0;
-  TM1CNT_H = 0x84;   // cascade
-  TM0CNT_H = 0x80;
+  TM2CNT_L = 0; TM3CNT_L = 0;
+  TM3CNT_H = 0x84;   // cascade
+  TM2CNT_H = 0x80;
   DISPCNT = 0x0080;
   BG0CNT = CHARBLOCK_PLAY << 2 | MAP_PLAY << 8 | 1;
   BG1CNT = CHARBLOCK_STATUS << 2 | MAP_STATUS << 8;
@@ -320,8 +399,10 @@ int main(void) {
   for (int n = 0; n < 128; n++) OAM[n * 4] = 0x0200;
   prg = rom_prg;
   chr = rom_chr;
+  sound_init();
 #ifdef REPLAY
   result.magic = 0x47494D4B;
+  cpu_power_on(power_on_ram);
   frame_start = now();
 #endif
   cpu_run();

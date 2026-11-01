@@ -13,6 +13,7 @@ The output holds the original game's code, so it stays in out/, out of git.
 """
 import glob
 import os
+import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -107,6 +108,20 @@ def decode(bank, banks_by_window):
                 todo.append(nxt)
         elif m not in ("jmp", "rts", "rti", "brk"):
             todo.append(nxt)
+        if m == "jsr" and arg in NO_RETURN:
+            # The words after the JSR are a jump table. Its end is not marked, so
+            # stop at the first word that does not look like an address here.
+            at = nxt
+            while at + 1 < bank.window + BANK_SIZE:
+                word = bank.byte(at) | bank.byte(at + 1) << 8
+                if bank.has(word):
+                    bank.leaders.add(word)
+                    todo.append(word)
+                elif word >= 0xE000 and banks_by_window[0xE000] is not bank:
+                    banks_by_window[0xE000].seeds.add(word)
+                else:
+                    break
+                at += 2
         if target is not None and info[1] != "rel":
             if bank.has(target):
                 bank.leaders.add(target)
@@ -149,6 +164,8 @@ def rd(a, mode):
             return "w6000[0x%04X + %s]" % (a - 0x6000, i)
         if a >= 0xE000 and last <= 0xFFFF:
             return "fixed[0x%04X + %s]" % (a - 0xE000, i)
+        if a >= 0x8000 and (a >> 13) == (last >> 13):
+            return "window[%d][0x%04X + %s]" % ((a - 0x8000) >> 13, a & 0x1FFF, i)
         return "rd((u16)(0x%04X + %s))" % (a, i)
     if mode == "inx":
         return "rd(IND(0x%02X + X))" % a
@@ -164,6 +181,8 @@ def rd_abs(a):
         return "w6000[0x%04X]" % (a - 0x6000)
     if a >= 0xE000:
         return "fixed[0x%04X]" % (a - 0xE000)
+    if a >= 0x8000:
+        return "window[%d][0x%04X]" % ((a - 0x8000) >> 13, a & 0x1FFF)
     return "rd(0x%04X)" % a
 
 
@@ -201,9 +220,10 @@ def touches_io(a, mode):
     if mode in ("imm", "zp", "zpx", "zpy", "acc", "imp", "rel"):
         return False
     if mode == "abs":
-        return 0x2000 <= a < 0x6000 or a >= 0x8000
+        return 0x2000 <= a < 0x6000
     if mode in ("abx", "aby"):
-        return not (a + 255 < 0x800 or (0x6000 <= a and a + 255 < 0x8000) or a >= 0xE000)
+        last = a + 255
+        return not (last < 0x800 or (0x6000 <= a and last < 0x8000) or (a >= 0x8000 and a >> 13 == last >> 13))
     return True
 
 
@@ -292,83 +312,187 @@ def pick_hot(banks, counts):
     return hot
 
 
+NZ_SETTERS = {"lda", "ldx", "ldy", "ora", "and", "eor", "adc", "sbc", "cmp", "cpx", "cpy", "asl", "lsr", "rol",
+              "ror", "inc", "dec", "inx", "dex", "iny", "dey", "tax", "tay", "txa", "tya", "tsx", "pla", "bit", "plp"}
+
+
+def dead_flags(bank, start):
+    """Instructions in this block whose N and Z nothing can read: the next instruction
+    to set them comes first. Flags are only stored for the block's end to see."""
+    ins = [(pc, i) for pc, i in block_pcs(bank, start) if i]
+    dead, live = set(), True
+    for pc, i in reversed(ins):
+        m = i[0]
+        if m == "php" or m in BRANCH:
+            live = True
+        elif m in NZ_SETTERS:
+            if not live:
+                dead.add(pc)
+            live = False
+    return dead
+
+
+def strip_flags(code):
+    """The same statement without storing N and Z."""
+    code = re.sub(r" ?N = Z = \w+;", "", code)
+    for name in ("ADC", "CMP", "ASL", "LSR", "ROL", "ROR"):
+        code = code.replace(name + "(", name + "_NF(")
+    return code
+
+
+def has_mapper_write(bank, start):
+    """Does this block write the mapper? Then its bank may no longer be mapped when
+    the block ends, and a jump inside the bank has to look again."""
+    for _, ins in block_pcs(bank, start):
+        if ins and ins[0] in ("sta", "stx", "sty") and (ins[1] != "abs" or ins[3] >= 0x8000):
+            if ins[1] not in ("zp", "zpx", "zpy"):
+                return True
+    return False
+
+
+def emit_block(bank, start, out, hot):
+    """One basic block. In fast RAM, blocks are labels in one function and jump
+    straight to each other; in ROM, each is a function that returns the next PC."""
+    is_hot = hot is not None
+    moved = is_hot and has_mapper_write(bank, start)
+
+    def jump(t):
+        if not is_hot:
+            return "return 0x%04X;" % t
+        target = None
+        if bank.has(t) and not moved and (bank.num, t) in hot:
+            target = bank.num
+        elif t >= 0xE000 and (FIXED_BANK, t) in hot:
+            target = FIXED_BANK
+        if target is None:
+            return "pc = 0x%04X; goto dyn;" % t
+        if t > cur:
+            # A loop has to jump backwards or return, so going forwards can wait.
+            return "FORWARD(L%02X_%04X, 0x%04X);" % (target, t, t)
+        return "if (cyc < block_limit) goto L%02X_%04X; return 0x%04X;" % (target, t, t)
+
+    def dynamic(expr):
+        return ("pc = %s; goto dyn;" % expr) if is_hot else ("return %s;" % expr)
+
+    dead = dead_flags(bank, start)
+    cur, cyc = start, 0
+
+    def code(m, mode, arg, nxt):
+        c = emit_instr(m, mode, arg, nxt)
+        return strip_flags(c) if cur in dead and m not in ("bit", "plp") else c
+
+    while True:
+        ins = bank.instrs.get(cur)
+        if ins is None:
+            out.append("  CYC(%d); return trap(0x%04X);" % (cyc, cur))
+            return
+        m, mode, c, arg, size = ins
+        nxt = cur + size
+        if touches_io(arg, mode) and m not in ("jmp", "jsr"):
+            out.append("  CYC(%d);" % (cyc + c - 1))
+            cyc = 1
+            out.append("  " + code(m, mode, arg, nxt))
+            if m in PAGE_READS:
+                extra = page_extra(arg, mode)
+                if extra:
+                    out.append("  " + extra)
+        elif m in BRANCH:
+            off = arg - 256 if arg >= 128 else arg
+            t = (nxt + off) & 0xFFFF
+            extra = 2 if (t ^ nxt) & 0xFF00 else 1
+            out.append("  CYC(%d);" % (cyc + c))
+            out.append("  if (%s) { CYC(%d); %s }" % (BRANCH[m], extra, jump(t)))
+            out.append("  " + jump(nxt))
+            return
+        elif m == "jmp":
+            out.append("  CYC(%d);" % (cyc + c))
+            if mode == "abs":
+                out.append("  " + jump(arg))
+            else:
+                hi = (arg & 0xFF00) | ((arg + 1) & 0xFF)
+                out.append("  " + dynamic("%s | %s << 8" % (rd_abs(arg), rd_abs(hi))))
+            return
+        elif m == "jsr":
+            ret = (cur + 2) & 0xFFFF
+            out.append("  CYC(%d);" % (cyc + c))
+            out.append("  PUSH(0x%02X); PUSH(0x%02X);" % (ret >> 8, ret & 0xFF))
+            out.append("  " + jump(arg))
+            return
+        elif m == "rts":
+            out.append("  CYC(%d);" % (cyc + c))
+            out.append("  { u32 l = POP(); u32 h = POP(); %s }" % dynamic("((h << 8 | l) + 1) & 0xFFFF"))
+            return
+        elif m == "rti":
+            out.append("  CYC(%d);" % (cyc + c))
+            out.append("  set_p(POP()); { u32 l = POP(); u32 h = POP(); return h << 8 | l; }")
+            return
+        elif m == "brk":
+            out.append("  CYC(%d); return trap(0x%04X);" % (cyc + c, cur))
+            return
+        else:
+            cyc += c
+            out.append("  " + code(m, mode, arg, nxt))
+            if m in ("cli", "plp"):
+                out.append("  next_event = block_limit = 0;")  # an IRQ may be waiting for this
+            if m in PAGE_READS:
+                extra = page_extra(arg, mode)
+                if extra:
+                    out.append("  " + extra)
+        cur = nxt
+        if cur in bank.leaders:
+            out.append("  CYC(%d); %s" % (cyc, jump(cur)))
+            return
+
+
 def emit_bank(bank, out, hot):
     names = {}
-    pcs = sorted(bank.leaders & set(bank.instrs))
+    pcs = [pc for pc in sorted(bank.leaders & set(bank.instrs)) if (bank.num, pc) not in hot]
     out.append('#include "cpu.h"\n')
     for pc in pcs:
         names[pc] = "b%02X_%04X" % (bank.num, pc)
-        where = "HOT " if (bank.num, pc) in hot else ""
-        out.append("static %su32 %s(void);" % (where, names[pc]))
+        out.append("static u32 %s(void);" % names[pc])
     out.append("")
     for pc in pcs:
-        where = "HOT " if (bank.num, pc) in hot else ""
-        out.append("static %su32 %s(void) {" % (where, names[pc]))
-        cur, cyc = pc, 0
-        while True:
-            ins = bank.instrs.get(cur)
-            if ins is None:
-                out.append("  CYC(%d); return trap(0x%04X);" % (cyc, cur))
-                break
-            m, mode, c, arg, size = ins
-            nxt = cur + size
-            if touches_io(arg, mode) and m not in ("jmp", "jsr"):
-                out.append("  CYC(%d);" % (cyc + c - 1))
-                cyc = 1
-                out.append("  " + emit_instr(m, mode, arg, nxt))
-                if m in PAGE_READS:
-                    extra = page_extra(arg, mode)
-                    if extra:
-                        out.append("  " + extra)
-            elif m in BRANCH:
-                off = arg - 256 if arg >= 128 else arg
-                t = (nxt + off) & 0xFFFF
-                extra = 2 if (t ^ nxt) & 0xFF00 else 1
-                out.append("  CYC(%d);" % (cyc + c))
-                out.append("  if (%s) { CYC(%d); return 0x%04X; }" % (BRANCH[m], extra, t))
-                out.append("  return 0x%04X;" % nxt)
-                break
-            elif m == "jmp":
-                out.append("  CYC(%d);" % (cyc + c))
-                if mode == "abs":
-                    out.append("  return 0x%04X;" % arg)
-                else:
-                    hi = (arg & 0xFF00) | ((arg + 1) & 0xFF)
-                    out.append("  return %s | %s << 8;" % (rd_abs(arg), rd_abs(hi)))
-                break
-            elif m == "jsr":
-                ret = (cur + 2) & 0xFFFF
-                out.append("  CYC(%d);" % (cyc + c))
-                out.append("  PUSH(0x%02X); PUSH(0x%02X);" % (ret >> 8, ret & 0xFF))
-                out.append("  return 0x%04X;" % arg)
-                break
-            elif m == "rts":
-                out.append("  CYC(%d);" % (cyc + c))
-                out.append("  { u32 l = POP(); u32 h = POP(); return ((h << 8 | l) + 1) & 0xFFFF; }")
-                break
-            elif m == "rti":
-                out.append("  CYC(%d);" % (cyc + c))
-                out.append("  set_p(POP()); { u32 l = POP(); u32 h = POP(); return h << 8 | l; }")
-                break
-            elif m == "brk":
-                out.append("  CYC(%d); return trap(0x%04X);" % (cyc + c, cur))
-                break
-            else:
-                cyc += c
-                out.append("  " + emit_instr(m, mode, arg, nxt))
-                if m in PAGE_READS:
-                    extra = page_extra(arg, mode)
-                    if extra:
-                        out.append("  " + extra)
-            cur = nxt
-            if cur in bank.leaders:
-                out.append("  CYC(%d); return 0x%04X;" % (cyc, cur))
-                break
+        out.append("static u32 %s(void) {" % names[pc])
+        emit_block(bank, pc, out, None)
         out.append("}\n")
     out.append("const block_t tbl_%02X[0x2000] = {" % bank.num)
     for pc in pcs:
         out.append("  [0x%04X] = %s," % (pc - bank.window, names[pc]))
     out.append("};")
+
+
+def emit_hot(banks, hot, out):
+    """Every block in fast RAM, as one function."""
+    order = sorted(hot)
+    index = {key: i + 1 for i, key in enumerate(order)}
+    out.append('#include "cpu.h"\n#include "platform.h"\n')
+    for num in sorted({k[0] for k in hot}):
+        out.append("static const u16 hot_map_%02X[0x2000] = {" % num)
+        for (n, pc) in order:
+            if n == num:
+                out.append("  [0x%04X] = %d," % (pc - banks[n].window, index[n, pc]))
+        out.append("};")
+    out.append("const u16 *hot_maps[32] = {")
+    for num in sorted({k[0] for k in hot}):
+        out.append("  [0x%02X] = hot_map_%02X," % (num, num))
+    out.append("};\n")
+    out.append("HOT u32 hot_run(u32 pc) {")
+    out.append("  static void *const labels[] = {0,")
+    for (n, pc) in order:
+        out.append("    &&L%02X_%04X," % (n, pc))
+    out.append("  };")
+    out.append("  u32 e;")
+    out.append("  goto *labels[pc];")
+    out.append("dyn:")
+    out.append("  if (cyc >= block_limit || pc < 0x8000) return pc;")
+    out.append("  e = hot_lookup(pc);")
+    out.append("  if (!e) return pc;")
+    out.append("  goto *labels[e];")
+    for (n, pc) in order:
+        out.append("L%02X_%04X:" % (n, pc))
+        emit_block(banks[n], pc, out, hot)
+    out.append("}")
 
 
 def emit_interpreter(out):
@@ -422,6 +546,8 @@ def emit_interpreter(out):
             line += "set_p(POP()); { u32 l = POP(); u32 h = POP(); next = h << 8 | l; }"
         elif m == "brk":
             line += "return trap(pc);"
+        elif m in ("cli", "plp"):
+            line += emit_instr(m, mode, 0, 0) + " next_event = block_limit = 0;"
         else:
             line += emit_instr(m, mode, 0, 0)
         out.append(line + " break;")
@@ -472,6 +598,10 @@ def main():
             f.write("\n".join(out) + "\n")
         total += len(b.instrs)
         print("bank %02X at $%04X: %5d instructions, %5d blocks" % (b.num, b.window, len(b.instrs), len(b.leaders)))
+    out = []
+    emit_hot(banks, hot, out)
+    with open(os.path.join(GEN, "hot.c"), "w") as f:
+        f.write("\n".join(out) + "\n")
     out = []
     emit_interpreter(out)
     with open(os.path.join(GEN, "interp.c"), "w") as f:

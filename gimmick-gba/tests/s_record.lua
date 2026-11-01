@@ -1,12 +1,13 @@
 -- Records a reference run of the NES game: what code runs, what the game reads
 -- from the pad, and the whole of RAM at every NMI. tools/record.py runs this.
 local OUT_DIR = OUT
-local FRAMES = FRAMES or 3000
-local M = emu.memType.nesMemory
-local function r(a) return emu.read(a, M) end
+FRAMES = FRAMES or 3000
+M = emu.memType.nesMemory
+function r(a) return emu.read(a, M) end
 
 local cov = {}
 local nmi_now = 0
+local started = false
 local pads = io.open(OUT_DIR .. "pads.txt", "w")
 local cpu = io.open(OUT_DIR .. "cpu.txt", "w")
 local ram = io.open(OUT_DIR .. "ram.bin", "wb")
@@ -16,6 +17,14 @@ local ram = io.open(OUT_DIR .. "ram.bin", "wb")
 local entries, last = {}, -1
 local trace = TRACE_FROM and io.open(OUT_DIR .. "steps.txt", "w")
 emu.addMemoryCallback(function(a, v)
+  if not started then
+    -- RAM at power-on is random, so the replay starts from the same values.
+    started = true
+    local h = io.open(OUT_DIR .. "poweron.bin", "wb")
+    for i = 0, 0x7FF do h:write(string.char(emu.read(i, emu.memType.nesInternalRam))) end
+    for i = 0, 0x1FFF do h:write(string.char(emu.read(i, emu.memType.nesWorkRam))) end
+    h:close()
+  end
   if trace and nmi_now >= TRACE_FROM and nmi_now <= TRACE_TO then
     local s = emu.getState()
     trace:write(string.format("%04X %02X %02X %02X %02X\n", a, s["cpu.a"], s["cpu.x"], s["cpu.y"], s["cpu.sp"]))
@@ -38,6 +47,12 @@ emu.addMemoryCallback(pad_read, emu.callbackType.exec, 0xF2DA, 0xF2DA)
 emu.addMemoryCallback(pad_read, emu.callbackType.exec, 0xF2E3, 0xF2E3)
 
 local nmi = 0
+-- A write the script makes to RAM, kept so the replay can make the same one.
+local pokes = io.open(OUT_DIR .. "pokes.txt", "w")
+function poke(a, v)
+  emu.write(a, v, emu.memType.nesDebug)
+  pokes:write(string.format("%d %d %d\n", nmi, a, v))
+end
 local function finish()
   local h = io.open(OUT_DIR .. "coverage.txt", "w")
   for k, n in pairs(cov) do
@@ -47,13 +62,14 @@ local function finish()
   h = io.open(OUT_DIR .. "entries.txt", "w")
   for a in pairs(entries) do h:write(a, "\n") end
   h:close()
-  if trace then trace:close() end; pad_reads:close(); pads:close(); cpu:close(); ram:close()
+  if trace then trace:close() end; pokes:close(); pad_reads:close(); pads:close(); cpu:close(); ram:close()
   emu.stop(0)
 end
 
 emu.addMemoryCallback(function()
   nmi = nmi + 1
   nmi_now = nmi
+  if ON_NMI then ON_NMI(nmi) end
   local s = emu.getState()
   cpu:write(string.format("%d %d %d %d %d %d %d\n", nmi, s["cpu.cycleCount"], s["cpu.a"], s["cpu.x"], s["cpu.y"], s["cpu.sp"], s["cpu.ps"]))
   local t = {}
@@ -69,7 +85,9 @@ local BITS = {a = 1, b = 2, select = 4, start = 8, up = 16, down = 32, left = 64
 emu.addEventCallback(function()
   polls = polls + 1
   local f, inp = nmi, {}
-  if IDLE then
+  if PICK_INPUT then
+    inp = PICK_INPUT(f)
+  elseif IDLE then
     -- Nothing pressed: the title screen and whatever it leads to.
   elseif r(0x90) == 0 then
     inp.start = f % 60 < 5

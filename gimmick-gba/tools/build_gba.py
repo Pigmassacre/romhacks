@@ -2,11 +2,11 @@
 """Build the game for the GBA, from your own copy of the ROM.
 
     python3 tools/build_gba.py           # out/gimmick.gba, plays from the buttons
-    python3 tools/build_gba.py --replay  # out/gimmick_replay.gba, checks itself
+    python3 tools/build_gba.py --replay [trace-dir]  # out/gimmick_replay.gba
 
-The replay build plays the recording in out/trace and compares RAM with the PC
-build's RAM in out/host_ram.bin (which tools/compare.py has checked against the
-NES). Needs devkitARM.
+The replay build plays a recording (out/trace unless named) and compares RAM with
+the PC build's RAM in out/host_ram.bin, which tools/compare.py has checked against
+the NES. So run tools/check_host.sh on that recording first. Needs devkitARM.
 """
 import os
 import struct
@@ -46,13 +46,14 @@ def fnv(b):
     return h | 1
 
 
-def expected_table(path):
-    host = open(os.path.join(OUT, "host_ram.bin"), "rb").read()
-    sps = [int(l.split()[5]) for l in open(os.path.join(OUT, "trace", "cpu.txt"))]
-    frames = min(len(host) // SIZE, len(sps))
+def expected_table(path, trace):
+    host = open(os.path.join(OUT, "host_ram.bin"), "rb")
+    sps = [int(l.split()[5]) for l in open(os.path.join(trace, "cpu.txt"))]
+    frames = min(os.path.getsize(host.name) // SIZE, len(sps))
     with open(path, "wb") as f:
         for n in range(frames):
-            r = host[n * SIZE:n * SIZE + 0x800]
+            host.seek(n * SIZE)
+            r = host.read(0x800)
             pc = r[0x100 + sps[n] + 2] | r[0x100 + sps[n] + 3] << 8
             idle = WAIT_LOOP[0] <= pc <= WAIT_LOOP[1]
             f.write(struct.pack("<I", fnv(r[:0x100] + r[0x200:]) if idle else 0))
@@ -69,21 +70,30 @@ def main():
     data = ['.section .rodata', '.global rom_prg, rom_chr, chr4', '.balign 4',
             'rom_prg: .incbin "%s"' % prg_bin, 'rom_chr: .incbin "%s"' % chr_bin,
             '.balign 4', 'chr4: .incbin "%s"' % chr4]
-    flags = ["-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-O2", "-w", "-ffixed-r7", "-fomit-frame-pointer", "-specs=gba.specs",
+    flags = ["-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-O2", "-w", "-ffixed-r7", "-ffixed-r6", "-fomit-frame-pointer", "-specs=gba.specs",
              "-I" + os.path.join(REPO, "runtime")]
     name = "gimmick"
     if replay:
         name = "gimmick_replay"
+        after = sys.argv[sys.argv.index("--replay") + 1:]
+        trace = os.path.abspath(after[0]) if after else os.path.join(OUT, "trace")
         table = os.path.join(GEN, "expected.bin")
-        expected_table(table)
-        pads = os.path.join(OUT, "trace", "padreads.bin")
-        data += ['.global pad_stream, pad_stream_end, expected, expected_end',
+        expected_table(table, trace)
+        pads = os.path.join(trace, "padreads.bin")
+        pokes = os.path.join(GEN, "pokes.bin")
+        with open(pokes, "wb") as f:
+            for line in open(os.path.join(trace, "pokes.txt")):
+                nmi, a, v = map(int, line.split())
+                f.write(struct.pack("<IHH", nmi, a, v))
+        data += ['.global pad_stream, pad_stream_end, expected, expected_end, pokes, pokes_end, power_on_ram',
                  'pad_stream: .incbin "%s"' % pads, 'pad_stream_end:', '.balign 4',
-                 'expected: .incbin "%s"' % table, 'expected_end:']
+                 'expected: .incbin "%s"' % table, 'expected_end:',
+                 'pokes: .incbin "%s"' % pokes, 'pokes_end:',
+                 'power_on_ram: .incbin "%s"' % os.path.join(trace, "poweron.bin")]
         flags.append("-DREPLAY")
     data_s = os.path.join(GEN, "data.s")
     open(data_s, "w").write("\n".join(data) + "\n")
-    sources = [os.path.join(REPO, "runtime", s) for s in ("gba.c", "core.c")]
+    sources = [os.path.join(REPO, "runtime", s) for s in ("gba.c", "core.c", "apu.c")]
     sources += sorted(os.path.join(GEN, f) for f in os.listdir(GEN) if f.endswith(".c"))
     elf = os.path.join(OUT, name + ".elf")
     gba = os.path.join(OUT, name + ".gba")
@@ -92,6 +102,11 @@ def main():
     subprocess.run([os.path.join(BIN, "arm-none-eabi-objcopy"), "-O", "binary", elf, gba], check=True)
     subprocess.run([GBAFIX, gba, "-tGIMMICK"], check=True, stdout=subprocess.DEVNULL)
     print("%s: %d KB" % (gba, os.path.getsize(gba) // 1024))
+    nm = subprocess.run([os.path.join(BIN, "arm-none-eabi-nm"), elf], capture_output=True, text=True).stdout
+    for line in nm.splitlines():
+        if line.endswith(" __bss_end__"):
+            free = 0x03007F00 - int(line.split()[0], 16)
+            print("fast RAM left above the stack's top: %d bytes" % free)
 
 
 if __name__ == "__main__":
