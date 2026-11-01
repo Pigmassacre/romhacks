@@ -95,6 +95,11 @@ DrawAll:
         ; Metroid's own blink after a hit
         lda Invincible
         beq @shown
+        lda SamusInvincible     ; (not thrown by her own bomb: Metroid doesn't blink)
+        beq @blink
+        lda SamusKnockBomb77
+        bpl @shown
+@blink:
         lda FrameCounter
         and #$01
         beq @shots
@@ -494,9 +499,9 @@ QueueLentPair:
         tax
         lda #1
         sta $0700,y
-        lda LentHi,x
+        lda OwnHi,x
         sta $0701,y
-        lda LentLo,x
+        lda OwnLo,x
         sta $0702,y
         txa
         asl

@@ -41,6 +41,20 @@ SEQUENCES = {
       if f % 25 == 5 then return pad("B") end
       if f > 40 and f % 25 == 15 then return pad("U B") end
       return f > 40 and pad("U") or {} end},
+  {name = "bomb", len = 130, input = function(f)
+      if f <= 4 then return pad("D") end
+      if f == 10 then return pad("B") end
+      return {} end},
+  {name = "bombroll", len = 130, input = function(f)
+      if f <= 4 then return pad("D") end
+      if f == 10 then return pad("B") end
+      if f > 12 and f <= 30 then return pad("R") end
+      if f > 30 and f <= 42 then return pad("L") end
+      return {} end},
+  {name = "bombs", len = 140, input = function(f)
+      if f <= 4 then return pad("D") end
+      if f % 12 == 10 then return pad("B") end
+      return {} end},
   {name = "jumpaim", len = 70, input = function(f)
       if f <= 40 then return (f > 25 and f % 6 == 0) and pad("A U B") or pad("A U") end
       return {} end},

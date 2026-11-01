@@ -108,21 +108,21 @@ PutSamusChr:
         inx
         cpx #32
         bne @dot
-        ; Castlevania's pairs the last explosion borrowed
+        ; the pairs the last explosion borrowed
         ldy #0
         ldx #0
 @own:
         txa
         pha
-        lda LentHi,x
+        lda OwnHi,x
         pha
-        lda LentLo,x
+        lda OwnLo,x
         tax
         pla
         jsr PpuAddr
         ldx #32
 @ownByte:
-        lda LentOwn,y
+        lda OwnChr,y
         sta $2007
         iny
         dex

@@ -19,6 +19,7 @@ SamusUpdate:
         jsr ReadJoy
         jsr CheckCvDamage
         jsr RidePlatform
+        jsr CheckBombsTouchSamus
         jsr UpdateSamusProjectiles
         ; UpdateSamus
         jsr GoSamusHandler
@@ -679,6 +680,7 @@ SamusRoll:
         ldx SamusDir
         jsr SetSamusRunAccel
         jsr LCF2E
+        jsr CheckBombLaunch
         lda Joy1Status
         and #BTN_RIGHT | BTN_LEFT
         bne @moving

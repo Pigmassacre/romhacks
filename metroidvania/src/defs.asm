@@ -93,6 +93,9 @@ sa_Begin        = $FF
 
 wa_RegularBeam  = $01       ; projectile status
 wa_BulletExplode = $04
+wa_LayBomb      = $08
+wa_BombCount    = $09
+wa_BombExplode  = $0A
 wa_Missile      = $0B
 
 ; ---- The hack's RAM ----------------------------------------------------------
