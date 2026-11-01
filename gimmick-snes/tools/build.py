@@ -28,6 +28,8 @@ ROM_SIZE = 0x400000
 FIRST_CODE_BANK = 32        # $A0: the first with the cartridge RAM at $6000
 LAST_CODE_BANK = 63
 BG_HALF, OBJ_HALF = 1, 8    # which banks' lower halves hold the converted tiles
+PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
+FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
 
 # 2C02 colours.
 NES_RGB = [
@@ -56,8 +58,14 @@ def load_survey():
     for line in open(os.path.join(SURVEY, "combos.txt")):
         c, t, n = line.split()
         c = int(c, 16)
-        combos.append(((c >> 16) & 63, (c >> 8) & 63, c & 63, int(t), int(n)))
-    return seen, entries, combos
+        # $C000 holds DPCM samples and the CPU does not read it: the sound driver has the
+        # samples, so ROM banks do not differ by what is there.
+        combos.append(((c >> 16) & 63, (c >> 8) & 63, int(t) & 3, int(n)))
+    merged = {}
+    for b8, bA, used, n in combos:
+        u, m = merged.get((b8, bA), (0, 0))
+        merged[b8, bA] = (u | used, m + n)
+    return seen, entries, [(k[0], k[1], v[0], v[1]) for k, v in merged.items()]
 
 
 def decode(prg, seen):
@@ -222,15 +230,15 @@ def find_patches(instrs, stubs):
 def plan_banks(combos, usable):
     """Cover what each mapping used with as few banks as possible."""
     needs = {}
-    for b8, bA, bC, used, n in combos:
-        need = (b8 if used & 1 else None, bA if used & 2 else None, bC if used & 4 else None)
+    for b8, bA, used, n in combos:
+        need = (b8 if used & 1 else None, bA if used & 2 else None)
         needs[need] = needs.get(need, 0) + n
     banks = []
     # Most specific first, each into the first bank it agrees with.
     for need in sorted(needs, key=lambda k: (-sum(x is not None for x in k), -needs[k])):
         for b in banks:
             if all(x is None or y is None or x == y for x, y in zip(need, b)):
-                for i in range(3):
+                for i in range(2):
                     if b[i] is None:
                         b[i] = need[i]
                 break
@@ -241,45 +249,33 @@ def plan_banks(combos, usable):
 
 
 def build_tables(combos, banks):
-    """Three small tables turn the FME-7's banks into an index, and that into a ROM bank."""
-    vals = [sorted({c[i] for c in combos} | {b[i] for b in banks if b[i] is not None}) for i in range(3)]
+    """Two small tables turn the FME-7's banks into an index, and that into a ROM bank."""
+    vals = [sorted({c[i] for c in combos} | {b[i] for b in banks if b[i] is not None}) for i in range(2)]
     sizes = [len(v) for v in vals]
-    print("values per window: %s; table %d" % (sizes, sizes[0] * sizes[1] * sizes[2]))
-    if sizes[0] * sizes[1] * sizes[2] > 256:
-        sys.exit("bank table over 256 entries")
-    exact = {}
-    for c in combos:
-        exact[c[:3]] = c[3]
-    table = []
-    for a in vals[0]:
-        for b in vals[1]:
-            for c in vals[2]:
-                table.append(pick_bank((a, b, c), banks, exact.get((a, b, c))))
+    print("values per window: %s; table %d" % (sizes, sizes[0] * sizes[1]))
+    exact = {c[:2]: c[2] for c in combos}
+    table = [pick_bank((a, b), banks, exact.get((a, b))) for a in vals[0] for b in vals[1]]
     idx = []
-    strides = [sizes[1] * sizes[2], sizes[2], 1]
-    for i in range(3):
+    for i, stride in enumerate((sizes[1], 1)):
         col = [0] * 32
         for j, v in enumerate(vals[i]):
-            col[v & 31] = j * strides[i]
+            col[v & 31] = j * stride
         idx.append(col)
     return idx, table
 
 
 def pick_bank(want, banks, used):
+    """The bank that shows what this mapping uses, then as much of the rest as it can."""
     best, score = 0, -1
     for n, b in enumerate(banks):
         s = 0
-        ok = True
-        for i, weight in enumerate((16, 4, 1)):
-            needed = used is not None and used >> i & 1
+        for i, weight in enumerate((16, 4)):
             if b[i] == want[i]:
                 s += weight * 2
             elif b[i] is None:
                 s += weight
-            elif needed:
-                ok = False
-        if used is not None and not ok:
-            s -= 1000
+            elif used is not None and used >> i & 1:
+                s -= 1000
         if s > score:
             best, score = n, s
     return best
@@ -351,10 +347,9 @@ def main():
     s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)])
     s += bytes_asm("ComboIdx8", idx[0])
     s += bytes_asm("ComboIdxA", idx[1])
-    s += bytes_asm("ComboIdxC", idx[2])
     s += bytes_asm("ComboTable", [0x80 + FIRST_CODE_BANK + b for b in table])
     fixed = prg[FIXED * BANK:]
-    first = pick_bank((0, 0, 0), banks, None)
+    first = pick_bank((0, 0), banks, None)
     s += bytes_asm("FirstBank", [0x80 + FIRST_CODE_BANK + first])
     for name, at in (("NesNmi", 0x1FFA), ("NesReset", 0x1FFC), ("NesIrq", 0x1FFE)):
         s += bytes_asm(name, [fixed[at], fixed[at + 1]])
@@ -366,7 +361,7 @@ def main():
     objs = []
     for src in (os.path.join(REPO, "src", "boot.s"), os.path.join(REPO, "src", "runtime.s"), gen_s):
         o = os.path.join(GEN, os.path.basename(src) + ".o")
-        run("ca65", "-I", os.path.join(REPO, "src"), src, "-o", o)
+        run("ca65", "-g", "-I", os.path.join(REPO, "src"), src, "-o", o)
         objs.append(o)
     boot = os.path.join(GEN, "bank0.bin")
     labels = os.path.join(GEN, "labels.txt")
@@ -387,16 +382,24 @@ def main():
             if not 0x0800 <= t < 0x2000:
                 sys.exit("stub %s at $%04X" % (label, t))
             data[pc - w:pc - w + 3] = bytes([0x20, t & 0xFF, t >> 8])
+        if num == FIXED:
+            t = addr["frame_done"]
+            for pc in FRAME_DONE:
+                data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x20, t & 0xFF, t >> 8, 0xEA])
         patched[num] = bytes(data)
 
     image = bytearray(b"\xFF" * ROM_SIZE)
     image[0x8000:0x10000] = open(boot, "rb").read()
     for n, b in enumerate(banks):
         at = (FIRST_CODE_BANK + n) * 0x10000 + 0x8000
-        for i in range(3):
+        for i in range(2):
             page = b[i] if b[i] is not None else 0
             image[at + i * BANK:at + (i + 1) * BANK] = patched[page]
+        image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
+    for num in range(32):
+        at = (PRG_HALF + num // 4) * 0x10000 + (num % 4) * BANK
+        image[at:at + BANK] = prg[num * BANK:(num + 1) * BANK]
     bg, obj = convert_chr(chr_rom)
     for p in range(128):
         at = (BG_HALF + p // 32) * 0x10000 + (p % 32) * 0x400

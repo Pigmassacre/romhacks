@@ -14,12 +14,13 @@
 .include "hw.inc"
 
 .import ColorLo, ColorHi, AttrTable, ChrBgBanks, ChrObjBanks
-.import ComboIdx8, ComboIdxA, ComboIdxC, ComboTable
+.import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
 BGSET_HI   = $20            ; three 4 KB tile sets, $1000 words apart, from $2000
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
+PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
 CROP_TOP   = 8              ; the SNES's 224 lines start this far down the NES's 240
 
 .segment "WVARS"
@@ -68,6 +69,13 @@ hdma_tab:    .res 16
 .export hdma_tab
 attr_shadow: .res 128
 oam_buf:     .res 512
+data_left:   .res 1         ; tile writes that can go straight to VRAM, without a look at v
+.export pal_dirty, cg_bg, cg_obj
+pal_dirty:   .res 1
+w6_bank:     .res 1
+oam_ready:   .res 1
+cg_bg:       .res 32
+cg_obj:      .res 32
 
 .segment "WCODE"
 
@@ -110,7 +118,7 @@ fme_val:
 
 fme_jump:
         .word fme_chr, fme_chr, fme_chr, fme_chr, fme_chr, fme_chr, fme_chr, fme_chr
-        .word fme_done, fme_prg8, fme_prgA, fme_prgC
+        .word fme_6000, fme_prg8, fme_prgA, fme_prgC
         .word fme_mirror, fme_irqctl, fme_irqlo, fme_irqhi
 
 fme_done:
@@ -131,15 +139,13 @@ fme_prgA:
 fme_prgC:
         and #$1F
         sta bC
+        jmp fme_done
 fme_switch:
         ldx b8
         lda f:ComboIdx8,x
         ldx bA
         clc
         adc f:ComboIdxA,x
-        ldx bC
-        clc
-        adc f:ComboIdxC,x
         tax
         lda f:ComboTable,x
         sta cur_pbr
@@ -150,7 +156,44 @@ fme_switch:
         ; Carry on from this same code, in the new bank's mirror of RAM.
         jml [back_ptr]
 fme_back:
-        bra fme_done
+        jmp fme_done
+
+; $6000-$7FFF shows a ROM bank, chosen once per stage. The SNES has the cartridge's RAM
+; there and no way to map ROM, so the bank is copied in. The picture is off for this,
+; on the NES's first frames of a stage.
+fme_6000:
+        and #$1F
+        cmp w6_bank
+        beq w6_same
+        sta w6_bank
+        tay
+        lsr a
+        lsr a
+        clc
+        adc #$C0 + PRG_HALF
+        sta w6_src + 3
+        tya
+        and #3
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        sta w6_src + 2
+        lda #$60
+        sta w6_dst + 2
+        ldy #$20            ; pages
+        ldx #0
+w6_src: lda f:$C00000,x
+w6_dst: sta a:$6000,x
+        inx
+        bne w6_src
+        inc w6_src + 2
+        inc w6_dst + 2
+        dey
+        bne w6_src
+w6_same:
+        jmp fme_done
 
 fme_mirror:
         and #3
@@ -158,16 +201,16 @@ fme_mirror:
         tax
         lda mirror_sc,x
         sta BG1SC
-        bra fme_done
+        jmp fme_done
 mirror_sc:
         .byte MAP_HI | 1, MAP_HI | 2, MAP_HI, MAP_HI | 4
 
 fme_irqlo:
         sta irq_lo
-        bra fme_done
+        jmp fme_done
 fme_irqhi:
         sta irq_hi
-        bra fme_done
+        jmp fme_done
 
 ; Bits 0 and 7 enable the interrupt and the count. Any write acknowledges it.
 fme_irqctl:
@@ -492,7 +535,41 @@ reg_stub "ppu_ctrl", ppu_ctrl_w
 reg_stub "ppu_mask", ppu_mask_w
 reg_stub "ppu_scroll", ppu_scroll_w
 reg_stub "ppu_addr", ppu_addr_w
-reg_stub "ppu_data", ppu_data_w
+
+; A run of tiles needs nothing but the store, until v leaves the nametable's tiles.
+.export ppu_data_a, ppu_data_x, ppu_data_y
+ppu_data_x:
+        php
+        dec data_left
+        bmi ppu_data_x_slow
+        stx VMDATAL
+        plp
+        rts
+ppu_data_x_slow:
+        pha
+        txa
+        jmp ppu_data_w
+ppu_data_y:
+        php
+        dec data_left
+        bmi ppu_data_y_slow
+        sty VMDATAL
+        plp
+        rts
+ppu_data_y_slow:
+        pha
+        tya
+        jmp ppu_data_w
+ppu_data_a:
+        php
+        dec data_left
+        bmi ppu_data_a_slow
+        sta VMDATAL
+        plp
+        rts
+ppu_data_a_slow:
+        pha
+        jmp ppu_data_w
 reg_stub "sb_data", sb_data_w
 
 reg_done:
@@ -519,6 +596,8 @@ ppu_ctrl_w:
         and #$F3
         ora tmp
         sta ppu_thi
+        ldx #$FF
+        stx data_left
         ; VRAM step: VMAINC's low bit says 1 or 32
         tya
         lsr a
@@ -565,14 +644,12 @@ ppu_mask_w:
         lsr a
         lsr a               ; carry = BG, a = sprites
         rol a
-        ; bit 0 sprites, bit 1... put them where TM wants them
+        ; now bit 1 is sprites, bit 0 BG; TM wants them at bits 4 and 0
         tay
-        and #2
-        lsr a
+        and #1
         sta tmp
         tya
-        and #1
-        asl a
+        and #2
         asl a
         asl a
         asl a
@@ -681,6 +758,8 @@ ppu_addr_w:
         jmp reg_done
 @second:
         stz ppu_w
+        ldx #$FF
+        stx data_left       ; negative: the next store looks at v
         sta ppu_tlo
         sta ppu_vlo
         lda ppu_thi
@@ -834,6 +913,7 @@ ppu_data_w:
         phx
         phy
         tay                 ; the byte
+        stz data_left
         lda ppu_vhi
         and #$3F
         cmp #$3F
@@ -864,11 +944,13 @@ ppu_data_w:
         lda #3
 @tile:  ora tmp
         ora #MAP_HI
-        stz VMAINC
+        ldx vram_step
+        stx VMAINC
         sta VMADDH
         lda ppu_vlo
         sta VMADDL
         sty VMDATAL
+        jsr plan_run
 @next:  lda vram_step
         beq @one
         lda ppu_vlo
@@ -885,28 +967,122 @@ ppu_data_w:
 @attr:  jsr ppu_attr
         bra @next
 @palette:
-        lda ppu_vlo
-        and #$1F
-        tax
-        lda palette_index,x
-        sta CGADD
+        ; Kept apart and sent at the start of vblank: 32 writes from here take too long.
         tya
         and #$3F
         tax
         lda f:ColorLo,x
-        sta CGDATA
+        sta tmp
         lda f:ColorHi,x
-        sta CGDATA
-        ; $3F00 and $3F10 are one colour, the backdrop.
+        sta tmp + 1
         lda ppu_vlo
-        and #$0F
-        bne @next
+        and #$1F
+        asl a
+        tax
+        lda tmp
+        sta cg_bg,x
+        lda tmp + 1
+        sta cg_bg + 1,x
+        txa
+        and #$1F
+        bne :+
+        ; $3F00 and $3F10 are one colour, the backdrop.
+        lda tmp
+        sta cg_bg
+        sta cg_obj
+        lda tmp + 1
+        sta cg_bg + 1
+        sta cg_obj + 1
+:       lda #1
+        sta pal_dirty
+        jmp @next
+
+; Send the colours the game has changed. From the NMI.
+.export commit_palette
+commit_palette:
+        lda pal_dirty
+        beq @out
+        stz pal_dirty
         stz CGADD
-        lda f:ColorLo,x
+        ldx #0
+:       lda cg_bg,x
         sta CGDATA
-        lda f:ColorHi,x
+        inx
+        cpx #32
+        bne :-
+        ldx #0
+        ldy #128
+@set:   sty CGADD
+:       lda cg_obj,x
         sta CGDATA
-        bra @next
+        inx
+        txa
+        and #7
+        bne :-
+        tya
+        clc
+        adc #16
+        tay
+        cpx #32
+        bne @set
+@out:   rts
+
+; After a tile: how many more can go straight to VRAM, which steps by itself, before v
+; leaves the tiles. v moves past them now, since those stores will not touch it.
+plan_run:
+        lda vram_step
+        bne @down
+        lda ppu_vhi
+        and #3
+        cmp #3
+        lda #$BE
+        beq :+
+        lda #$FE
+:       sec
+        sbc ppu_vlo
+        bcs :+
+        lda #0
+:       cmp #$7F
+        bcc :+
+        lda #$7F
+:       sta data_left
+        clc
+        adc ppu_vlo
+        sta ppu_vlo
+        rts
+@down:  lda ppu_vhi
+        and #3
+        asl a
+        asl a
+        asl a
+        sta tmp + 1
+        lda ppu_vlo
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        ora tmp + 1
+        sta tmp + 1         ; row
+        lda #29
+        sec
+        sbc tmp + 1
+        bcs :+
+        lda #0
+:       sta data_left
+        stz tmp + 1
+        ldx #5
+:       asl a
+        rol tmp + 1
+        dex
+        bne :-
+        clc
+        adc ppu_vlo
+        sta ppu_vlo
+        lda ppu_vhi
+        adc tmp + 1
+        sta ppu_vhi
+        rts
 
 ; An attribute byte (in y) sets the palette of the 16 tiles in its 4 quarters.
 ppu_attr:
@@ -1071,8 +1247,10 @@ oam_dma_a:
         pha
         phx
         phy
-        convert_sprites oam_buf, 0
-        convert_sprites oam_buf + 256, $80
+        lda oam_ready
+        bne @ready
+        jsr convert_oam
+@ready: stz oam_ready
         stz OAMADDL
         stz OAMADDH
         stz DMAP7
@@ -1091,6 +1269,29 @@ oam_dma_a:
         ply
         plx
         pla
+        plp
+        rts
+
+; The game calls this when the frame is done and it will wait for vblank: the time to
+; convert its sprites, since that takes most of a vblank. The code it replaces is
+; lda #$AC, sta $F0.
+.export frame_done
+frame_done:
+        phx
+        phy
+        jsr convert_oam
+        lda #1
+        sta oam_ready
+        lda #$AC
+        sta $F0
+        ply
+        plx
+        rts
+
+convert_oam:
+        php
+        convert_sprites oam_buf, 0
+        convert_sprites oam_buf + 256, $80
         plp
         rts
 
@@ -1143,6 +1344,9 @@ runtime_init:
         sta back_ptr + 1
         lda #$80
         sta force_blank
+        lda #$FF
+        sta w6_bank
+        sta data_left
         rts
 
 ; lda $2007, which the game only does in code that never ran in the survey.

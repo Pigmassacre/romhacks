@@ -10,12 +10,13 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHR = "--chr" in sys.argv
-OUT = os.path.join(REPO, "out", "survey_chr" if CHR else "survey") + "/"
+SCRIPT = "s_creads.lua" if "--creads" in sys.argv else "s_chr.lua" if CHR else "s_survey.lua"
+OUT = os.path.join(REPO, "out", "survey_c" if "--creads" in sys.argv else "survey_chr" if CHR else "survey") + "/"
 os.makedirs(OUT, exist_ok=True)
 script = OUT + "survey.lua"
 with open(script, "w") as f:
     f.write("OUT = %r\nSHOTS = %s\n" % (OUT, "true" if CHR else "false"))
-    f.write(open(os.path.join(REPO, "tests", "s_chr.lua" if CHR else "s_survey.lua")).read())
+    f.write(open(os.path.join(REPO, "tests", SCRIPT)).read())
     f.write(open(os.path.join(REPO, "tests", "s_tour.lua")).read())
 subprocess.run([os.path.join(REPO, "Mesen"), "--testRunner", "--timeout=3400",
                 os.path.join(REPO, "Gimmick! (Japan).nes"), script], cwd=REPO, timeout=3450,

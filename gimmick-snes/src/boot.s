@@ -9,7 +9,7 @@
 
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
 .import nmi_ptr, irq_ptr, cur_pbr, nmi_flags, split_n, split_open, hdma_tab, set_have
-.import load_split_sets, runtime_init
+.import load_split_sets, runtime_init, commit_palette
 .import FirstBank, NesNmi, NesIrq, NesReset, TitleTune
 
 .segment "BOOT"
@@ -192,6 +192,7 @@ nmi_emu:
         sta BG12NBA
         lda #$40
         sta HDMAEN
+        jsr commit_palette
         jsr load_split_sets
         ply
         plx
