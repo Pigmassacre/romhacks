@@ -100,6 +100,8 @@ ON_NMI = function(f)
     if f == t0 + 700 then mark(f, string.format("clear%d%s_b", st.stage, st.treasures and "t" or "")) end
     if (f > t0 + 300 and in_stage()) or f > t0 + 4000 then start_step(f) end
   elseif phase == "ending" then
+    -- The clear waits for the score to finish counting, which a warp can leave running.
+    if f < t0 + 200 and r(0x1B) == 6 then poke(0x2C, 0); poke(0x2D, 0); poke(0xEB, 1); poke(0xEA, 1) end
     if (f - t0) % 1500 == 800 then mark(f, string.format("ending_%05d", f - t0)) end
     if f > t0 + 12000 then start_step(f) end
   elseif phase == "gameover" then
@@ -110,7 +112,10 @@ ON_NMI = function(f)
 end
 
 PICK_INPUT = function(f)
-  if phase == "ending" then return {} end
+  if phase == "ending" then
+    -- A Start tap during the last respawn may have paused it, so unpause until it goes.
+    return {start = r(0x1B) == 6 and (f - t0) % 240 < 4}
+  end
   if phase == "boot" or phase == "clearing" or phase == "gameover" or phase == "dying" then
     -- Start only away from play: in a stage it pauses.
     -- ($D0 and up is dying or the game over screen, which waits for it.)

@@ -79,7 +79,8 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 
 | Tool | What it checks |
 |---|---|
-| `tools/build_gba.py --replay out/trace_tour`, then `tools/run_gba.py` | The same replay on the GBA in mGBA, with RAM checked every frame, and how much of each frame the game, the drawing and the sound take |
+| `tools/build_gba.py --replay out/trace_tour`, then `tools/run_gba.py 1600` | The same replay on the GBA in mGBA, with RAM checked every frame |
+| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play |
 | `tools/compare_screens.py` | Every marked moment of the tour as the GBA would show it, beside Mesen's screenshot of that frame, on contact sheets in `out/screens/` |
 | `tools/compare_sound.py` | The sound chips' state in Mesen against `runtime/apu.c`'s, frame by frame |
 | `tools/press_keys.py` | Runs the real build in mGBA and presses its keys |

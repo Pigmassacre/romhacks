@@ -67,7 +67,7 @@ HOT static void tri_update(void) {
 }
 HOT static void fiveb_update(int c) {
   u32 period = fb.regs[c * 2] | (fb.regs[c * 2 + 1] & 15) << 8;
-  fb.inc[c] = period_to_inc(16u * (period ? period : 1));
+  fb.inc[c] = period_to_inc(32u * (period ? period : 1));  // measured in Mesen: 2 cycles a step, 16 steps
 }
 
 void apu_init(u32 hz) {
@@ -75,8 +75,8 @@ void apu_init(u32 hz) {
   hz_scale = (u32)(((uint64_t)CPU_HZ << 24) / hz);
   noise.inc = period_to_inc(noise_periods[0]);
   dmc.inc = period_to_inc(dmc_periods[0] * 8);
-  fb.noise_inc = period_to_inc(16);
-  fb.env_inc = period_to_inc(256);
+  fb.noise_inc = period_to_inc(32);
+  fb.env_inc = period_to_inc(32);
 }
 
 HOT void apu_write(u16 a, u8 v) {
@@ -171,10 +171,10 @@ HOT void fiveb_write(u8 v) {
   if (fb.regs[r] == v && r != 13) return;
   fb.regs[r] = v;
   if (r < 6) fiveb_update(r >> 1);
-  else if (r == 6) fb.noise_inc = period_to_inc(16u * ((v & 31) ? (v & 31) : 1));
+  else if (r == 6) fb.noise_inc = period_to_inc(32u * ((v & 31) ? (v & 31) : 1));
   else if (r == 11 || r == 12) {
     u32 period = fb.regs[11] | fb.regs[12] << 8;
-    fb.env_inc = period_to_inc(16u * (period ? period : 1));
+    fb.env_inc = period_to_inc(32u * (period ? period : 1));
   } else if (r == 13) {
     fb.env_step = 0;
     fb.env_held = 0;
@@ -383,10 +383,17 @@ HOT static void mix_span(s8 *out, int n) {
   mix_noise(buf, n);
   mix_dmc(buf, n);
   mix_fiveb(buf, n, levels);
+  // The NES's output stage blocks DC, so the DPCM level drifting does not push the
+  // whole mix up and down. This is the same idea: a high-pass filter, at about 90 Hz.
+  static int dc;
+  int level = dc;
   for (int i = 0; i < n; i++) {
-    int s = (buf[i] - 58) * 5 >> 2;
+    int in = buf[i] << 8;
+    level += (in - level) >> 5;
+    int s = ((in - level) >> 8) * 15 >> 3;
     out[i] = s > 127 ? 127 : s < -128 ? -128 : s;
   }
+  dc = level;
 }
 
 // One NES frame of samples. The APU's frame counter ticks four times in it.

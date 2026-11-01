@@ -77,7 +77,10 @@ def expected_table(path, trace):
 
 def main():
     replay = "--replay" in sys.argv
-    subprocess.run([sys.executable, os.path.join(REPO, "tools", "recomp.py")], check=True, stdout=subprocess.DEVNULL)
+    env = dict(os.environ)
+    if replay and "--timing" not in sys.argv:
+        env["HOT_BYTES"] = "30000"
+    subprocess.run([sys.executable, os.path.join(REPO, "tools", "recomp.py")], check=True, stdout=subprocess.DEVNULL, env=env)
     rom = open(ROM, "rb").read()[16:]
     chr4 = os.path.join(GEN, "chr4.bin")
     open(chr4, "wb").write(chr_to_4bpp(rom[0x40000:0x60000]))
