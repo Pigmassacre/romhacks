@@ -133,7 +133,7 @@ from happening: an old stamp for the floor, no memory of the press, no Select bi
 call the routine at all.
 
 `pad_read` takes the place of the game's read of the first pad, to keep a copy for the menu and to show the
-game nothing while the menu is open. `menu_tick` runs the menu from the NMI, on BG3. The choices last until
+game nothing while the menu is open. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
 the power goes off: cartridge RAM holds the stage's tables, so there is nowhere to save them.
 
 ## Sound
