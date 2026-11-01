@@ -30,7 +30,7 @@ NO_RETURN = {0xF319}        # reads a jump table inline, after its JSR
 ROM_SIZE = 0x400000
 FIRST_CODE_BANK = 32        # $A0: the first with the cartridge RAM at $6000
 LAST_CODE_BANK = 63
-ALIAS_HALF, OBJ_HALF = 1, 8 # which banks' lower halves hold the converted tiles
+ALIAS_HALF, BG_HALF, OBJ_HALF = 1, 3, 8 # which banks' lower halves hold the converted tiles
 SPC_BANK = 24               # all of it: src/boot.s has the same number, as $D8
 PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
@@ -645,7 +645,7 @@ def build_mode7(chr_rom):
                 for y in range(8):
                     for x in range(8):
                         v = (chr_rom[off + y] >> (7 - x) & 1) | (chr_rom[off + 8 + y] >> (7 - x) & 1) << 1
-                        tiles[ids[key] * 64 + y * 8 + x] = pal * 16 + v if v else 0
+                        tiles[ids[key] * 64 + y * 8 + x] = pal * 4 + v if v else 0
             # The game has a vertical scroll of $E8 here, 8 lines short of a whole screen.
             sr = (r + 1) % 30
             grid[(MAP_AT + sr) * 128 + MAP_AT + c] = ids[key]
@@ -671,9 +671,10 @@ def mode7_frames():
 
 NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY", "SELECT - OPTIONS"]
 MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
-MENU_MAP, MENU_LEFT = 0x7800, 5     # src/runtime.s has the first; the cursor's column
+MENU_MAP, MENU_LEFT = 0x3C00, 5     # src/runtime.s has the first; the cursor's column
 MENU_ROWS = [11, 13, 15, 17, 19]
 TILE_ARROW = 94             # src/runtime.s has the same number
+TILE_SKY = 95
 FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
 OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
 TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
@@ -710,35 +711,43 @@ CLOUD_TILES = set(range(64)) - {0x0F, 0x21, 0x28, 0x30, 0x31, 0x39}
 SLOPE_TILES = {0x02: {t for t in range(64) if t & 15 >= 4}}
 PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
                   CLOUD_PAGE: CLOUD_TILES}
-for _p in (0x0F, 0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
+for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
     PARALLAX_PAGES[_p] = ()
 
 
 def build_parallax_pages(chr_rom):
+    """For each page, 1 KB of tiles for BG1, with sky and clouds blank, then 1 KB for BG3: colour 1
+    where the NES has colour 0, in tiles that are not blank."""
     alias = list(range(128))
     out = bytearray()
     for n, (page, sky) in enumerate(sorted(PARALLAX_PAGES.items())):
         alias[page] = 0x80 + n
+        bg, mask = bytearray(), bytearray()
         for t in range(64):
             c = chr_rom[page * 0x400 + t * 16:page * 0x400 + t * 16 + 16]
             if t in sky:
-                out += bytes(32)
+                bg += bytes(16)
+                mask += bytes(16)
                 continue
-            rows, solid = bytearray(), bytearray()
             behind = t in SLOPE_TILES.get(page, ())
             for y in range(8):
                 white = c[y] & c[8 + y] if behind else 0
-                rows += bytes([c[y] & ~white & 0xFF, c[8 + y] & ~white & 0xFF])
-                # Plane 3: colour 4, the black, where the NES has colour 0.
-                solid += bytes([(~(c[y] | c[8 + y])) & 0xFF, 0])
-            # Colour 0 becomes 4, which has only that plane set; 1-3 stay as they are.
-            out += rows + solid
+                bg += bytes([c[y] & ~white & 0xFF, c[8 + y] & ~white & 0xFF])
+                mask += bytes([(~(c[y] | c[8 + y])) & 0xFF, 0])
+        out += bg + mask
     return alias, bytes(out)
 
 
+def bg_tables():
+    """Where each page's tiles are, as a bank and the high byte of an address."""
+    banks = [0xC0 + BG_HALF + p // 32 for p in range(128)] + [0xC0 + ALIAS_HALF + p // 16 for p in range(128)]
+    offs = [(p % 32) * 4 for p in range(128)] + [(p % 16) * 8 for p in range(128)]
+    return banks, offs
+
+
 def build_overlay(chr_rom):
-    """Tiles and maps for BG3: the notices, which show only on the title, then the clouds.
-    8 KB, the first half for VRAM word $6800 and the rest for $7000."""
+    """Tiles and maps for BG2, the notices, which show only on the title, and BG4, the clouds. The
+    first 4 KB are for VRAM word $6800, the next 4 KB for $7800 and the last 2 KB for $3C00."""
     def recolour(tile):
         # A box, not see-through: 0 black, shading grey, the letter white.
         out = bytearray(16)
@@ -762,15 +771,23 @@ def build_overlay(chr_rom):
     dash[3], dash[4] = 0x7E, 0x7E
     dash[8 + 3], dash[8 + 4] = 0x7E, 0x7E
     tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = recolour(bytes(dash))
+    def solid(tile):
+        # BG4 is the back: what would be see-through is sky, colour 1.
+        out = bytearray(tile_2bpp(tile))
+        for y in range(8):
+            out[y * 2] |= ~(out[y * 2] | out[y * 2 + 1]) & 0xFF
+        return bytes(out)
+
     for i in range(64):
         at = (TILE_CLOUDS + i) * 16
-        tiles[at:at + 16] = tile_2bpp(chr_rom[CLOUD_PAGE * 0x400 + i * 16:CLOUD_PAGE * 0x400 + i * 16 + 16])
+        tiles[at:at + 16] = solid(chr_rom[CLOUD_PAGE * 0x400 + i * 16:CLOUD_PAGE * 0x400 + i * 16 + 16])
     for i, t in enumerate((0x11, 0x01)):
         at = (TILE_CLOUDS + 64 + i) * 16
-        tiles[at:at + 16] = tile_2bpp(chr_rom[FILL_PAGE * 0x400 + t * 16:FILL_PAGE * 0x400 + t * 16 + 16])
+        tiles[at:at + 16] = solid(chr_rom[FILL_PAGE * 0x400 + t * 16:FILL_PAGE * 0x400 + t * 16 + 16])
+    tiles[TILE_SKY * 16:(TILE_SKY + 1) * 16] = solid(bytes(16))
 
     def cloud_map(rows, fill_from):
-        none = bytes([TILE_NONE, 0x01])
+        none = bytes([TILE_SKY, 0x01 | 0x04])
         out = [[none] * 32 for _ in range(32)]
 
         def cell(v):
@@ -829,7 +846,7 @@ def attr_table():
     out = []
     for a in range(256):
         v = a & 0xC0
-        v |= 0 if a & 0x20 else 0x20    # in front of the background: priority 2
+        v |= 0x10 if a & 0x20 else 0x20 # behind BG1 but in front of BG3's black, or in front of both
         v |= (a & 3) << 1
         out.append(v)
     return out
@@ -921,6 +938,9 @@ def main():
     s += bytes_asm("M7Anim", mode7_frames())
     alias, alias_tiles = build_parallax_pages(chr_rom)
     s += bytes_asm("PageAlias", alias)
+    bg_banks, bg_offs = bg_tables()
+    s += bytes_asm("BgBanks", bg_banks)
+    s += bytes_asm("BgOffs", bg_offs)
     s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)]
                    + [0xC0 + ALIAS_HALF + p // 16 for p in range(128)])
     s += bytes_asm("ComboIdx8", idx[0])
@@ -1018,6 +1038,10 @@ def main():
     for num in range(32):
         at = (PRG_HALF + num // 4) * 0x10000 + (num % 4) * BANK
         image[at:at + BANK] = prg[num * BANK:(num + 1) * BANK]
+    for p in range(128):
+        at = (BG_HALF + p // 32) * 0x10000 + (p % 32) * 0x400
+        for i in range(64):
+            image[at + i * 16:at + (i + 1) * 16] = tile_2bpp(chr_rom[p * 0x400 + i * 16:p * 0x400 + (i + 1) * 16])
     obj = convert_chr(chr_rom)
     for p in range(128):
         at = (OBJ_HALF + p // 16) * 0x10000 + (p % 16) * 0x800

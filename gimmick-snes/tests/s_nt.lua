@@ -11,7 +11,7 @@ local function on_nmi()
       local h = io.open(OUT .. (SNES and "snes_nt.bin" or "nes_nt.bin"), "wb")
       local t = {}
       if SNES then
-        for a = 0, 0xFFF do t[#t + 1] = string.char(emu.read(0xC000 + a, emu.memType.snesVideoRam)) end
+        for a = 0, 0xFFF do t[#t + 1] = string.char(emu.read(0xE000 + a, emu.memType.snesVideoRam)) end
       else
         for a = 0, 0xFFF do t[#t + 1] = string.char(emu.read(0x2000 + a, emu.memType.nesPpuMemory)) end
       end
