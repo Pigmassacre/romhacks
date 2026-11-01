@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ops import OPS, SIZE
+import spcasm
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "out")
@@ -28,8 +29,10 @@ ROM_SIZE = 0x400000
 FIRST_CODE_BANK = 32        # $A0: the first with the cartridge RAM at $6000
 LAST_CODE_BANK = 63
 BG_HALF, OBJ_HALF = 1, 8    # which banks' lower halves hold the converted tiles
+SPC_BANK = 24               # all of it: src/boot.s has the same number, as $D8
 PRG_HALF = 16               # and the NES banks, 4 in each; src/runtime.s has the same number
 FRAME_DONE = (0xF296, 0xF29F)   # lda #$AC, sta $F0: the frame is done, wait for vblank
+SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 # Routines of the game's that do many PPU writes in vblank, done directly instead.
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush"}
 
@@ -171,6 +174,8 @@ def stub_for(stubs, m, mode, a):
             return "oam_dma_a"
         if a in (0x4016, 0x4017):
             return None  # the SNES's pad ports are at the same place
+        if a == 0x4015:
+            return stubs.gen(("dmc", reg), ["php", "st%s apu_regs + $15" % reg, "inc apu_kick + 4", "plp"])
         if 0x4000 <= a < 0x4016:
             if a in (0x4003, 0x4007, 0x400B, 0x400F):
                 return stubs.gen(("kick", reg, a), stubs.apu_kick(reg, a))
@@ -195,7 +200,10 @@ def stub_for(stubs, m, mode, a):
     if mode in ("abx", "aby") and m in ("sta",):
         i = "x" if mode == "abx" else "y"
         if 0x4000 <= a < 0x4016:
-            return stubs.gen(("apux", i, a), stubs.apu_store("a", a, i))
+            # Which register it is only shows now: apu_indexed sees to a new note.
+            return stubs.gen(("apux", i, a), ["php", "sta apu_regs + %d,%s" % (a - 0x4000, i), "pha", "phx",
+                                              "t%sa" % i, "clc", "adc #%d" % (a - 0x4000), "jsr apu_indexed",
+                                              "plx", "pla", "plp"])
     return None
 
 
@@ -299,6 +307,172 @@ def convert_chr(chr_rom):
     return bytes(bg), bytes(obj)
 
 
+# ---- Sound ---------------------------------------------------------------------------
+
+SPC_ORIGIN = 0x0200
+SPC_CODE = 0x0600
+SPC_PITCH = 0x2000
+SPC_BRR = 0x4000
+DPCM_STEP = 3               # samples kept: 1 in this many, for them all to fit
+DMC_HZ = [4181.71, 4709.93, 5264.04, 5593.04, 6257.95, 7046.35, 7918.63, 8363.42,
+          9419.86, 11186.1, 12604.0, 13982.6, 16884.6, 21306.8, 24858.0, 33143.9]
+NOISE_PERIODS = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068]
+NOISE_HZ = [0, 16, 21, 25, 31, 42, 50, 63, 83, 100, 125, 167, 200, 250, 333, 400, 500, 667, 800, 1000,
+            1300, 1600, 2000, 2700, 3200, 4000, 5300, 6400, 8000, 10700, 16000, 32000]
+
+
+def brr_encode(samples, loop=False):
+    """Samples to 9-byte BRR blocks, trying each shift and filter."""
+    if len(samples) % 16:
+        samples = samples + [0] * (16 - len(samples) % 16)
+    out = bytearray()
+    p1 = p2 = 0
+
+    def clamp(v):
+        return max(-32768, min(32767, v))
+
+    for at in range(0, len(samples), 16):
+        block = samples[at:at + 16]
+        best = None
+        for flt in range(4):
+            for rng in range(13):
+                a, b = p1, p2
+                err = 0
+                nibs = []
+                for s in block:
+                    if flt == 0:
+                        pred = 0
+                    elif flt == 1:
+                        pred = a + (-a >> 4)
+                    elif flt == 2:
+                        pred = a * 2 + ((-a * 3) >> 5) - b + (b >> 4)
+                    else:
+                        pred = a * 2 + ((-a * 13) >> 6) - b + ((b * 3) >> 4)
+                    n = ((s - pred) * 2 >> rng) if rng else (s - pred) * 2
+                    n = max(-8, min(7, n))
+                    v = ((n << rng) >> 1)
+                    v = clamp(v + pred)
+                    v = clamp(v * 2) // 2  # the DSP wraps at 15 bits, nearly
+                    err += (v - s) ** 2
+                    nibs.append(n & 15)
+                    a, b = v, a
+                if best is None or err < best[0]:
+                    best = (err, flt, rng, nibs, a, b)
+                if err == 0:
+                    break
+        _, flt, rng, nibs, p1, p2 = best
+        out.append(rng << 4 | flt << 2)
+        for i in range(0, 16, 2):
+            out.append(nibs[i] << 4 | nibs[i + 1])
+    out[-9] |= 1 | (2 if loop else 0)
+    return bytes(out)
+
+
+def duty_sample(duty):
+    """16 samples of a pulse wave, one BRR block that loops."""
+    pattern = {0: "0100000000000000", 1: "0110000000000000", 2: "0111100000000000", 3: "1001111111111111"}[duty]
+    pattern = {0: "1100000000000000", 1: "1111000000000000", 2: "1111111100000000", 3: "1111111111110000"}[duty]
+    out = bytearray([0xC3])
+    nibs = [7 if c == "1" else 8 for c in pattern]     # +7, -8 in 4 bits
+    for i in range(0, 16, 2):
+        out.append(nibs[i] << 4 | nibs[i + 1])
+    return bytes(out)
+
+
+def triangle_sample():
+    levels = [15 - i for i in range(16)] + list(range(16))
+    nibs = [(n - 8) & 15 for n in levels]
+    out = bytearray()
+    for b in range(2):
+        out.append(0xC0 | (3 if b == 1 else 0))
+        for i in range(0, 16, 2):
+            out.append(nibs[b * 16 + i] << 4 | nibs[b * 16 + i + 1])
+    return bytes(out)
+
+
+def dpcm_decode(data):
+    """1-bit deltas to samples, one in DPCM_STEP, with the slow drift taken out."""
+    level = 64
+    raw = []
+    for byte in data:
+        for bit in range(8):
+            if byte >> bit & 1:
+                level = min(level + 2, 127)
+            else:
+                level = max(level - 2, 0)
+            raw.append(level)
+    out = []
+    dc = raw[0] if raw else 64
+    for i in range(0, len(raw), DPCM_STEP):
+        part = raw[i:i + DPCM_STEP]
+        v = sum(part) / len(part)
+        dc += (v - dc) / 256
+        out.append(int(max(-32768, min(32767, (v - dc) * 300))))
+    return out
+
+
+def build_spc(prg):
+    survey = os.path.join(OUT, "survey_snd", "snd.txt")
+    samples = {}
+    for line in open(survey):
+        f = line.split()
+        if f[0] == "D":
+            bank, addr, length = int(f[1], 16), int(f[2], 16), int(f[3], 16)
+            if bank:
+                samples[(bank, addr, length)] = 1
+    src = []
+    data = bytearray()
+
+    def place(brr, loop_at=0):
+        at = SPC_BRR + len(data)
+        data.extend(brr)
+        src.append((at, at + loop_at))
+        return len(src) - 1
+
+    # 0-3 duty, 4 triangle, then samples
+    for d in range(4):
+        place(duty_sample(d))
+    place(triangle_sample())
+    lst = []
+    for (bank, addr, length) in sorted(samples):
+        off = bank * BANK + addr * 64
+        size = length * 16 + 1
+        brr = brr_encode(dpcm_decode(prg[off:off + size]))
+        lst.append((bank, addr, length, place(brr)))
+    if SPC_BRR + len(data) >= 0xFFC0:
+        sys.exit("too many samples: %d bytes" % len(data))
+    print("sound: %d DPCM samples, %d KB of BRR" % (len(lst), len(data) // 1024))
+
+    pitch = bytearray()
+    for t in range(4096):
+        p = min(229090 // (t + 1), 0x3FFF)
+        pitch += bytes([p & 0xFF, p >> 8])
+    noise = []
+    for per in NOISE_PERIODS:
+        hz = 1789773 / per
+        noise.append(min(range(32), key=lambda i: abs(NOISE_HZ[i] - hz)))
+    tables = "dpcm_list:\n"
+    for bank, addr, length, n in lst:
+        tables += "  .byte $%02X,$%02X,$%02X,%d\n" % (bank, addr, length, n)
+    tables += "  .byte $FF\ndpcm_pitch:\n"
+    for hz in DMC_HZ:
+        tables += "  .word %d\n" % min(int(hz / DPCM_STEP * 4096 / 32000), 0x3FFF)
+    tables += "noise_clock:\n  .byte " + ",".join(str(v) for v in noise) + "\n"
+    text = open(os.path.join(REPO, "src", "sound.spc")).read() + tables
+    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "dir_page": SPC_ORIGIN >> 8,
+                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 56, "dpcm_vol": 64})
+    print("sound driver: %d bytes" % len(code))
+    if SPC_CODE + len(code) > SPC_PITCH:
+        sys.exit("the sound driver is too big")
+    blob = bytearray(SPC_BRR + len(data) - SPC_ORIGIN)
+    for n, (a, l) in enumerate(src):
+        blob[n * 4:n * 4 + 4] = bytes([a & 0xFF, a >> 8, l & 0xFF, l >> 8])
+    blob[SPC_CODE - SPC_ORIGIN:SPC_CODE - SPC_ORIGIN + len(code)] = code
+    blob[SPC_PITCH - SPC_ORIGIN:SPC_PITCH - SPC_ORIGIN + len(pitch)] = pitch
+    blob[SPC_BRR - SPC_ORIGIN:] = data
+    return bytes(blob)
+
+
 def attr_table():
     out = []
     for a in range(256):
@@ -330,6 +504,7 @@ def main():
     windows, instrs = decode(prg, seen)
     stubs = Stubs()
     patches, bad = find_patches(instrs, stubs)
+    patches[FIXED][SOUND_HOOK] = "sound_hook"
     for line in bad[:40]:
         print("  cannot translate:", line)
     print("%d instructions; %d stubs; %d patched" % (sum(len(c) for c in instrs.values()), len(stubs.made),
@@ -356,7 +531,11 @@ def main():
     s += bytes_asm("FirstBank", [0x80 + FIRST_CODE_BANK + first])
     for name, at in (("NesNmi", 0x1FFA), ("NesReset", 0x1FFC), ("NesIrq", 0x1FFE)):
         s += bytes_asm(name, [fixed[at], fixed[at + 1]])
-    s += '.segment "WCODE"\n.import apu_regs, apu_kick\n.p816\n.a8\n.i8\n.smart off\n'
+    spc = build_spc(prg)
+    s += bytes_asm("SpcAddr", [SPC_ORIGIN & 0xFF, SPC_ORIGIN >> 8])
+    s += bytes_asm("SpcEntry", [SPC_CODE & 0xFF, SPC_CODE >> 8])
+    s += bytes_asm("SpcSize", [len(spc) & 0xFF, len(spc) >> 8])
+    s += '.segment "WCODE"\n.import apu_regs, apu_kick, apu_indexed\n.p816\n.a8\n.i8\n.smart off\n'
     s += "\n".join(stubs.lines) + "\n"
     gen_s = os.path.join(GEN, "gen.s")
     open(gen_s, "w").write(".p816\n" + s)
@@ -403,6 +582,7 @@ def main():
             image[at + i * BANK:at + (i + 1) * BANK] = patched[page]
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
+    image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
     for num in range(32):
         at = (PRG_HALF + num // 4) * 0x10000 + (num % 4) * BANK
         image[at:at + BANK] = prg[num * BANK:(num + 1) * BANK]

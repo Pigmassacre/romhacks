@@ -90,7 +90,11 @@ nmi_count:   .res 1
 .export obj2_have
 .export apu_regs, sb_cmd, sb_regs, apu_kick
 apu_regs:    .res 32
-apu_kick:    .res 4
+apu_kick:    .res 5         ; new notes on the four channels, and DPCM started
+apu_sent:    .res 24
+sb_sent:     .res 16
+bank_sent:   .res 1
+spc_count:   .res 1
 sb_cmd:      .res 1
 sb_regs:     .res 16
 hdma_tab:    .res 16
@@ -915,7 +919,13 @@ ppu_ctrl_w:
         ; NMI enable, in vblank or with the picture off. It keeps an armed line interrupt.
         tya
         and #$80
-        sta nmi_flags
+        beq :+
+        cmp nmi_flags
+        beq :+
+        ; This can bring an NMI at once, here, before the game has reached its wait for
+        ; one, and that NMI would write the game's copy of this register back: set that.
+        sty $44
+:       sta nmi_flags
         ora irq_flag
         sta NMITIMEN
         lda tmp + 1
@@ -1873,6 +1883,97 @@ sb_cmd_y:
         sta sb_cmd
         pla
         plp
+        rts
+
+; A store to APU register a: a channel's fourth register starts a note.
+.export apu_indexed
+apu_indexed:
+        cmp #$10
+        bcs @out
+        tax
+        and #3
+        cmp #3
+        bne @out
+        txa
+        lsr a
+        lsr a
+        tax
+        inc apu_kick,x
+@out:   rts
+
+; Send the SPC700 what has changed. Called from the game's NMI, just after its sound code.
+.export sound_hook
+sound_hook:
+        sta fme_cmd
+        php
+        pha
+        phx
+        phy
+        ldy #0
+@apu:   lda apu_regs,y
+        cmp apu_sent,y
+        beq :+
+        sta apu_sent,y
+        tyx
+        jsr spc_send
+:       iny
+        cpy #$16
+        bne @apu
+        ldy #0
+@sb:    lda sb_regs,y
+        cmp sb_sent,y
+        beq :+
+        sta sb_sent,y
+        tya
+        ora #$20
+        tax
+        lda sb_regs,y
+        jsr spc_send
+:       iny
+        cpy #16
+        bne @sb
+        ; The new notes, whose length counter comes from a register sent just now
+        ldy #0
+@kick:  lda apu_kick,y
+        beq :+
+        lda #0
+        sta apu_kick,y
+        tya
+        clc
+        adc #$18
+        tax
+        lda #0
+        jsr spc_send
+:       iny
+        cpy #4
+        bne @kick
+        lda bC
+        cmp bank_sent
+        beq :+
+        sta bank_sent
+        ldx #$1D
+        jsr spc_send
+:       lda apu_kick + 4
+        beq :+
+        stz apu_kick + 4
+        lda apu_regs + $15
+        ldx #$1C
+        jsr spc_send
+:       ply
+        plx
+        pla
+        plp
+        rts
+
+; A value in a for the register in x.
+spc_send:
+        stx APUIO1
+        sta APUIO2
+        inc spc_count
+        lda spc_count
+        sta APUIO0
+:       cmp APUIO0
+        bne :-
         rts
 
 ; ---- Start-up, called from the boot code ------------------------------------------

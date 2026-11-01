@@ -10,8 +10,8 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHR = "--chr" in sys.argv
-SCRIPT = "s_oam.lua" if "--oam" in sys.argv else "s_creads.lua" if "--creads" in sys.argv else "s_chr.lua" if CHR else "s_survey.lua"
-OUT = os.path.join(REPO, "out", "survey_oam" if "--oam" in sys.argv else "survey_c" if "--creads" in sys.argv else "survey_chr" if CHR else "survey") + "/"
+SCRIPT = "s_snd.lua" if "--snd" in sys.argv else "s_oam.lua" if "--oam" in sys.argv else "s_creads.lua" if "--creads" in sys.argv else "s_chr.lua" if CHR else "s_survey.lua"
+OUT = os.path.join(REPO, "out", "survey_snd" if "--snd" in sys.argv else "survey_oam" if "--oam" in sys.argv else "survey_c" if "--creads" in sys.argv else "survey_chr" if CHR else "survey") + "/"
 os.makedirs(OUT, exist_ok=True)
 script = OUT + "survey.lua"
 with open(script, "w") as f:

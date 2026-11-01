@@ -10,7 +10,8 @@
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
 .import irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
 .import nmi_work, runtime_init
-.import FirstBank, NesNmi, NesIrq, NesReset, TitleTune
+.import FirstBank, NesNmi, NesIrq, NesReset, SpcAddr, SpcSize, SpcEntry
+SPC_BLOB = $D80000          ; tools/build.py puts it there
 
 .segment "BOOT"
 
@@ -116,6 +117,47 @@ fast:
         lda #$80
         sta MDMAEN
 
+        ; The sound driver, by the SPC700's boot code.
+        sep #$10
+        .i8
+:       lda APUIO0
+        cmp #$AA
+        bne :-
+:       lda APUIO1
+        cmp #$BB
+        bne :-
+        rep #$10
+        .i16
+        ldx SpcAddr
+        stx APUIO2
+        lda #1
+        sta APUIO1
+        lda #$CC
+        sta APUIO0
+:       cmp APUIO0
+        bne :-
+        ldx SpcSize
+        stx spc_size
+        ldx #0
+@spc:   lda f:SPC_BLOB,x
+        sta APUIO1
+        txa
+        sta APUIO0
+:       cmp APUIO0
+        bne :-
+        inx
+        cpx spc_size
+        bne @spc
+        ldx SpcEntry
+        stx APUIO2
+        stz APUIO1
+        lda spc_size
+        ina
+        ina
+        bne :+
+        ina
+:       sta APUIO0
+
         ; The picture: mode 0, BG1 only with sprites over it, as the NES's layers.
         stz BGMODE
         lda #$60 | 1        ; maps at $6000, side by side to start with
@@ -183,6 +225,7 @@ fast:
         jml [tmp_ptr]
 
 tmp_ptr = $1FF0
+spc_size = $1FF4
 
 ; The vertical scroll's HDMA and the background's tile set restart with each frame.
 nmi_emu:
