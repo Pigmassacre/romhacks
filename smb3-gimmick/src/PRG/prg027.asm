@@ -1686,7 +1686,7 @@ PalSet_2PVs:
 	.byte $06, $0F, $30, $3C, $06, $17, $36, $26, $06, $0F, $2B, $1A, $06, $0F, $21, $12	; BG Pal 6
 	.byte $07, $0F, $30, $3C, $07, $17, $36, $26, $07, $0F, $2B, $1A, $07, $0F, $21, $12	; BG Pal 7
 
-	.byte $FF, $16, $36, $12, $FF, $1A, $36, $0C, $FF, $12, $31, $21, $FF, $16, $30, $27	; SPR Pal 0 (8)
+	.byte $FF, $0B, $2A, $30, $FF, $01, $21, $30, $FF, $12, $31, $21, $FF, $16, $30, $27	; SPR Pal 0 (8)
 	.byte $FF, $16, $36, $12, $FF, $30, $36, $1A, $FF, $17, $36, $1A, $FF, $16, $30, $27	; SPR Pal 1 (9)
 	.byte $FF, $16, $36, $0F, $FF, $30, $36, $1A, $FF, $17, $36, $27, $FF, $16, $30, $27	; SPR Pal 2 (10)
 	.byte $FF, $16, $36, $12, $FF, $1A, $36, $12, $FF, $16, $30, $27, $FF, $12, $31, $21	; SPR Pal 3 (11)
@@ -1914,13 +1914,17 @@ PRG027_B8D9:
 
 PRG027_B8F9:
 	LDA Level_Tileset
-	BEQ PRG027_GimPalDone
 	CMP #15
 	BGE PRG027_GimPalDone
 
+	LDX Player_Current
 	LDY #$02
 PRG027_GimPalLoop:
 	LDA Gim_PlayerPal,Y
+	CPX #$00
+	BEQ PRG027_GimPalSet
+	LDA Gim_PlayerPal+3,Y
+PRG027_GimPalSet:
 	STA Pal_Data+17,Y
 	DEY
 	BPL PRG027_GimPalLoop
@@ -1929,7 +1933,8 @@ PRG027_GimPalDone:
 	RTS		 ; Return
 
 Gim_PlayerPal:
-	.byte $0B, $2A, $30
+	.byte $0B, $2A, $30	; The first player
+	.byte $01, $21, $30	; The second
 
 
 Palette_PrepareFadeInTK:

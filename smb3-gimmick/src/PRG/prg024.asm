@@ -796,17 +796,7 @@ PRG024_A545:
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF
+	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 
 Debug_DownUp:	.byte 1, -1	; Add 1 or subtract 1 from current world on debug menu
 
@@ -2878,6 +2868,117 @@ Title_SpriteVROMPwrOff:
 	.byte $54	; 1 Big
 	.byte $00	; 2 Leaf Raccoon
 
+	; What Yumetaro does for each of the scene's Mario and Luigi frames ($FF = not drawn):
+	; 0 stands, 1-2 walks, 3 jumps, 4 skids, 5 kicks
+Title_GimFrame:
+	.byte 0, 1, 2, 0, 1, 2, 0, 0, 0, 0	; $00-$09
+	.byte 0, 0, 4, 5, 0, 1, 2, 0, 1, 4	; $0A-$13
+	.byte 0, 0, 3, 0, $FF			; $14-$18
+Title_GimBodyL:	.byte $05, $09, $0D, $25, $0B, $0F
+Title_GimBodyR:	.byte $15, $19, $1D, $35, $1B, $1F
+
+	; Body and horn in Yumetaro's first page of frames. Each player's page is a different bank, so Luigi's tiles are $40 on
+Title_DrawYumetaro:
+	LDA #$50
+	STA PatTable_BankSel+2,X
+
+	LDA #$00
+	CPX #$00
+	BEQ PRG024_GimFirst
+	LDA #$40
+PRG024_GimFirst:
+	STA <Temp_Var1
+
+	LDA <Title_ObjMLFlags,X
+	AND #SPR_HFLIP
+	STA <Temp_Var14
+	ORA <Temp_Var12
+	ORA <Title_CurMLIndex
+	STA <Temp_Var4
+
+	LDA <Title_ObjMLSprVis,X
+	STA <Temp_Var13
+	LDA <Title_ObjY,X
+	STA <Temp_Var15
+	LDA <Title_ObjX,X
+	STA <Temp_Var16
+
+	LDY <Title_ObjMLSprite,X
+	LDA Title_GimFrame,Y
+	STA <Temp_Var5
+	LDY <Title_ObjMLSprRAMOff,X
+
+	; All six of Mario's sprites off to begin with
+	LDA #$F8
+	STA Sprite_RAM+$00,Y
+	STA Sprite_RAM+$04,Y
+	STA Sprite_RAM+$08,Y
+	STA Sprite_RAM+$0C,Y
+	STA Sprite_RAM+$10,Y
+	STA Sprite_RAM+$14,Y
+
+	LDX <Temp_Var5
+	BMI PRG024_GimDone
+
+	LDA Title_GimBodyL,X
+	ADD <Temp_Var1
+	STA Sprite_RAM+$01,Y
+	LDA Title_GimBodyR,X
+	ADD <Temp_Var1
+	STA Sprite_RAM+$05,Y
+	LDA #$03
+	ADD <Temp_Var1
+	STA Sprite_RAM+$09,Y
+
+	LDA <Temp_Var4
+	STA Sprite_RAM+$02,Y
+	STA Sprite_RAM+$06,Y
+	STA Sprite_RAM+$0A,Y
+
+	; Columns: X and X + 8, swapped facing right, with the horn over his far side
+	LDA <Temp_Var16
+	LDX <Temp_Var14
+	BEQ PRG024_GimLeft
+	STA Sprite_RAM+$07,Y
+	STA Sprite_RAM+$0B,Y
+	ADD #8
+	STA Sprite_RAM+$03,Y
+	JMP PRG024_GimRows
+PRG024_GimLeft:
+	STA Sprite_RAM+$03,Y
+	ADD #8
+	STA Sprite_RAM+$07,Y
+	STA Sprite_RAM+$0B,Y
+PRG024_GimRows:
+
+	; Title_ObjMLSprVis bits 7 and 6 hide those columns as they leave the screen
+	LDA <Temp_Var15
+	ADD #16
+	ASL <Temp_Var13
+	BCS PRG024_GimNoCol0
+	LDX <Temp_Var14
+	BNE PRG024_GimCol0R
+	STA Sprite_RAM+$00,Y
+	JMP PRG024_GimNoCol0
+PRG024_GimCol0R:
+	STA Sprite_RAM+$04,Y
+PRG024_GimNoCol0:
+	ASL <Temp_Var13
+	BCS PRG024_GimDone
+	LDX <Temp_Var14
+	BNE PRG024_GimCol1R
+	STA Sprite_RAM+$04,Y
+	JMP PRG024_GimHorn
+PRG024_GimCol1R:
+	STA Sprite_RAM+$00,Y
+PRG024_GimHorn:
+	LDA <Temp_Var15
+	STA Sprite_RAM+$08,Y
+
+PRG024_GimDone:
+	LDX <Title_CurMLIndex
+	RTS
+
 ; Title_DrawMarioLuigi
 ;
 ; Not literally "draw", of course, but set up their hardware
@@ -2915,6 +3016,13 @@ PRG024_B21E:
 	STA <Temp_Var12		; Temp_Var12 = $20 (sprite priority bit)
 
 PRG024_B232: 
+	; Everyone but the Princess is Yumetaro now
+	LDA <Title_ObjMLSprite,X
+	CMP #$19
+	BGE PRG024_NotGim
+	JMP Title_DrawYumetaro
+PRG024_NotGim:
+
 	; Store Y coordinate -> <Temp_Var15
 	LDA <Title_ObjY,X
 	STA <Temp_Var15	
@@ -3927,7 +4035,7 @@ Title_ObjPatterns:
 	; Each of these tables contains one value per object index (0-5)
 Title_ObjPatOff:	.byte $00, $02, $04, $06, $0A, $0C	; Root offset per object for Title_ObjPatterns
 Title_ObjSprRAMOff:	.byte $40, $48, $50, $68, $60, $58	; Offset into Sprite_RAM per object
-Title_ObjPal:		.byte $03, $00, $00, $02, $02, $03	; Paletter per object
+Title_ObjPal:		.byte $03, $02, $02, $02, $02, $03	; Paletter per object (palettes 0 and 1 are the players')
 
 ; Title_ObjDraw
 ;
@@ -4344,9 +4452,28 @@ PRG024_B8C2:
 	LDX #$00
 	STX <Title_CurMLIndex
 
-	JSR Ending_DrawYumetaro	 ; Draws Yumetaro, where the scene moves Mario
+	JSR Title_DrawMarioLuigi	 ; Draws Mario officially, but may be modified after this to Luigi
 
-	LDX #$00
+	LDA Player_Current
+	BEQ PRG024_B8E6	 ; If Player is Mario, jump to PRG024_B8E6
+
+	; Luigi only: the second player's colours
+	LDY #$18	 ; Y = $18
+PRG024_B8D6:
+	LDA Sprite_RAM+$02,Y
+	ORA #SPR_PAL2
+	STA Sprite_RAM+$02,Y
+
+	; Y -= 4 (previous sprite)
+	DEY
+	DEY
+	DEY
+	DEY
+
+	CPY #$10
+	BPL PRG024_B8D6	 ; While Y >= $10, loop
+
+PRG024_B8E6:
 
 	; Title_CurMLIndex = 1
 	INX		 ; X = 1
@@ -4355,62 +4482,6 @@ PRG024_B8C2:
 	JSR Title_DrawMarioLuigi	 ; Actually draws the Princess
 
 	RTS		 ; Return
-
-	; Body and horn at Mario's place, in Yumetaro's first page of frames; the scene's palette 0 is his
-Ending_GimBodyL:	.byte $05, $09, $0D, $09
-Ending_GimBodyR:	.byte $15, $19, $1D, $19
-
-Ending_DrawYumetaro:
-	LDA #$50
-	STA PatTable_BankSel+2
-
-	; Walking only while he moves
-	LDY #$00
-	LDA <Title_ObjX
-	CMP Gim_RideX
-	STA Gim_RideX
-	BEQ Ending_GimFrame
-	LDA <Counter_1
-	LSR A
-	LSR A
-	LSR A
-	AND #$03
-	TAY
-Ending_GimFrame:
-	LDA Ending_GimBodyL,Y
-	STA Sprite_RAM+$11
-	LDA Ending_GimBodyR,Y
-	STA Sprite_RAM+$15
-	LDA #$03
-	STA Sprite_RAM+$19
-
-	LDA <Title_ObjY
-	STA Sprite_RAM+$18
-	ADD #16
-	STA Sprite_RAM+$10
-	STA Sprite_RAM+$14
-
-	LDA <Title_ObjMLFlags
-	AND #SPR_HFLIP
-	STA Sprite_RAM+$12
-	STA Sprite_RAM+$16
-	STA Sprite_RAM+$1A
-	BNE Ending_GimFacesRight
-
-	LDA <Title_ObjX
-	STA Sprite_RAM+$13
-	ADD #8
-	STA Sprite_RAM+$17
-	STA Sprite_RAM+$1B
-	RTS
-
-Ending_GimFacesRight:
-	LDA <Title_ObjX
-	STA Sprite_RAM+$17
-	STA Sprite_RAM+$1B
-	ADD #8
-	STA Sprite_RAM+$13
-	RTS
 
 Ending_DoChamberScene:
 	LDA <Ending_State

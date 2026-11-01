@@ -907,15 +907,15 @@ InvItem_PerPowerUp_Palette:
 
 InvItem_PerPowerUp_Palette2:
 	; Luigi
-	.byte $0B, $2A, $30, $FF	; "Empty Slot" (shouldn't ever be used)
-	.byte $0B, $2A, $30, $FF	; Super Mushroom
-	.byte $0B, $2A, $30, $FF	; Fire Flower
-	.byte $0B, $2A, $30, $FF	; Leaf
-	.byte $0B, $2A, $30, $FF	; Frog Suit
-	.byte $0B, $2A, $30, $FF	; Tanooki Suit
-	.byte $0B, $2A, $30, $FF	; Hammer Suit
+	.byte $01, $21, $30, $FF	; "Empty Slot" (shouldn't ever be used)
+	.byte $01, $21, $30, $FF	; Super Mushroom
+	.byte $01, $21, $30, $FF	; Fire Flower
+	.byte $01, $21, $30, $FF	; Leaf
+	.byte $01, $21, $30, $FF	; Frog Suit
+	.byte $01, $21, $30, $FF	; Tanooki Suit
+	.byte $01, $21, $30, $FF	; Hammer Suit
 	.byte $30, $36, $0F, $FF	; Judgems Cloud
-	.byte $0B, $2A, $30		; P-Wing (note lack of 4th byte)
+	.byte $01, $21, $30		; P-Wing (note lack of 4th byte)
 
 
 Inv_UseItem_Powerup:

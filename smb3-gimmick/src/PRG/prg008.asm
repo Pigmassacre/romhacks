@@ -1071,7 +1071,7 @@ PRG008_A523:
 	; Palette colors per power up level -- first byte is never used!
 PowerUp_Palettes:
 	.byte $00, $0B, $2A, $30	; 0 - Mario default palette
-	.byte $00, $0B, $2A, $30	; 1 - Luigi default palette
+	.byte $00, $01, $21, $30	; 1 - Luigi default palette
 	.byte $00, $27, $36, $16	; 2 - Fire Flower
 	.byte $00, $00, $00, $00	; 3 - Leaf (Not used, uses 0 or 1 as appropriate)
 	.byte $00, $2A, $36, $0F	; 4 - Frog Suit

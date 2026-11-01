@@ -30,7 +30,7 @@ FRAME = function(f)
     if f - phase2 == 700 then
       local tiles = {}
       for a = 0x210, 0x21C, 4 do tiles[#tiles + 1] = string.format("%02x", r(a + 1)) end
-      check(rs("PatTable_BankSel", 2) == 0x50 and r(0x211) == 0x05 and r(0x215) == 0x15, "Yumetaro in the chamber: " .. table.concat(tiles, " "))
+      check(rs("PatTable_BankSel", 2) == 0x50 and r(0x219) == 0x03 and (r(0x211) == 0x05 or r(0x211) == 0x09 or r(0x211) == 0x0D), "Yumetaro in the chamber: " .. table.concat(tiles, " "))
       check(emu.read(0x11, emu.memType.nesPaletteRam) == 0x0B, "in his colours")
     end
     if f - phase2 > 8000 then

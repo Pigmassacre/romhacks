@@ -2158,6 +2158,8 @@ PRG009_AA2A:
 PRG009_AA36:
 	LDX Vs_CurIndex	 ; X = Player index
 
+	JSR Vs_PlayerDrawHorn
+
 	; Seems like the better option would be to check the current frame or for 
 	; both patterns being the same like elsewhere, but whatever!
 	LDA Vs_PlayerState,X
@@ -2174,6 +2176,36 @@ PRG009_AA36:
 PRG009_AA4D:
 	RTS		 ; Return
 
+
+	; Yumetaro's horn, a sprite above the other two, on his far side. Y = their Sprite RAM offset
+Vs_PlayerDrawHorn:
+	LDA Vs_PlayerState,X
+	CMP #$02
+	BEQ PRG009_GimHornRTS	 ; Not while dying
+	TXA
+	ASL A
+	ASL A
+	TAX			 ; X = player index * 4
+
+	LDA Sprite_RAM+$20,Y
+	SUB #16
+	STA Sprite_RAM+$18,X
+	LDA #$31
+	STA Sprite_RAM+$19,X
+	LDA Sprite_RAM+$22,Y
+	STA Sprite_RAM+$1A,X
+	AND #SPR_HFLIP
+	BNE PRG009_GimHornR
+	LDA Sprite_RAM+$27,Y
+	BNE PRG009_GimHornX	 ; (X coordinates of 0 aside, always)
+PRG009_GimHornR:
+	LDA Sprite_RAM+$23,Y
+PRG009_GimHornX:
+	STA Sprite_RAM+$1B,X
+
+	LDX Vs_CurIndex
+PRG009_GimHornRTS:
+	RTS
 
 	; Handles Players bumping in to eachother
 VsPlayer_BumpEachother:

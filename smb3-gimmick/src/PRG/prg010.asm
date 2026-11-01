@@ -581,7 +581,7 @@ PRG010_C303:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GameOver_MLName:
 	.byte $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0, $00	; YUMETARO[Terminator]
-	.byte $EC, $DA, $FC, $EB, $FC, $FE, $FE, $FE, $00	; LUIGI[Terminator]
+	.byte $D9, $EC, $BC, $CC, $E8, $E9, $FE, $F2, $00	; PLAYER 2[Terminator]
 GameOver_MLName_Len = 9
 
 GameOver_PatchPlayerName:
@@ -2572,10 +2572,10 @@ Map_EnterSpecialTiles:
 
 	; Color table for setting the 2nd entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
-Map_PostJC_PUpPP1:	.byte $0B, $0B, $0B, $0B, $0B, $0B, $0B
+Map_PostJC_PUpPP1:	.byte $2A, $21, $0B, $0B, $0B, $0B, $0B
 
 	; In conjunction with the table above; patches $1A (Luigi) for $16 as needed
-Map_PostJC_PUpPML:	.byte $16, $1A
+Map_PostJC_PUpPML:	.byte $0B, $01
 
 	; Color table for setting the 4th entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
@@ -2678,21 +2678,13 @@ PRG010_CE39:
 	LDA World_Map_Power,X
 	STA Map_Power_Disp	
 
-	TAY		 	; A = Player's actual power up
-
-	; Get the color we need to patch in...
-	LDA Map_PostJC_PUpPP1,Y
-	CMP #$16	 
-	BNE PRG010_CE54	 	; If color <> $16 (Mario's red), jump to PRG010_CE54
-
-	; Otherwise possibly change to Luigi green, if that's appropriate...
-	LDA Map_PostJC_PUpPML,X	 
-
-PRG010_CE54:
-	; Copy appropriate power up patch values into the palette buffer
+	; This player's colours, all three (the cloud's middle one once stayed)
+	LDA Map_PostJC_PUpPML,X
 	STA Palette_Buffer+$11
-	LDA Map_PostJC_PUpPP2,Y
-	STA Palette_Buffer+$13	
+	LDA Map_PostJC_PUpPP1,X
+	STA Palette_Buffer+$12
+	LDA Map_PostJC_PUpPP2,X
+	STA Palette_Buffer+$13
 
 	; Queue the palette buffer to update!
 	LDA #$06
