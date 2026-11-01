@@ -7,23 +7,27 @@
 #include "hw.h"
 
 #define FRAME_CYCLES 280896u
+#define MAX_FRAMES_BEHIND 3
 
 extern const u8 rom_prg[], rom_chr[], chr4_data[];
 
 static inline u32 now(void) { return TM2CNT_L | (u32)TM3CNT_L << 16; }
 
-// Sound: a frame is exactly 304 samples at this rate. A VBlank interrupt starts the
-// newest buffer, and plays the last one again if the game ran long.
+// Sound: a frame is exactly 304 samples at this rate. Finished frames wait in a queue,
+// and a VBlank interrupt starts the next, or plays the last again if none is ready.
 #define SAMPLES_PER_FRAME 304
 #define SAMPLE_PERIOD 924
-static s8 sound_buf[2][SAMPLES_PER_FRAME + 16] SLOW_RAM __attribute__((aligned(4)));
-static volatile u8 sound_ready = 0, sound_playing = 0;
+#define SOUND_QUEUE 4
+static s8 sound_buf[SOUND_QUEUE][SAMPLES_PER_FRAME + 16] SLOW_RAM __attribute__((aligned(4)));
+static volatile u8 sound_write, sound_read;
+static volatile u32 vblank_count;
 
 __attribute__((section(".iwram"), target("arm"))) static void on_vblank(void) {
   DMA1CNT_H = 0;
-  if (sound_ready != sound_playing) sound_playing = sound_ready;
-  DMA1SAD = (u32)sound_buf[sound_playing];
+  if (sound_read != sound_write) sound_read = (sound_read + 1) % SOUND_QUEUE;
+  DMA1SAD = (u32)sound_buf[sound_read];
   DMA1CNT_H = 0xB640;  // repeat, 32-bit, in step with the FIFO
+  vblank_count++;
   BIOS_IF |= 1;
   IF = 1;
 }
@@ -154,13 +158,32 @@ void plat_vblank(void) {
 #ifdef REPLAY
   u32 mix_start = now();
 #endif
-  int back = !sound_playing;
-  apu_mix(sound_buf[back], SAMPLES_PER_FRAME);
-  sound_ready = back;
+  u32 next = (sound_write + 1) % SOUND_QUEUE;
+  if (next != sound_read) {
+    apu_mix(sound_buf[next], SAMPLES_PER_FRAME);
+    sound_write = next;
+  } else {
+    static s8 dropped[SAMPLES_PER_FRAME];  // keep the chips ticking
+    apu_mix(dropped, SAMPLES_PER_FRAME);
+  }
 #ifdef REPLAY
   last_mix = now() - mix_start;
   window_mix += last_mix;
 #endif
+  // A frame that ran late skips drawing and starts straight away, to catch up: most
+  // are only slightly over, so the game keeps its speed and the sound its place. A long
+  // stall, or too many in a row, starts counting again from now, as a slowdown.
+  static u32 nes_frames;
+  nes_frames++;
+  int behind = vblank_count - nes_frames;
+  if (behind > MAX_FRAMES_BEHIND) {
+    nes_frames = vblank_count + 1;
+  } else if (behind >= 0) {
+#ifdef REPLAY
+    frame_start = now();
+#endif
+    return;
+  }
   wait_vblank();
 #ifdef REPLAY
   frame_start = now();  // a frame's load is drawing, the game and the sound

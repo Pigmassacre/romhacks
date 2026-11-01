@@ -81,18 +81,12 @@ def main():
         shot(out, "a_title")
         time.sleep(4)
         shot(out, "a_title_later")
-        for _ in range(3):
-            tap(w, "start")
-            time.sleep(2)
-        shot(out, "b_after_start_1")
-        for _ in range(3):
-            tap(w, "start")
-            time.sleep(2.5)
-        shot(out, "c_after_start_2")
-        for _ in range(3):
-            tap(w, "start")
-            time.sleep(2.5)
-        shot(out, "d_after_start_3")
+        tap(w, "start")  # START on the title
+        time.sleep(4)
+        shot(out, "b_map")
+        tap(w, "start")  # leave the world map
+        time.sleep(5)
+        shot(out, "c_stage")
         send(w, "right", True)
         time.sleep(2)
         shot(out, "e_walk_right")
@@ -106,6 +100,11 @@ def main():
         send(w, "b", False)
         time.sleep(0.3)
         shot(out, "h_thrown")
+        tap(w, "start")  # pause
+        time.sleep(0.5)
+        shot(out, "i_paused")
+        time.sleep(1)
+        shot(out, "j_still_paused")
     finally:
         subprocess.run(["flatpak", "kill", "io.mgba.mGBA"], stderr=subprocess.DEVNULL)
         p.wait()
