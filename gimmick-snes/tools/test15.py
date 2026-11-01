@@ -2,7 +2,7 @@
 """Run Gimmick! 1.5's own tests on the SNES build, with its options off (expecting the
 original game) and on (expecting 1.5).
 
-    python3 tools/test15.py [test names]    # logs in ../gimmick-1.5/out/test/
+    python3 tools/test15.py [test names]    # logs in out/test/
 """
 import glob
 import os
@@ -11,10 +11,9 @@ import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOT = os.path.join(os.path.dirname(REPO), "gimmick-1.5")
-OUT = os.path.join(ROOT, "out", "test")
+TESTS = os.path.join(REPO, "tests", "gimmick-1.5")
+OUT = os.path.join(REPO, "out", "test")
 ROM = os.path.join(REPO, "out", "gimmick.sfc")
-SKIP = {"title", "ramguard"}    # 1.5's logo is not in this port; the RAM guard reads ROM by NES address
 
 
 def opt_flags():
@@ -58,8 +57,8 @@ end
 
 
 def run(name, on):
-    src = os.path.join(ROOT, "tests", "t_%s.lua" % name)
-    lib = open(os.path.join(ROOT, "tests", "lib.lua")).read()
+    src = os.path.join(TESTS, "t_%s.lua" % name)
+    lib = open(os.path.join(TESTS, "lib.lua")).read()
     lib = lib.replace("emu.setInput(inp, 0)", "emu.setInput(snes_pad(inp), 0)")
     lib = lib.replace("emu.callbackType.exec, 0x8000, 0xFFFF", "emu.callbackType.exec, 0xA08000, 0xBFFFFF")
     lib = lib.replace('function r(a) return emu.read(a, M) end', 'function r(a) return 0 end')
@@ -67,7 +66,7 @@ def run(name, on):
     # The library reads RAM while it loads and while it runs, so r and w go first of all.
     script = os.path.join(OUT, "snes_%s.lua" % name)
     with open(script, "w") as f:
-        f.write("REPO = %r\nNAME = %r\nHACK = %s\n" % (ROOT, name, "true" if on else "false"))
+        f.write("REPO = %r\nNAME = %r\nHACK = %s\n" % (REPO, name, "true" if on else "false"))
         f.write(SNES_PAD)
         f.write(lib)
         f.write(SHIM.replace("OPT_AT", str(opt_flags())).replace("OPT_VAL", "31" if on else "0"))
@@ -90,7 +89,7 @@ def run(name, on):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    names = sys.argv[1:] or [n for n in sorted(os.path.basename(p)[2:-4] for p in glob.glob(os.path.join(ROOT, "tests", "t_*.lua"))) if n not in SKIP]
+    names = sys.argv[1:] or sorted(os.path.basename(p)[2:-4] for p in glob.glob(os.path.join(TESTS, "t_*.lua")))
     bad = 0
     for on in (False, True):
         print("options", "on (expect Gimmick! 1.5)" if on else "off (expect the original game)")
