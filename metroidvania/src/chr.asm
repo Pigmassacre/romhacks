@@ -47,13 +47,15 @@ ChrLoaded:
         rts
 
 ; After a continue: the Game Over screen put the font back (RestoreFont),
-; and a continue doesn't load the stage's graphics again. While the stage
+; and a continue doesn't load the stage's graphics again; nor does coming back
+; from a death, after the explosion borrowed its tiles. While the stage
 ; loads (mode 5, part 1), Castlevania's game turns the screen off for the
 ; rest of the frame, so Samus's tiles go back in then.
 RestoreSamusChr:
         lda HackState
-        and #HS_FONT
-        bne @rts
+        and #HS_FONT | HS_LENT
+        cmp #HS_FONT
+        beq @rts
         lda GameMode
         cmp #5
         bne @rts
@@ -106,8 +108,33 @@ PutSamusChr:
         inx
         cpx #32
         bne @dot
+        ; Castlevania's pairs the last explosion borrowed
+        ldy #0
+        ldx #0
+@own:
+        txa
+        pha
+        lda LentHi,x
+        pha
+        lda LentLo,x
+        tax
+        pla
+        jsr PpuAddr
+        ldx #32
+@ownByte:
+        lda LentOwn,y
+        sta $2007
+        iny
+        dex
+        bne @ownByte
+        pla
+        tax
+        inx
+        cpx #LENT_PAIRS
+        bne @own
         lda HackState
         ora #HS_FONT
+        and #~HS_LENT
         sta HackState
         ; the status bar, rows 0-5 of both name tables
         lda #$20

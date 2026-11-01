@@ -382,7 +382,9 @@ DrawFrame:
 
 ; Samus exploding (Metroid's ObjFrame_SamusExplode, drawn by ObjDrawFrame's
 ; explode placement): six pieces fly out in arcs, spinning, for 25 frames,
-; while Castlevania's death plays. ExplodeCount counts the frames.
+; while Castlevania's death plays. ExplodeCount counts the frames, from -LENT_PAIRS:
+; first her pieces' tiles go in, a pair a frame, over Castlevania's that she doesn't
+; have room for otherwise (chr.asm puts those back), while she still stands there.
 ExplodeCount = SamusJumpDsp
 
 SamusDeath:
@@ -391,10 +393,19 @@ SamusDeath:
         beq @going
         lda #sa_Dead2
         sta SamusStatus
-        lda #0
+        lda HackState
+        ora #HS_LENT
+        sta HackState
+        lda #<-LENT_PAIRS
         sta ExplodeCount
         jsr SFX_SamusDie
 @going:
+        lda ExplodeCount
+        bpl @explode
+        jsr QueueLentPair
+        lda SamusAnimFrame
+        jmp DrawFrame
+@explode:
         inc ExplodeCount
         lda ExplodeCount
         cmp #$19
@@ -469,6 +480,50 @@ SamusDeath:
         dec OamLeft
         dex
         bpl @piece
+@rts:
+        rts
+
+; The next of the explosion's pairs, if the update buffer has room for it.
+QueueLentPair:
+        ldy $20
+        cpy #BUFFER_BUSY
+        bcs @rts
+        lda ExplodeCount
+        clc
+        adc #LENT_PAIRS
+        tax
+        lda #1
+        sta $0700,y
+        lda LentHi,x
+        sta $0701,y
+        lda LentLo,x
+        sta $0702,y
+        txa
+        asl
+        asl
+        asl
+        asl
+        asl
+        tax
+        lda #32
+        sta Temp0
+@byte:
+        lda LentChr,x
+        sta $0703,y
+        iny
+        inx
+        dec Temp0
+        bne @byte
+        lda #$FF
+        sta $0703,y
+        lda #0
+        sta $0704,y             ; end of the buffer
+        iny
+        iny
+        iny
+        iny
+        sty $20
+        inc ExplodeCount
 @rts:
         rts
 

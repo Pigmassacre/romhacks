@@ -74,15 +74,32 @@ DrawHud:
         rts
 @room:
         jsr HudDigits
-        ldx #5
+        ; one column a go, each in turn: with the time counting down at a stage's
+        ; end, the last digit changes every time and the others would never get one
+        lda FrameCounter
+        lsr
+        lsr
+@mod6:
+        cmp #6
+        bcc @first
+        sbc #6
+        bcs @mod6
+@first:
+        tax
+        ldy #6
 @col:
         lda HudNew,x
         cmp HudShown,x
         beq @same
         jmp HudColumn
 @same:
-        dex
-        bpl @col
+        inx
+        cpx #6
+        bcc @next
+        ldx #0
+@next:
+        dey
+        bne @col
         ; nothing changed: every 8 frames, send one column again anyway, in
         ; case Castlevania dropped the buffer (it does while a stage starts)
         lda FrameCounter
@@ -92,11 +109,11 @@ DrawHud:
         lsr
         lsr
         lsr
-@mod6:
+@mod6b:
         cmp #6
         bcc @refresh
         sbc #6
-        bcs @mod6
+        bcs @mod6b
 @refresh:
         tax
         lda HudNew,x

@@ -155,6 +155,7 @@ HS_SAMUS        = $01       ; Samus's own state is current (else take Simon's po
 HS_KILL         = $02       ; ask Castlevania to kill Simon
 HS_GROUND       = $04       ; standing on the ground: stairs may start
 HS_FONT         = $08       ; Samus's tiles are over the font
+HS_LENT         = $10       ; the explosion borrowed Castlevania's tiles (draw.asm)
 HS_SPLIT        = $40       ; the HUD's colours are in palette 2 above the split
 
 ; Samus's three projectiles, by index 0-2 (Castlevania's object slots $14-$16).

@@ -319,7 +319,7 @@ FRAME = function(f)
     cheat = false
     if stage then w(0x118, 9); w(0x2A, 9) end
   end
-  if cheat and stage then w(0x5B, 0x40); w(0x118, 9) end
+  if cheat and stage then w(0x5B, 0x3F); w(0x118, 9) end   -- (at $40 Castlevania restores palettes each frame)
   if f > 900000 then fail("out of frames") end
 
   if phase == "title" and mode == 5 then phase = "wait" end

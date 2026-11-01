@@ -83,7 +83,7 @@ Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type 
 
 ### The CHR loader and the font
 
-`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46-$4E`, `$52-$5E` and `$6A-$6E`. The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again, and a continue doesn't load the stage's graphics again either: the hack puts the font back for the Game Over screen, and Samus's tiles back while the continued stage loads (mode 5, part 1, when Castlevania's game turns the screen off for the rest of the frame).
+`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46`, `$48`, `$4C`, `$4E`, `$56`, `$58`, `$5E`, `$6C` and `$6E`. (Poses `$27-$29`, the cross, use `$4A`, `$52` and `$54`; `$A2` and `$A3`, the orb, `$5A` and `$5C`; the title's bat `$6A`. Every other pair is some item's or candle's: none is free.) The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again, and a continue doesn't load the stage's graphics again either: the hack puts the font back for the Game Over screen, and Samus's tiles back while the continued stage loads (mode 5, part 1, when Castlevania's game turns the screen off for the rest of the frame).
 
 Items and dropped weapons are drawn with background-table tiles (odd tile numbers, in 8x16 mode).
 
@@ -103,7 +103,7 @@ The music engine runs channels `$80` (square 1), `$90` (square 2), `$A0` (triang
 
 ### Sprite palettes
 
-The four sprite palettes are the same in every stage: Simon `0F 27 37 07`, then `0F 23 34 0F`, `0F 37 11 0F`, `0F 16 25 0F`.
+The four sprite palettes are the same in every stage: Simon `0F 27 37 07`, then `0F 23 34 0F`, `0F 37 11 0F`, `0F 16 25 0F`. Samus takes Simon's, and with it what else Castlevania draws in it: the invisibility potion (moved to palette 3 here, red, as palette 2 made it look like the holy water) and the moving platforms (poses `$C9-$CC`), orange instead of dark brown, as no other palette has a colour for them. `$FB06` reloads all four when the potion wears off, at `$5B` = `$80` and `$40`, and the HUD's colours and hers are written after it.
 
 ## Metroid
 
@@ -119,7 +119,7 @@ Metroid's main loop sometimes takes more than a frame; then Samus doesn't move t
 
 `ObjFramePtrTable` (`$860B`), `ObjPlacePtrTable` (`$86DF`) and `ObjectAnimIndexTbl` (`$8572`) are in bank 1 (and each area bank). A frame is a header (flips, palette, placement table), the radii, then tiles with control bytes: `$FC` move, `$FD` new attributes, `$FE` skip a place, `$FF` end. The sprites have the priority bit set, which the hack drops: Castlevania's backgrounds are opaque where Metroid's are not. Samus's graphics are bank 6 `$8000` (tiles `$00-$99`), the HUD's digits bank 6 `$B4C0` (tiles `$A0-$A9`).
 
-Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's and the explosion's, 68 of the 69 the hack has (pair $00 stays blank).
+Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's 10, 62 of the 63 the hack has (pair $00 stays blank). The explosion's six don't fit: the one left holds one, and five go in over Castlevania's as she dies, a pair a frame through the update buffer, with her still standing there. Since coming back from a death doesn't load a stage's graphics, `HS_LENT` has `RestoreSamusChr` put Castlevania's back as the stage loads.
 
 ### HUD and palettes
 

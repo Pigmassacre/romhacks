@@ -299,7 +299,8 @@ def main():
     data = load(ROM_IN, CV_MD5, "Castlevania (USA)")
     met = load(MET_IN, MET_MD5, "Metroid (USA)")
     import samus_gfx
-    sprite_chr, n, cap = samus_gfx.build(met[16:], os.path.join(OUT, "gen"))
+    simon = 16 + 1 * BANK + (SIMON_CHR - 0x8000)
+    sprite_chr, n, cap = samus_gfx.build(met[16:], data[simon:simon + 0x700], os.path.join(OUT, "gen"))
     rom = expand(data)
     # Castlevania's font (bank 3 $BC08), copied for the Game Over screen.
     font = 16 + 3 * BANK + 0x3C08

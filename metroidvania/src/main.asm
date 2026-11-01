@@ -431,6 +431,9 @@ Bank6_ScreenAtExit:
         jsr Bank0_Sprites
         nop
 
+;@ seg $00 $9456 $9457 the invisibility potion: Simon's palette is Samus's now
+        .db 3
+
 ;@ seg $00 $800A $800D UpdateBackgroundGFX
         jmp Bank0_BgGfx
 
