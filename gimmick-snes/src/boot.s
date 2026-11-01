@@ -8,7 +8,7 @@
 .include "hw.inc"
 
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
-.import irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
+.import split_open, irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
 .import nmi_work, runtime_init
 .import FirstBank, NesNmi, NesIrq, NesReset, SpcAddr, SpcSize, SpcEntry
 SPC_BLOB = $D80000          ; tools/build.py puts these there
@@ -281,6 +281,7 @@ irq_emu:
         sta in_split
         lda irq_next
         sta irq_line
+        stz split_open
         lda nmi_flags
         sta NMITIMEN
         pla

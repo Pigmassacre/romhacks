@@ -63,7 +63,8 @@ in_split:    .res 1         ; a split's interrupt has run this frame
 force_blank: .res 1
 vram_step:   .res 1
 split_n:     .res 1         ; how many splits have changed the background's tiles this frame
-split_open:  .res 1         ; a split has changed tiles and not yet shown them
+split_open:  .res 1         ; this split's interrupt has started its own tile set
+.export split_open
 split_flip:  .res 1         ; the second sprite tables are showing
 tmp:         .res 4
 itmp:        .res 4         ; the same, for code that interrupts may run
@@ -453,7 +454,7 @@ fme_chr:
         sta set_want,x
         lda #1
         sta set_wr,x
-@flip:  jsr flip_sprites
+@flip:  jsr show_split_set
         jmp fme_done
 
 ; Bring slot x up to date, if there is time. Keeps x.
@@ -554,10 +555,9 @@ set_hi: .byte BGSET_HI, $30, $70
 ; At the next line, show the tiles and sprites a split changed to, once they are copied.
 show_split_set:
         jsr flip_sprites
-@bg:    lda split_open
-        beq @out
-        stz split_open
+flip_bg:
         lda split_n
+        beq @out
         asl a
         asl a
         tax
@@ -570,6 +570,7 @@ show_split_set:
 :       inx
         dey
         bne :--
+        jsr wait_line
         ldx split_n
         lda set_hi,x
         lsr a
