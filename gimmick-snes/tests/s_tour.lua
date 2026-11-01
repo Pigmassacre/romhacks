@@ -17,6 +17,7 @@ local function mark(f, what)
   if SHOTS then
     local h = io.open(OUT .. "shot_" .. what .. ".png", "wb")
     h:write(emu.takeScreenshot()); h:close()
+    if DUMP_NT then DUMP_NT(what) end
     print(what)
     local l = io.open(OUT .. "marks.txt", "a")
     l:write(string.format("%d %s 4A=%02X 90=%02X 1B=%02X 1C=%02X\n", f, what, r(0x4A), r(0x90), r(0x1B), r(0x1C))); l:close()

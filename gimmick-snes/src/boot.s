@@ -8,7 +8,7 @@
 .include "hw.inc"
 
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
-.import in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
+.import irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
 .import nmi_work, runtime_init
 .import FirstBank, NesNmi, NesIrq, NesReset, TitleTune
 
@@ -202,6 +202,8 @@ irq_emu:
         stz irq_flag
         lda #1
         sta in_split
+        lda irq_next
+        sta irq_line
         lda nmi_flags
         sta NMITIMEN
         pla

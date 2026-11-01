@@ -51,6 +51,9 @@ irq_hi:      .res 1
 nmi_flags:   .res 1
 irq_flag:    .res 1
 irq_line:    .res 1         ; the SNES line the current split belongs on
+irq_next:    .res 1         ; and the next one's: it becomes irq_line when it starts
+.export irq_line, irq_next
+scroll_done: .res 1
 in_split:    .res 1         ; a split's interrupt has run this frame
 .export in_split
 .export irq_flag
@@ -285,7 +288,7 @@ arm_irq:
         ; lines - 29 is the first line on the SNES, unless that is before the picture.
         lda itmp
         sec
-        sbc #21 + CROP_TOP
+        sbc #21 + CROP_TOP - 2  ; 2: where the game's handler has got to on the NES
         bcs @set
         lda #0
         bra @set
@@ -295,7 +298,7 @@ arm_irq:
         bcs @never
 @set:   cmp #225
         bcs @never
-        sta irq_line
+        sta irq_next
         ; Early, since the game's handler takes much longer here than on the NES. What it
         ; changes on screen waits for the line, in wait_line.
         sec
@@ -641,6 +644,7 @@ nmi_work2:
 ; The game writes its scroll near the end of its NMI, later than the SNES's vblank allows.
 ; It has already decided: $FD, $FC and $FF if it finished the frame, or last time's.
 scroll_now:
+        stz scroll_done
         lda $29
         bne @out            ; the picture is going off
         ldx #0
@@ -693,6 +697,7 @@ scroll_now:
         ora tmp + 2
         sta ppu_thi
         jsr apply_scroll
+        inc scroll_done
 @out:   rts
 
 ; One page, what matters most first: what the last frame's splits wrote, then the sprites'
@@ -783,16 +788,14 @@ chr_all:
         phy
         ldx #7
 @slot:  lda $E1,x
-        cmp chr_want,x
-        beq @same
         sta chr_want,x
         cpx #4
         bcc :+
         sta set_want - 4,x
 :       lda force_blank
-        bne @same
-        jsr load_top_slot
-@same:  dex
+        bne :+
+        jsr load_top_slot   ; which also picks up what there was no time for last frame
+:       dex
         bpl @slot
         lda #7
         sta fme_cmd
@@ -1123,7 +1126,10 @@ apply_h:
 ; by the next one's on the NES, and by 2 rows that are not drawn in the SNES map, so an
 ; HDMA table adds 16 lines where the picture crosses them.
 apply_scroll:
-        jsr apply_h
+        lda scroll_done
+        beq :+
+        rts                 ; nmi_work has set this frame's, and $2006 has since upset t
+:       jsr apply_h
         jsr t_y
         lda tmp
         clc
