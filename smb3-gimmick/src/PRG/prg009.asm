@@ -2082,12 +2082,24 @@ Vs_PlayerSprPats:
 	.byte $D9, $D9	; 6: Dying
 	.byte $DB, $DD	; 7: Climbing
 
+	; And the Ohagi's
+	.byte $DF, $E3	; 0: Stand/walk
+	.byte $E5, $F5	; 1: Walk/non-jump fall
+	.byte $DF, $E3	; 2: Skidding turnaround
+	.byte $F7, $F9	; 3: Jump/jump fall
+	.byte $FB, $E3	; 4: Dizzy
+	.byte $F7, $F9	; 5: Kicking
+	.byte $FB, $E3	; 6: Dying
+	.byte $E5, $F5	; 7: Climbing
+
 	; Flip bits based on Player's facing direction
 Vs_PlayerFlipBits:	.byte SPR_HFLIP, $00
 
 Vs_PlayerDraw:
 	LDA Vs_PlayerYHi,X
-	BNE PRG009_AA4D	 ; If Player is vertically off-screen, jump to PRG009_AA4D (RTS)
+	BEQ PRG009_GimVsOn
+	RTS		 ; If Player is vertically off-screen, return
+PRG009_GimVsOn:
 
 	LDA Vs_PlayerFlashInv,X
 	BEQ PRG009_A9E3	 ; If Player is flashing invincible, jump to PRG009_A9E3
@@ -2128,6 +2140,10 @@ PRG009_A9E3:
 
 	LDA Vs_PlayerFrame,X
 	ASL A
+	CPX #$00
+	BEQ PRG009_GimVsFirst
+	ADD #16		 ; The second player's half of the table
+PRG009_GimVsFirst:
 	TAX		 ; X = player frame * 2
 
 	PLA		 ; Restore Player direction
@@ -2165,6 +2181,8 @@ PRG009_AA36:
 	LDA Vs_PlayerState,X
 	CMP #$02
 	BNE PRG009_AA4D	 ; If Player state <> 2 (Dying), jump to PRG009_AA4D (RTS)
+	CPX #$00
+	BNE PRG009_AA4D	 ; The Ohagi's dying frame is a whole one
 
 	; Mirror Player sprite
 	LDA Sprite_RAM+$22,Y
@@ -2179,6 +2197,8 @@ PRG009_AA4D:
 
 	; Yumetaro's horn, a sprite above the other two, on his far side. Y = their Sprite RAM offset
 Vs_PlayerDrawHorn:
+	CPX #$00
+	BNE PRG009_GimHornRTS	 ; The Ohagi has none
 	LDA Vs_PlayerState,X
 	CMP #$02
 	BEQ PRG009_GimHornRTS	 ; Not while dying

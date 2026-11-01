@@ -3633,6 +3633,8 @@ GIM_KNOCKBACKX		= $12
 GIM_KNOCKBACKY		= -$18
 GIM_STARTHEALTH		= 3
 GIM_HEALTHCAP		= 6
+GIM_PAGE		= $50	; Yumetaro's first page of frames
+OHAGI_PAGE		= $40	; The Ohagi's, which has the same layout
 GIMF_JUMP		= 8
 GIMF_HURT		= 11
 
@@ -4964,10 +4966,10 @@ TILE18_BOUNCEDBLOCK	= $C2	; Temporary tile for when block has been bounced
 	.incbin "CHR/chr061.bin"
 	.incbin "CHR/chr062.bin"
 	.incbin "CHR/chr063.bin"
-	.incbin "CHR/chr064.bin"
-	.incbin "CHR/chr065.bin"
-	.incbin "CHR/chr066.bin"
-	.incbin "CHR/chr067.bin"
+	.incbin "../out/chr/chr064.bin"
+	.incbin "../out/chr/chr065.bin"
+	.incbin "../out/chr/chr066.bin"
+	.incbin "../out/chr/chr067.bin"
 	.incbin "CHR/chr068.bin"
 	.incbin "CHR/chr069.bin"
 	.incbin "CHR/chr070.bin"

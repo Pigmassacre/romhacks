@@ -581,7 +581,7 @@ PRG010_C303:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GameOver_MLName:
 	.byte $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0, $00	; YUMETARO[Terminator]
-	.byte $D9, $EC, $BC, $CC, $E8, $E9, $FE, $F2, $00	; PLAYER 2[Terminator]
+	.byte $F0, $D3, $BC, $EB, $FC, $FE, $FE, $FE, $00	; OHAGI[Terminator]
 GameOver_MLName_Len = 9
 
 GameOver_PatchPlayerName:
@@ -1005,6 +1005,7 @@ Map_WorldIntro_PSPat:
 
 	; Draws the tiny Player icon in the world intro box
 Map_WorldIntro_DrawPlayer:
+	JSR Map_PlayerPages
 
 	; Copies in the 3 sprites from Map_WorldIntro_PSpr
 	LDY #$0B	 ; Y = 11
@@ -1475,6 +1476,7 @@ PRG010_C75D:
 
 	; Generate the little "dead Player" sprite in the Game Over box
 PRG010_C772:
+	JSR Map_PlayerPages
 	LDY #$0B	 ; Y = 11
 PRG010_C774:
 	LDA GameOver_DeadPlayerSprite,Y	 ; Get dead player sprite byte
@@ -2572,10 +2574,10 @@ Map_EnterSpecialTiles:
 
 	; Color table for setting the 2nd entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
-Map_PostJC_PUpPP1:	.byte $2A, $21, $0B, $0B, $0B, $0B, $0B
+Map_PostJC_PUpPP1:	.byte $2A, $00, $0B, $0B, $0B, $0B, $0B
 
 	; In conjunction with the table above; patches $1A (Luigi) for $16 as needed
-Map_PostJC_PUpPML:	.byte $0B, $01
+Map_PostJC_PUpPML:	.byte $0B, $0F
 
 	; Color table for setting the 4th entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
@@ -2936,7 +2938,20 @@ Map_BorderSprites:
 	.byte $B0, $0B, $01, $F8
 Map_BorderSprites_End
 
+	; The second player's sprite pages hold the Ohagi in Yumetaro's tiles
+Map_PlayerPage2:	.byte $20, $42
+Map_PlayerPage3:	.byte $21, $43
+
+Map_PlayerPages:
+	LDX Player_Current
+	LDA Map_PlayerPage2,X
+	STA PatTable_BankSel+2
+	LDA Map_PlayerPage3,X
+	STA PatTable_BankSel+3
+	RTS
+
 Map_DrawPlayer:
+	JSR Map_PlayerPages
 	LDX Player_Current	; X = Player_Current
 	LDA <World_Map_Y,X	; A = Player's Y position
 	CMP #$f8

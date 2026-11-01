@@ -23,7 +23,7 @@ Versions 1.5.0 and earlier were a program that built the game from both Super Ma
 - He stands on enemies instead of stomping them.
 - Health instead of Mario's power-ups. A mushroom heals. Flowers, leaves and suits raise the maximum, up to 6, and fill it. A ? block gives its mushroom while he's hurt, and otherwise the flower or leaf it holds. A power-up used from the map's inventory raises the maximum too, each player's their own.
 - Gimmick! sounds for jumping, the star, and the death jingle.
-- Yumetaro on the world map, in the title's curtain scene, the 2-player battle, the Game Over box and the ending, and the Gimmick! logo on the title screen. The second player is a blue Yumetaro, marked with a 2.
+- Yumetaro on the world map, in the title's curtain scene, the 2-player battle, the Game Over box and the ending, and the Gimmick! logo on the title screen. The second player is the Ohagi from Gimmick!, marked with an O and named OHAGI: it plays exactly like Yumetaro, star and all, a nod to the Ohagi you control on one screen of the pirate ship. It turns grey where the background is black, so it doesn't vanish.
 
 ## Credits
 
@@ -53,7 +53,8 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: on t
 
 | Test | What it checks |
 |---|---|
-| `2p` | The second player is a blue Yumetaro, with a 2 where Mario's had an L: on the map, in levels and in the battle |
+| `2p` | The second player is the Ohagi, with an O where Mario's had an L: on the map, in levels and in the battle |
+| `ohagi` | The Ohagi's name and sprite in the Game Over box, and its black colours in a bright level and grey in a black one |
 | `airjump` | A jumps off a parabeetle: his jump obeys `Player_AllowAirJump`, as Mario's does (it once ignored it) |
 | `battle` | Every map's battle room: stars kill the enemies, and the treasure box ends it |
 | `bowser` | Stars wear Bowser down, he falls, the door appears, and Yumetaro is at the princess's side in the ending (it was once Mario) |

@@ -1071,13 +1071,14 @@ PRG008_A523:
 	; Palette colors per power up level -- first byte is never used!
 PowerUp_Palettes:
 	.byte $00, $0B, $2A, $30	; 0 - Mario default palette
-	.byte $00, $01, $21, $30	; 1 - Luigi default palette
+	.byte $00, $0F, $00, $30	; 1 - Luigi default palette
 	.byte $00, $27, $36, $16	; 2 - Fire Flower
 	.byte $00, $00, $00, $00	; 3 - Leaf (Not used, uses 0 or 1 as appropriate)
 	.byte $00, $2A, $36, $0F	; 4 - Frog Suit
 	.byte $00, $17, $36, $0F	; 5 - Tanooki Suit
 	.byte $00, $30, $27, $0F	; 6 - Hammer Suit
 	.byte $00, $00, $10, $0F	; 7 - Tanooki Statue
+	.byte $00, $00, $10, $30	; 8 - The Ohagi on a black background
 
 Level_SetPlayerPUpPal:
 	LDY #$07	 ; Y = 7 (select statue palette)
@@ -1097,6 +1098,13 @@ PRG008_A55B:
 	LDY Player_Current
 
 PRG008_A55E:
+	CPY #$01
+	BNE PRG008_GimPalY
+	LDA Palette_Buffer
+	CMP #$0F
+	BNE PRG008_GimPalY
+	LDY #$08
+PRG008_GimPalY:
 	LDX Graphics_BufCnt
 	TXA
 	ADD #$06

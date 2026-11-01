@@ -397,6 +397,10 @@ PRG029_GimNoShoe:
 	LDY #GIMF_HURT
 PRG029_GimAlive:
 	LDA GimFrame_Page,Y
+	LDX Player_Current
+	BEQ PRG029_GimPageSet
+	SUB #(GIM_PAGE - OHAGI_PAGE)	 ; The second player is the Ohagi: the same frames, from its pages
+PRG029_GimPageSet:
 	STA PatTable_BankSel+2
 	LDA GimFrame_PtrL,Y
 	STA <Player_SprWorkL

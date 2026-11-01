@@ -794,9 +794,7 @@ PRG024_A545:
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
 	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
-	.byte $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF, $FF
+	.byte $FF, $FF, $FF, $FF, $FF
 
 Debug_DownUp:	.byte 1, -1	; Add 1 or subtract 1 from current world on debug menu
 
@@ -2876,10 +2874,11 @@ Title_GimFrame:
 	.byte 0, 0, 3, 0, $FF			; $14-$18
 Title_GimBodyL:	.byte $05, $09, $0D, $25, $0B, $0F
 Title_GimBodyR:	.byte $15, $19, $1D, $35, $1B, $1F
+Title_GimPage:	.byte GIM_PAGE, OHAGI_PAGE	; Yumetaro and the Ohagi, which has the same layout
 
-	; Body and horn in Yumetaro's first page of frames. Each player's page is a different bank, so Luigi's tiles are $40 on
+	; Body and horn in the first page of frames (the Ohagi's horn is blank). Each player's page is a different bank, so Luigi's tiles are $40 on
 Title_DrawYumetaro:
-	LDA #$50
+	LDA Title_GimPage,X
 	STA PatTable_BankSel+2,X
 
 	LDA #$00
@@ -4457,7 +4456,9 @@ PRG024_B8C2:
 	LDA Player_Current
 	BEQ PRG024_B8E6	 ; If Player is Mario, jump to PRG024_B8E6
 
-	; Luigi only: the second player's colours
+	; Luigi only: the Ohagi, in the second player's colours
+	LDA #OHAGI_PAGE
+	STA PatTable_BankSel+2
 	LDY #$18	 ; Y = $18
 PRG024_B8D6:
 	LDA Sprite_RAM+$02,Y
@@ -5630,6 +5631,10 @@ Ending2_AddSprites:
 
 	; Load pattern tables required for this world picture sprites
 	LDA Ending2_EndPicPatTable2,Y
+	LDX Player_Current
+	BEQ PRG024_GimPicPage
+	LDA #OHAGI_PAGE		; The Ohagi in the second player's pictures
+PRG024_GimPicPage:
 	STA PatTable_BankSel+2
 	LDA Ending2_EndPicPatTable3,Y
 	STA PatTable_BankSel+3
@@ -5711,7 +5716,24 @@ PRG024_BEF9:
 PRG024_BEFB:
 	RTS		 ; Return
 
+	; The pictures' palettes have Yumetaro's colours; the Ohagi's go over them while they show
+Ending2_OhagiPal:
+	.byte $3F, $11, $03, $0F, $00, $30, $00
+Ending2_OhagiPal_End
+
 Ending2_Wait:
+	LDA Player_Current
+	BEQ PRG024_GimPicPal
+	LDY #(Ending2_OhagiPal_End - Ending2_OhagiPal - 1)
+PRG024_GimPicPalLoop:
+	LDA Ending2_OhagiPal,Y
+	STA Graphics_Buffer,Y
+	DEY
+	BPL PRG024_GimPicPalLoop
+	LDA #$00
+	STA <Graphics_Queue
+PRG024_GimPicPal:
+
 	; Ending2_TimerL--
 	LDA <Ending2_TimerL
 	SUB #$01
