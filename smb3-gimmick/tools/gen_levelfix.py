@@ -7,8 +7,9 @@ and the tiles to set as it loads: (column, row, tile), columns counted across th
 import os
 
 FIXES = [
-    # 6-7's end: a wall of 6 tiles, more than even a jump from the star clears. Steps cut into its left side
-    ("W607_EndL", 12, "6-7's end", [(3, 20, 0x80), (3, 21, 0x80), (3, 22, 0x80), (4, 20, 0x80)]),
+    # 6-7's end: a wall of 6 tiles, more than even a jump from the star clears. Steps cut into its left side,
+    # and the hidden block before it gone, which he hit his head on going up them
+    ("W607_EndL", 12, "6-7's end", [(2, 22, 0x80), (3, 20, 0x80), (3, 21, 0x80), (3, 22, 0x80), (4, 20, 0x80)]),
     # World 7's first piranha stage: pipes 5 tiles tall. A block before each
     ("W7I1L", 5, "World 7 plant 1", [(8, 23, 0xB8), (9, 23, 0xB8), (8, 24, 0x99), (9, 24, 0x99),
                                       (16, 23, 0xB8), (17, 23, 0xB8), (16, 24, 0x99), (17, 24, 0x99)]),

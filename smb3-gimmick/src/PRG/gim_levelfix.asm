@@ -3,7 +3,8 @@
 Gim_LevelFixes:
 	; 6-7's end
 	.word W607_EndL
-	.byte 12, 4
+	.byte 12, 5
+	.byte $01, $62, $80
 	.byte $01, $43, $80
 	.byte $01, $53, $80
 	.byte $01, $63, $80

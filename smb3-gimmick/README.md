@@ -60,6 +60,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: on t
 | `items` | A power-up from the inventory raises the maximum, with no suit, and no change of colour on the map (they once gave Mario's suit moves) |
 | `junction` | Through a pipe, health stays as it was and the star is gone |
 | `koopaling` | Each Koopaling takes three hits from stars, and its wand can be reached |
+| `levelfix` | 6-7's end, where a wall was too tall even for a jump from the star, can be climbed (`tools/gen_levelfix.py` lists the tiles changed in such places) |
 | `names` | The title says AI SLOP, DO NOT PLAY, and the world's intro box YUMETARO, with his sprite and horn |
 | `powerups` | What each power-up does to health, and what ? blocks give (flowers and leaves once only counted as mushrooms) |
 | `ride` | Landing on a rolling star, it carries him, and he jumps higher from it (he was once pulled up 15 pixels onto it) |
