@@ -1,4 +1,4 @@
--- The title screen says "Gimmick! 1.5" and AI SLOP - DO NOT PLAY: its background
+-- The title screen says "Gimmick! 1.5", ROMHACK BY PIGMASSACRE and AI SLOP - DO NOT PLAY: its background
 -- uses the copied CHR pages $80-$83, and the "1.5" and notice tiles are in the
 -- nametable. Starting the game from it still works.
 NO_BOOT = true
@@ -18,17 +18,20 @@ emu.addEventCallback(function()
       local t = emu.read(0x2000 + 9 * 32 + 24, emu.memType.nesPpuMemory)
       check(t ~= 0x01 and t ~= 0x10, string.format("the 1.5 is in the nametable (tile %02x at row 9, column 24)", t))
       check(emu.read(0x2000 + 6 * 32 + 1, emu.memType.nesPpuMemory) == 0x01, "the panel reaches column 1")
-      -- the notice: letters on row 2, centred, and sky on the rows around it
-      local first, last = nil, nil
-      for c = 0, 31 do
-        if emu.read(0x2040 + c, emu.memType.nesPpuMemory) ~= 0x10 then first = first or c; last = c end
+      -- the notice: letters on rows 1 and 2, starting together and centred as a
+      -- block, and sky on the rows around them
+      local function span(addr)
+        local first, last = nil, nil
+        for c = 0, 31 do
+          if emu.read(addr + c, emu.memType.nesPpuMemory) ~= 0x10 then first = first or c; last = c end
+        end
+        return first, last
       end
-      check(first ~= nil and first + last == 31, string.format("the notice is centred on row 2 (columns %s-%s)", first, last))
-      local sky = true
-      for c = 0, 31 do
-        if emu.read(0x2020 + c, emu.memType.nesPpuMemory) ~= 0x10 or emu.read(0x2060 + c, emu.memType.nesPpuMemory) ~= 0x10 then sky = false end
-      end
-      check(sky, "rows 1 and 3 are still sky")
+      local f1, l1 = span(0x2020)
+      local f2, l2 = span(0x2040)
+      check(f1 == 5 and l1 == 26, string.format("ROMHACK BY PIGMASSACRE on row 1 (columns %s-%s)", f1, l1))
+      check(f2 == 5 and l2 == 25, string.format("AI SLOP - DO NOT PLAY on row 2 (columns %s-%s)", f2, l2))
+      check(span(0x2000) == nil and span(0x2060) == nil, "rows 0 and 3 are still sky")
       -- sprites 0 and 1 hide behind the white margins, as in the original
       local s0 = emu.read(3, emu.memType.nesSpriteRam)
       local s1 = emu.read(7, emu.memType.nesSpriteRam)
@@ -37,9 +40,9 @@ emu.addEventCallback(function()
       check(banks == "00 65 66 67", "original: pages " .. banks)
       local sky = true
       for c = 0, 31 do
-        if emu.read(0x2040 + c, emu.memType.nesPpuMemory) ~= 0x10 then sky = false end
+        if emu.read(0x2020 + c, emu.memType.nesPpuMemory) ~= 0x10 or emu.read(0x2040 + c, emu.memType.nesPpuMemory) ~= 0x10 then sky = false end
       end
-      check(sky, "original: row 2 is sky")
+      check(sky, "original: rows 1 and 2 are sky")
     end
   end
   if f0 > 800 and r(0x90) == 1 and not started then

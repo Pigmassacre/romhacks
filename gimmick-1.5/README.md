@@ -17,7 +17,7 @@ This hack is AI-assisted, using Claude.
 | **Tap to summon** | Press Select to switch between holding B to charge the star (as in the original) and tapping B: tap to summon, tap again to throw. A tap that comes too early throws the star as soon as it is ready. Select again switches back. |
 | **Coyote time** | You can still jump for 6 frames after walking off a ledge, an enemy, or a star that was just recalled from under you. |
 | **Jump buffering** | Press A a little too early, just before you land, and you jump as soon as you land. Up to 5 frames early counts. |
-| **Title screen** | The logo says *Gimmick! 1.5*, and the sky above it says AI SLOP - DO NOT PLAY. |
+| **Title screen** | The logo says *Gimmick! 1.5*, and the sky above it says ROMHACK BY PIGMASSACRE and AI SLOP - DO NOT PLAY. |
 
 Everything else is the original game: the same physics, levels, enemies and items. Fireballs and
 bombs are items, so B does not recall them. B+Up with a fireball or bomb in your first item slot
@@ -83,7 +83,7 @@ python3 tests/run.py --rom "Gimmick! (Japan).nes"
 | `coyote` | Jumping 1-6 frames after walking off a ledge, and not 7 or 12 |
 | `jumpbuf` | A press 1-5 frames before landing jumps, a tap gives a short hop, holding A a full jump |
 | `ramguard` | The original game never touches the RAM the hack uses: every stage, deaths, game over, the credits and the intro |
-| `title` | The title screen shows the new logo and the AI SLOP notice, and Start still begins the game |
+| `title` | The title screen shows the new logo, the credit and the AI SLOP notice, and Start still begins the game |
 
 `tests/survey/` has measurements rather than tests: sound effects, the frame budget
 (`perf`), the stages' water and tubes, screenshots of the recall effect and the title.
@@ -111,14 +111,14 @@ the new code and tiles.
 | `1E:81DA` | Is B held? | `BHeld` (`src/tap.asm`): hold or tap mode |
 | `1D:8151` | Save the star's vy before its physics | `WaterSkip` (`src/water.asm`): bounce it off water |
 | `1D:8469` | Start of the star's draw routine | `FxDraw` (`src/fx.asm`): draw the recalled star and splashes |
-| `1B:8082` | The title's nametables are loaded | `TitleNotice` (`src/main.asm`): draw the AI SLOP notice |
+| `1B:8082` | The title's nametables are loaded | `TitleNotice` (`src/main.asm`): draw the credit and the AI SLOP notice |
 
 4. **The title.** The title screen's panel is stored as plain nametable rows in bank `$1B`.
    `tools/title.py` widens the panel by three columns on each side, moves the logo left, and
    draws "1.5" in the logo's black brush style: thick strokes, rasterised at 4x and shaded with
    the logo's two greys. Its tiles go into copies of the title's four CHR pages (`$80-$83`), so
-   no other screen changes. The AI SLOP notice goes on the sky above the panel, the only place left
-   that is free and does not scroll. The game does not load those rows, so a hook draws the row,
+   no other screen changes. The credit and AI SLOP notice go on the sky above the panel, the only place left
+   that is free and does not scroll. The game does not load those rows, so a hook draws them,
    from a table `tools/title.py` fills in. `python3 tools/title.py` writes a before and after
    preview to `out/`.
 

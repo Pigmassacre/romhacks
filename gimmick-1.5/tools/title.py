@@ -9,9 +9,10 @@ columns left, and draws "1.5" in the space that leaves, in the logo's black
 brush style. The new tiles go into copies of the title's four CHR pages, so
 nothing else that uses those pages changes.
 
-It also writes "AI SLOP - DO NOT PLAY" on the sky above the panel. The game fills
-rows 0-3 with sky rather than loading them, so TitleNotice (src/main.asm) draws
-the row from a table this module fills in. Everything below the panel scrolls.
+It also writes "ROMHACK BY PIGMASSACRE" and "AI SLOP - DO NOT PLAY" on the sky
+above the panel. The game fills rows 0-3 with sky rather than loading them, so
+TitleNotice (src/main.asm) draws the rows from a table this module fills in.
+Everything below the panel scrolls.
 
     python3 tools/title.py      # writes out/title.png, a preview from the ROM
 """
@@ -40,10 +41,10 @@ SHIFT = 3                   # the logo moves this many columns left
 ART_COL, ART_ROW = 24, 8    # "1.5" goes in columns 24-29, rows 8-12
 ART_W, ART_H = 48, 40
 
-NOTICE = "AI SLOP - DO NOT PLAY"
+NOTICE = ("ROMHACK BY PIGMASSACRE", "AI SLOP - DO NOT PLAY")
 NOTICE_BANK = 0x20
-NOTICE_ADDR = 0xBF00        # NoticeRow in src/defs.asm
-NOTICE_ROW = 2              # NOTICE_PPU in src/defs.asm
+NOTICE_ADDR = 0xBF00        # NoticeRows in src/defs.asm
+NOTICE_ROW = 1              # NOTICE_PPU in src/defs.asm
 
 
 # ---- Drawing "1.5" -----------------------------------------------------------
@@ -104,43 +105,43 @@ def art():
 
 FONT = {
     "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
     "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
-    "I": ["###", ".#.", ".#.", ".#.", ".#.", ".#.", "###"],
+    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."],
+    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
     "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
     "N": ["#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#"],
     "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
     "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
     "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
     "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
     "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
-    "-": ["....", "....", "....", "####", "....", "....", "...."],
-    " ": ["...", "...", "...", "...", "...", "...", "..."],
+    "-": [".....", ".....", ".....", ".###.", ".....", ".....", "....."],
+    " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
 }
 
 
 def notice_art():
-    """The notice as rows of colour indices, centred on a row of whole tiles:
-    white letters with a black shadow, on the sky's colour 1."""
-    w = sum(len(FONT[c][0]) + 2 for c in NOTICE)
-    cols = (w + 7) // 8
-    if (cols & 1):                                      # an even count centres on the screen
-        cols += 1
-    out = [[1] * (cols * 8) for _ in range(8)]
-    x0 = (cols * 8 - w) // 2 + 1
-    x = x0
-    for c in NOTICE:
-        for y, line in enumerate(FONT[c]):
-            for i, v in enumerate(line):
-                if v == "#":
-                    out[y + 1][x + i + 1] = 0
-        x += len(FONT[c][0]) + 2
-    x = x0
-    for c in NOTICE:
-        for y, line in enumerate(FONT[c]):
-            for i, v in enumerate(line):
-                if v == "#":
-                    out[y][x + i] = 3
-        x += len(FONT[c][0]) + 2
+    """The notice's lines as rows of colour indices, one tile per letter so that
+    the lines share tiles: white letters with a black shadow, on the sky's colour 1."""
+    cols = max(len(line) for line in NOTICE)
+    out = [[1] * (cols * 8) for _ in range(len(NOTICE) * 8)]
+    for ty, line in enumerate(NOTICE):
+        for tx, c in enumerate(line):
+            for y, glyph_row in enumerate(FONT[c]):
+                for x, v in enumerate(glyph_row):
+                    if v == "#":
+                        out[ty * 8 + y + 1][tx * 8 + x + 2] = 0
+            for y, glyph_row in enumerate(FONT[c]):
+                for x, v in enumerate(glyph_row):
+                    if v == "#":
+                        out[ty * 8 + y][tx * 8 + x + 1] = 3
     return out
 
 
@@ -216,14 +217,17 @@ def patch(rom, chr_base, new_pages, copies):
     # Cut "1.5" into tiles.
     glyph = cut(art(), 3, WHITE)
 
-    # Cut the notice into tiles, and fill in the row TitleNotice draws.
+    # Cut the notice into tiles, and fill in the rows TitleNotice draws.
     a = notice_art()
     cells = cut(a, 1, SKY)
     cols = len(a[0]) // 8
-    row = [SKY] * 32
-    for tx in range(cols):
-        row[(32 - cols) // 2 + tx] = cells[(0, tx)]
-    rom[_off(NOTICE_BANK, NOTICE_ADDR):_off(NOTICE_BANK, NOTICE_ADDR) + 32] = bytes(row)
+    table = bytearray()
+    for ty in range(len(NOTICE)):
+        row = [SKY] * 32
+        for tx in range(cols):
+            row[(32 - cols) // 2 + tx] = cells[(ty, tx)]
+        table += bytes(row)
+    rom[_off(NOTICE_BANK, NOTICE_ADDR):_off(NOTICE_BANK, NOTICE_ADDR) + len(table)] = table
 
     # New rows 4-14.
     lo, hi = PANEL
@@ -309,8 +313,8 @@ def preview(rom, chr_base, path):
     for trow in range(17):
         for tcol in range(32):
             t = rom[nt_off + (trow - NT_ROW0) * 32 + tcol] if NT_ROW0 <= trow < 30 else SKY
-            if trow == NOTICE_ROW:
-                t = rom[_off(NOTICE_BANK, NOTICE_ADDR) + tcol]
+            if NOTICE_ROW <= trow < NOTICE_ROW + len(NOTICE):
+                t = rom[_off(NOTICE_BANK, NOTICE_ADDR) + (trow - NOTICE_ROW) * 32 + tcol]
             i = (trow // 4) * 8 + tcol // 4
             sh = ((trow % 4) // 2) * 4 + ((tcol % 4) // 2) * 2
             p = (rom[at + i] >> sh) & 3

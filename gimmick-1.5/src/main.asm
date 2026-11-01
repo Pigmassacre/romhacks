@@ -142,7 +142,7 @@ HackTable:
         .dw TitleNotice-1
 
 ; The rendering is off here, as for the copies this follows. Writing with Y
-; going up from 0 draws one whole row; tools/title.py fills in NoticeRow.
+; going up from 0 draws two whole rows; tools/title.py fills in NoticeRows.
 TitleNotice:
         bit $2002
         lda #>NOTICE_PPU
@@ -151,10 +151,10 @@ TitleNotice:
         sta $2006
         ldy #0
 @row:
-        lda NoticeRow,y
+        lda NoticeRows,y
         sta $2007
         iny
-        cpy #32
+        cpy #64
         bne @row
         lda #3
         sta $4A

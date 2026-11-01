@@ -71,8 +71,8 @@ STAR_FRAME_SPLASH = $1B     ; 8 frames of splash, as when the star sinks
 ; ---- Banks ----------------------------------------------------------------
 
 HACK_BANK       = $20       ; new code, mapped at $A000 while it runs
-NoticeRow       = $BF00     ; 32 tile numbers, written by tools/title.py
-NOTICE_PPU      = $2040     ; the title's nametable, row 2
+NoticeRows      = $BF00     ; 2 rows of 32 tile numbers, written by tools/title.py
+NOTICE_PPU      = $2020     ; the title's nametable, row 1
 
 ; ---- Hack RAM ($0470-$048C, unused by the original game) ------------------
 
