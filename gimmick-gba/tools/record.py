@@ -29,6 +29,8 @@ with open(script, "w") as f:
     f.write("OUT = %r\nFRAMES = %d\n" % (OUT, frames))
     if mode == "idle":
         f.write("IDLE = true\n")
+    if mode == "plain":
+        f.write("APU_LOG = true\n")
     if len(args) > 2:
         f.write("TRACE_FROM = %s\nTRACE_TO = %s\n" % (args[1], args[2]))
     if mode == "tour":

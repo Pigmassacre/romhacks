@@ -3,27 +3,27 @@
 
     python3 tools/recomp.py          # writes out/gen/
 
-The code that runs is found two ways: out/trace/coverage.txt says what Mesen saw
-execute (this also finds targets of jump tables), and from there the translator
-follows branches and jumps. Each basic block becomes a C function that returns
-the next PC. Code that was never translated runs in an interpreter, also written
-here, so it is slower but still right.
+The code that runs is found two ways: data/coverage.txt and data/entries.txt say
+where Mesen saw code run and how often, and from there the translator follows
+branches and jumps. (Those files are lists of addresses, kept in git so a build needs
+no recording. tools/record.py and tools/freeze_coverage.py remake them.) Each basic
+block becomes a C function that returns the next PC. Code that was never translated
+runs in an interpreter, also written here, so it is slower but still right.
 
 The output holds the original game's code, so it stays in out/, out of git.
 """
-import glob
 import os
 import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROM = os.path.join(REPO, "Gimmick! (Japan).nes")
-TRACES = sorted(glob.glob(os.path.join(REPO, "out", "trace*")))
+DATA = os.path.join(REPO, "data")
 GEN = os.path.join(REPO, "out", "gen")
 BANK_SIZE = 0x2000
 FIXED_BANK = 0x1F
 WAIT_LOOP = (0xF29A, 0xF2A5)
-HOT_BYTES = 30000            # how much fast RAM the blocks may take
+HOT_BYTES = 42000            # how much fast RAM the blocks may take
 ARM_BYTES_PER_INSTR = 36     # rough size of a translated instruction as ARM code
 # $F319 reads an inline jump table after its JSR, so nothing returns there.
 NO_RETURN = {0xF319}
@@ -388,7 +388,8 @@ def emit_block(bank, start, out, hot):
             return
         m, mode, c, arg, size = ins
         nxt = cur + size
-        if touches_io(arg, mode) and m not in ("jmp", "jsr"):
+        mapper = mode == "abs" and arg >= 0x8000 and m in ("sta", "stx", "sty")  # IRQ timing
+        if (touches_io(arg, mode) or mapper) and m not in ("jmp", "jsr"):
             out.append("  CYC(%d);" % (cyc + c - 1))
             cyc = 1
             out.append("  " + code(m, mode, arg, nxt))
@@ -477,7 +478,7 @@ def emit_hot(banks, hot, out):
     for num in sorted({k[0] for k in hot}):
         out.append("  [0x%02X] = hot_map_%02X," % (num, num))
     out.append("};\n")
-    out.append("HOT u32 hot_run(u32 pc) {")
+    out.append("HOT_THUMB u32 hot_run(u32 pc) {")
     out.append("  static void *const labels[] = {0,")
     for (n, pc) in order:
         out.append("    &&L%02X_%04X," % (n, pc))
@@ -560,13 +561,12 @@ def main():
     prg = rom[:0x40000]
     seen = {}
     counts = {}
-    for trace in TRACES:
-        for line in open(os.path.join(trace, "coverage.txt")):
-            off, pc, n = map(int, line.split())
-            if pc >= 0x8000 and 0 <= off < len(prg):
-                seen.setdefault(off // BANK_SIZE, set()).add(pc)
-                counts[off // BANK_SIZE, pc] = counts.get((off // BANK_SIZE, pc), 0) + n
-    entries = {int(line) for trace in TRACES for line in open(os.path.join(trace, "entries.txt"))}
+    for line in open(os.path.join(DATA, "coverage.txt")):
+        num, pc, n = line.split()
+        num, pc = int(num, 16), int(pc, 16)
+        seen.setdefault(num, set()).add(pc)
+        counts[num, pc] = int(n)
+    entries = {int(line, 16) for line in open(os.path.join(DATA, "entries.txt"))}
     banks = {}
     for num, pcs in sorted(seen.items()):
         windows = {pc & 0xE000 for pc in pcs}

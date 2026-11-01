@@ -52,10 +52,16 @@ extern const block_t *const code_banks[32];
 
 #ifdef __arm__
 #define HOT __attribute__((section(".iwram"), target("arm")))
+// Fast RAM has a 32-bit bus, but Thumb code there is little slower than ARM and about
+// half the size, so far more of the game fits.
+#define HOT_THUMB __attribute__((section(".iwram"), target("thumb")))
 #define FAR __attribute__((long_call))
+#define SLOW_RAM __attribute__((section(".sbss")))  // the 256 KB of slower work RAM
 #else
 #define HOT
+#define HOT_THUMB
 #define FAR
+#define SLOW_RAM
 #endif
 
 FAR u8 rd(u16 a);
@@ -75,7 +81,7 @@ static inline __attribute__((always_inline)) u32 hot_lookup(u32 pc) {
 #define CYC(n) (cyc += (n))
 // Test builds count cycles exactly, to stay in step with a recording. The build
 // you play leaves out what only moves when an NMI lands on a heavy frame.
-#if defined(HOST) || defined(REPLAY)
+#if defined(HOST) || (defined(REPLAY) && !defined(TIMING_ONLY))
 #define EXACT_TIMING 1
 #define FORWARD(label, pc) do { if (cyc < block_limit) goto label; return pc; } while (0)
 #define PAGE(base, i) (cyc += (((base) & 0xFF) + (i)) >> 8)

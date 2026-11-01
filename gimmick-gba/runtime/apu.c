@@ -50,34 +50,36 @@ static struct {
 } fb = {.noise_lfsr = 1};
 
 static u32 sample_hz = 18157;
+static int noise_period = 4;
 
-static u32 period_to_inc(u32 divisor) {
-  // Phase runs over 2^32 for one whole wave: 2^32 * (CPU_HZ / divisor) / sample_hz.
-  if (!divisor) return 0;
-  u32 per_sample = (CPU_HZ << 8) / divisor;     // waves a second, 24.8
-  return (u32)(((uint64_t)per_sample << 24) / sample_hz);
+// Phase runs over 2^32 for one whole wave: 2^32 * (CPU_HZ / divisor) / sample_hz. The
+// music writes these registers all the time, so this has to be a plain 32-bit divide.
+static u32 hz_scale;
+HOT static u32 period_to_inc(u32 divisor) {
+  return divisor ? (hz_scale / divisor) << 8 : 0;
 }
 
-static void pulse_update(struct pulse *p) {
+HOT static void pulse_update(struct pulse *p) {
   p->inc = p->timer >= 8 ? period_to_inc(16u * (p->timer + 1)) : 0;
 }
-static void tri_update(void) {
+HOT static void tri_update(void) {
   tri.inc = tri.timer >= 2 ? period_to_inc(32u * (tri.timer + 1)) : 0;
 }
-static void fiveb_update(int c) {
+HOT static void fiveb_update(int c) {
   u32 period = fb.regs[c * 2] | (fb.regs[c * 2 + 1] & 15) << 8;
   fb.inc[c] = period_to_inc(16u * (period ? period : 1));
 }
 
 void apu_init(u32 hz) {
   sample_hz = hz;
+  hz_scale = (u32)(((uint64_t)CPU_HZ << 24) / hz);
   noise.inc = period_to_inc(noise_periods[0]);
   dmc.inc = period_to_inc(dmc_periods[0] * 8);
   fb.noise_inc = period_to_inc(16);
   fb.env_inc = period_to_inc(256);
 }
 
-void apu_write(u16 a, u8 v) {
+HOT void apu_write(u16 a, u8 v) {
   if (a >= 0x4000 && a <= 0x4007) {
     struct pulse *p = &pulses[(a - 0x4000) >> 2];
     switch (a & 3) {
@@ -95,12 +97,16 @@ void apu_write(u16 a, u8 v) {
         p->sweep_reload = 1;
         break;
       case 2:
-        p->timer = (p->timer & 0x700) | v;
-        pulse_update(p);
+        if ((p->timer & 0xFF) != v) {
+          p->timer = (p->timer & 0x700) | v;
+          pulse_update(p);
+        }
         break;
       default:
-        p->timer = (p->timer & 0xFF) | (v & 7) << 8;
-        pulse_update(p);
+        if (p->timer >> 8 != (v & 7)) {
+          p->timer = (p->timer & 0xFF) | (v & 7) << 8;
+          pulse_update(p);
+        }
         if (p->enabled) p->length = length_table[v >> 3];
         p->start = 1;
         p->phase = 0;
@@ -110,11 +116,15 @@ void apu_write(u16 a, u8 v) {
     tri.control = v >> 7;
     tri.linear_reload = v & 0x7F;
   } else if (a == 0x400A) {
-    tri.timer = (tri.timer & 0x700) | v;
-    tri_update();
+    if ((tri.timer & 0xFF) != v) {
+      tri.timer = (tri.timer & 0x700) | v;
+      tri_update();
+    }
   } else if (a == 0x400B) {
-    tri.timer = (tri.timer & 0xFF) | (v & 7) << 8;
-    tri_update();
+    if (tri.timer >> 8 != (v & 7)) {
+      tri.timer = (tri.timer & 0xFF) | (v & 7) << 8;
+      tri_update();
+    }
     if (tri.enabled) tri.length = length_table[v >> 3];
     tri.linear_flag = 1;
   } else if (a == 0x400C) {
@@ -124,6 +134,7 @@ void apu_write(u16 a, u8 v) {
   } else if (a == 0x400E) {
     noise.mode = v >> 7;
     noise.inc = period_to_inc(noise_periods[v & 15]);
+    noise_period = noise_periods[v & 15];
   } else if (a == 0x400F) {
     if (noise.enabled) noise.length = length_table[v >> 3];
     noise.start = 1;
@@ -153,10 +164,11 @@ void apu_write(u16 a, u8 v) {
   }
 }
 
-void fiveb_select(u8 v) { fb.select = v & 15; }
+HOT void fiveb_select(u8 v) { fb.select = v & 15; }
 
-void fiveb_write(u8 v) {
+HOT void fiveb_write(u8 v) {
   u8 r = fb.select;
+  if (fb.regs[r] == v && r != 13) return;
   fb.regs[r] = v;
   if (r < 6) fiveb_update(r >> 1);
   else if (r == 6) fb.noise_inc = period_to_inc(16u * ((v & 31) ? (v & 31) : 1));
@@ -390,3 +402,18 @@ void apu_mix(s8 *out, int n) {
     seq++;
   }
 }
+
+#ifdef HOST
+#include <stdio.h>
+// The same fields as APU_LOG in tests/s_record.lua, for tools/compare_sound.py.
+void apu_log_line(FILE *f) {
+  for (int i = 0; i < 2; i++) {
+    struct pulse *p = &pulses[i];
+    fprintf(f, "%d %d %d ", p->timer, p->length ? (p->const_vol ? p->env_period : p->env_vol) : 0, p->duty);
+  }
+  fprintf(f, "%d %d %d %d ", tri.timer, tri.length && tri.linear, noise_period,
+          noise.length ? (noise.const_vol ? noise.env_period : noise.env_vol) : 0);
+  for (int i = 0; i < 14; i++) fprintf(f, "%d ", fb.regs[i]);
+  fprintf(f, "\n");
+}
+#endif

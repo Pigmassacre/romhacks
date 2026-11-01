@@ -47,6 +47,7 @@ emu.addMemoryCallback(pad_read, emu.callbackType.exec, 0xF2DA, 0xF2DA)
 emu.addMemoryCallback(pad_read, emu.callbackType.exec, 0xF2E3, 0xF2E3)
 
 local nmi = 0
+local apu_log = APU_LOG and io.open(OUT_DIR .. "apu.txt", "w")
 -- A write the script makes to RAM, kept so the replay can make the same one.
 local pokes = io.open(OUT_DIR .. "pokes.txt", "w")
 function poke(a, v)
@@ -62,7 +63,7 @@ local function finish()
   h = io.open(OUT_DIR .. "entries.txt", "w")
   for a in pairs(entries) do h:write(a, "\n") end
   h:close()
-  if trace then trace:close() end; pokes:close(); pad_reads:close(); pads:close(); cpu:close(); ram:close()
+  if trace then trace:close() end; if apu_log then apu_log:close() end; pokes:close(); pad_reads:close(); pads:close(); cpu:close(); ram:close()
   emu.stop(0)
 end
 
@@ -71,6 +72,23 @@ emu.addMemoryCallback(function()
   nmi_now = nmi
   if ON_NMI then ON_NMI(nmi) end
   local s = emu.getState()
+  if APU_LOG then
+    -- The sound chips' state, for tools/compare_sound.py.
+    local function pulse(n)
+      local e = "apu.square" .. n .. ".envelope."
+      local vol = s[e .. "constantVolume"] and s[e .. "volume"] or s[e .. "counter"]
+      local on = s[e .. "lengthCounter.counter"] > 0
+      return string.format("%d %d %d ", s["apu.square" .. n .. ".realPeriod"], on and vol or 0, s["apu.square" .. n .. ".duty"])
+    end
+    local e = "apu.noise.envelope."
+    local t = "apu.triangle."
+    local line = pulse(1) .. pulse(2) .. string.format("%d %d %d %d ", s[t .. "timer.period"],
+      (s[t .. "lengthCounter.counter"] > 0 and s[t .. "linearCounter"] > 0) and 1 or 0,
+      s["apu.noise.timer.period"] + 1,
+      s[e .. "lengthCounter.counter"] > 0 and (s[e .. "constantVolume"] and s[e .. "volume"] or s[e .. "counter"]) or 0)
+    for i = 0, 13 do line = line .. s["mapper.audio.registers" .. i] .. " " end
+    apu_log:write(line, "\n")
+  end
   cpu:write(string.format("%d %d %d %d %d %d %d\n", nmi, s["cpu.cycleCount"], s["cpu.a"], s["cpu.x"], s["cpu.y"], s["cpu.sp"], s["cpu.ps"]))
   local t = {}
   for a = 0x0000, 0x07FF do t[#t + 1] = string.char(r(a)) end

@@ -4,15 +4,10 @@
 #include "cpu.h"
 #include "platform.h"
 
-#ifdef HOST
-#define WRAM_SECTION ".bss.wram"
-#else
-#define WRAM_SECTION ".sbss"  // the 256 KB of slower work RAM; IWRAM is for what is hot
-#endif
 
 struct cpu_state cpu_state_store;
-static u8 wram[0x2000] __attribute__((section(WRAM_SECTION)));
-static u8 no_ram[0x2000] __attribute__((section(WRAM_SECTION)));
+static u8 wram[0x2000] SLOW_RAM;
+static u8 no_ram[0x2000] SLOW_RAM;
 
 const u8 *prg, *chr;
 u8 prg_map[3];
@@ -24,15 +19,15 @@ static int irq_pending;
 static u32 irq_due = 0xFFFFFFFF;
 
 u8 ppu_ctrl, ppu_mask, mirror_mode, nt_dirty = 1, palette_dirty = 1;
-u8 ciram[0x800], palette[32], oam[256];
+u8 ciram[0x800] SLOW_RAM, palette[32], oam[256] SLOW_RAM;
 static u8 ppu_status, ppu_buf, ppu_w, ppu_latch;
 static u16 ppu_v;
 u16 ppu_t;
 u8 ppu_x;
-int split_line = -1;
-u16 top_t, split_t;
+u16 top_t;
 u8 top_x, top_ctrl, top_chr[8];
-u8 split_x, split_ctrl, split_chr[8];
+struct region regions[MAX_REGIONS];
+int region_count;
 
 // The frame is 29780.5 cycles. vbl_half counts in half cycles.
 #define VBL_FIRST 27395u
@@ -41,8 +36,7 @@ u8 split_x, split_ctrl, split_chr[8];
 #define LINE_THIRDS 341u
 static u32 vbl_half = VBL_FIRST * 2;
 static u32 vbl_end, render_start;
-static int nmi_edge, ppu_w_seen;
-int split_from_top = 1;
+static int nmi_edge, ppu_w_seen, top_blank_lines = -1;
 
 // In the exact build, code near an event runs one instruction at a time, so that
 // interrupts land between the same instructions as on the NES. This is how far ahead
@@ -57,6 +51,14 @@ static u8 dmc_loop;
 #define BLOCK_MARGIN 0
 #endif
 
+const nmi_sync_t *nmi_sync;
+int nmi_sync_count;
+#ifdef EXACT_TIMING
+#define SYNC_WINDOW 8000   // how far from the due time an NMI may be moved to its place
+static int sync_done, sync_pending;
+static u32 sync_due;
+#endif
+
 HOT static void set_next_event(void) {
   u32 e = vbl_half / 2;
   if (vbl_end && vbl_end < e) e = vbl_end;
@@ -66,26 +68,47 @@ HOT static void set_next_event(void) {
 #endif
   next_event = nmi_edge ? 0 : e;
   block_limit = next_event > BLOCK_MARGIN ? next_event - BLOCK_MARGIN : 0;
+#ifdef EXACT_TIMING
+  if (nmi_sync) {
+    if (sync_pending) block_limit = 0;
+    else if ((ppu_ctrl & 0x80) && vbl_half / 2 - SYNC_WINDOW < block_limit) block_limit = vbl_half / 2 - SYNC_WINDOW;
+  }
+#endif
 }
 
 static inline int rendering(void) {
   return !vbl_end && render_start && cyc >= render_start;
 }
 
-// Called after the picture changes mid-frame. The first such change is the split;
-// what the game sets in the next few lines is what the status bar shows.
+// Called after the picture changes mid-frame. Each change that comes well after the
+// last starts a new region of the picture, and what the game sets in its first few
+// lines is what that region shows.
 #define SPLIT_SETTLE_LINES 3
 static void mid_frame(void) {
   if (!rendering()) return;
   int line = (cyc - render_start) * 3 / LINE_THIRDS;
-  if (split_line < 0) split_line = line;
-  split_from_top = !ppu_w_seen;
-  if (line > split_line + SPLIT_SETTLE_LINES) return;
+  if (!(ppu_mask & 0x18)) {
+    // Rendering is still off (the game can keep it off into the frame, for more time
+    // to upload): this only sets what the picture will start with.
+    top_t = ppu_t; top_x = ppu_x; top_ctrl = ppu_ctrl;
+    for (int i = 0; i < 8; i++) top_chr[i] = chr_map[i];
+    ppu_w_seen = 0;
+    top_blank_lines = line;
+    return;
+  }
+  if (!region_count || line > regions[region_count - 1].line + SPLIT_SETTLE_LINES) {
+    if (region_count == MAX_REGIONS) return;
+    regions[region_count++].line = line;
+  }
+  struct region *r = &regions[region_count - 1];
+  if (line > r->line + SPLIT_SETTLE_LINES) return;
   // Lines take their column from t. They keep counting rows from the top of the
   // frame unless $2006 moved v.
-  split_t = (ppu_t & 0x041F) | ((ppu_w_seen ? ppu_v : top_t) & ~0x041F);
-  split_x = ppu_x; split_ctrl = ppu_ctrl;
-  for (int i = 0; i < 8; i++) split_chr[i] = chr_map[i];
+  r->t = (ppu_t & 0x041F) | ((ppu_w_seen ? ppu_v : top_t) & ~0x041F);
+  r->x = ppu_x;
+  r->ctrl = ppu_ctrl;
+  r->own_row = ppu_w_seen;
+  for (int i = 0; i < 8; i++) r->chr[i] = chr_map[i];
 }
 
 // Every clock here counts up from power-on and would overflow, so now and then they
@@ -100,6 +123,7 @@ static void rebase_timers(void) {
   if (irq_due != 0xFFFFFFFF) irq_due -= by;
 #ifdef EXACT_TIMING
   if (dmc_due != 0xFFFFFFFF) dmc_due -= by;
+  sync_due -= by;
 #endif
 }
 
@@ -118,14 +142,20 @@ HOT static void sync_vbl(void) {
     vbl_half += FRAME_HALF;
     plat_vblank();
     if (cyc > REBASE_AFTER) rebase_timers();
+#ifdef EXACT_TIMING
+    if (nmi_sync && sync_done < nmi_sync_count) {
+      if (ppu_ctrl & 0x80) { sync_pending = 1; sync_due = cyc; }
+    } else
+#endif
     if (ppu_ctrl & 0x80) nmi_edge = 1;
   }
   if (vbl_end && cyc >= vbl_end) {
     ppu_status &= ~0x80;
     render_start = vbl_end;
     vbl_end = 0;
-    split_line = -1;
+    region_count = 0;
     ppu_w_seen = 0;
+    top_blank_lines = -1;
     top_t = ppu_t; top_x = ppu_x; top_ctrl = ppu_ctrl;
     for (int i = 0; i < 8; i++) top_chr[i] = chr_map[i];
   }
@@ -221,7 +251,18 @@ HOT void wr(u16 a, u8 v) {
         ppu_t = (ppu_t & ~0x0C00) | (v & 3) << 10;
         mid_frame();
         break;
-      case 1: ppu_mask = v; break;
+      case 1:
+        ppu_mask = v;
+        if ((v & 0x18) && rendering() && top_blank_lines >= 0) {
+          // Rendering starts here, at the row in t. Work out the row at line 0.
+          int y = ((ppu_t >> 5) & 31) * 8 + ((ppu_t >> 12) & 7);
+          int nt = (ppu_t >> 11) & 1;
+          y -= top_blank_lines;
+          if (y < 0) { y += 240; nt ^= 1; }
+          top_t = (ppu_t & 0x041F) | (y >> 3) << 5 | (y & 7) << 12 | nt << 11;
+          top_blank_lines = -1;
+        }
+        break;
       case 5:
         if (!ppu_w) { ppu_t = (ppu_t & ~0x1F) | v >> 3; ppu_x = v & 7; }
         else ppu_t = (ppu_t & ~0x73E0) | (v & 7) << 12 | (v & 0xF8) << 2;
@@ -242,7 +283,9 @@ HOT void wr(u16 a, u8 v) {
     return;
   }
   if (a == 0x4014) {
-    for (int i = 0; i < 256; i++) oam[i] = rd(v << 8 | i);
+    const u8 *from = &ram[(v & 7) << 8];  // the game only copies from RAM
+    if (v >= 0x08) for (int i = 0; i < 256; i++) oam[i] = rd(v << 8 | i);
+    else for (int i = 0; i < 256; i++) oam[i] = from[i];
     cyc += 513 + (cyc & 1);
     return;
   }
@@ -301,6 +344,9 @@ HOT void cpu_run(void) {
       if (nmi_edge) {
         nmi_edge = 0;
         set_next_event();
+#ifdef EXACT_TIMING
+        sync_done++;
+#endif
         interrupt(&pc, 0xFFFA);
       } else if (!irq_pending && cyc >= irq_due) {
         irq_pending = 1;
@@ -315,9 +361,28 @@ HOT void cpu_run(void) {
 #endif
 #ifndef NO_WAIT_SKIP
     // The game's two wait loops (lda $F0 / bne): nothing changes until an interrupt.
-    if ((pc == 0xF29A || pc == 0xF2A3) && ram[0xF0] && cyc < next_event) cyc = next_event;
+    if ((pc == 0xF29A || pc == 0xF2A3) && ram[0xF0] && cyc < block_limit) cyc = block_limit;
 #endif
 #ifdef EXACT_TIMING
+    if (nmi_sync && sync_done < nmi_sync_count && (sync_pending || ((ppu_ctrl & 0x80) && cyc + SYNC_WINDOW >= vbl_half / 2))) {
+      const nmi_sync_t *want = &nmi_sync[sync_done];
+      int here = pc == want->pc && A == want->a && X == want->x && Y == want->y && S == (u8)(want->s + 3)
+              && scratch_sum(ram) == want->scratch
+              && (sync_pending || irq_due > vbl_half / 2);  // an IRQ due first goes first
+      if (here || (sync_pending && cyc >= sync_due + SYNC_WINDOW)) {
+#ifdef HOST
+        if (!here) plat_sync_missed(sync_done, pc, want->pc);
+#endif
+        if (!sync_pending && cyc < vbl_half / 2) cyc = vbl_half / 2;
+        if (!sync_pending) sync_vbl();
+        sync_pending = 0;
+        nmi_edge = 0;
+        sync_done++;
+        set_next_event();
+        interrupt(&pc, 0xFFFA);
+        continue;
+      }
+    }
     if (cyc >= block_limit) { pc = interp_step(pc); continue; }
 #endif
     if (pc >= 0x8000) {
