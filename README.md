@@ -1,6 +1,6 @@
 # Romhacks
 
-NES romhacks, one per folder. Each folder is its own project, with its own README, build,
+NES romhacks and ports, one per folder. Each folder is its own project, with its own README, build,
 tests and license. All of these hacks are AI-assisted, using Claude.
 
 | Hack | What it is | Get it |
@@ -8,6 +8,7 @@ tests and license. All of these hacks are AI-assisted, using Claude.
 | [Gimmick! 1.5](gimmick-1.5/) | *Gimmick!* with features from *Gimmick! 2*: summon a new star while one is out, skip stars across water, tap to summon, coyote time and jump buffering. | A BPS patch for your *Gimmick! (Japan)* ROM, from the releases named Gimmick! 1.5 |
 | [SMB3 Gimmick](smb3-gimmick/) | Yumetaro from *Gimmick!* in the worlds of *Super Mario Bros. 3*, with his own jump, star and health. | A BPS patch for your *Super Mario Bros. 3* ROM, from the releases named SMB3 Gimmick |
 | [Metroidvania](metroidvania/) | Samus from *Metroid* in *Castlevania*, moving, shooting and rolling exactly as in Metroid, with Metroid's HUD and sounds. | A BPS patch for your *Castlevania* ROM, from the releases named Metroidvania |
+| [Gimmick! for GBA](gimmick-gba/) | A native port of *Gimmick!* to the Game Boy Advance, in progress. | Nothing to download yet: build it from your *Gimmick! (Japan)* ROM |
 
 Downloads are on the [releases](https://github.com/Pigmassacre/romhacks/releases) page. Release
 tags start with the folder's name, like `gimmick-1.5-v1.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.

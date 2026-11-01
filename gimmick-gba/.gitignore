@@ -1,0 +1,7 @@
+# Your own ROM, the emulator and everything generated from the ROM stay out of git.
+*.nes
+*.gba
+Mesen
+out/
+__pycache__/
+*.pyc
