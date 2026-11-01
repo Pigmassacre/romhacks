@@ -19,6 +19,7 @@
 ; VRAM layout, as word addresses.
 OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
 BGSET_HI   = $20            ; the first tile set of three: see set_hi
+BG2_NIBBLE = $60            ; BG2's tiles, for BG12NBA's other half
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
@@ -54,6 +55,8 @@ irq_line:    .res 1         ; the SNES line the current split belongs on
 irq_next:    .res 1         ; and the next one's: it becomes irq_line when it starts
 .export irq_line, irq_next
 scroll_done: .res 1
+tm_now:      .res 1         ; what the game has switched on
+overlay:     .res 1         ; and BG2, on the title screen
 in_split:    .res 1         ; a split's interrupt has run this frame
 .export in_split
 .export irq_flag
@@ -573,6 +576,7 @@ show_split_set:
         lsr a
         lsr a
         lsr a
+        ora #BG2_NIBBLE
         sta BG12NBA
 @out:   rts
 
@@ -623,10 +627,24 @@ nmi_work2:
         stz irq_line
         stz in_split
         stz OBSEL
-        lda #BGSET_HI >> 4
+        lda #BG2_NIBBLE | (BGSET_HI >> 4)
         sta BG12NBA
         lda #$40
         sta HDMAEN
+        ; The notices show on the title screen: $4A = 3, as for the ending, and before play.
+        ldx #0
+        lda $4A
+        cmp #3
+        bne :+
+        lda $90
+        bne :+
+        ldx #2
+:       stx overlay
+        lda tm_now
+        beq :+              ; the game's picture is off
+        ora overlay
+        sta TM
+:
         jsr scroll_now
         lda force_blank
         bne :+
@@ -971,6 +989,8 @@ ppu_mask_w:
         asl a
         asl a
         ora tmp
+        sta tm_now
+        ora overlay
         sta TM
         stz force_blank
         lda #$0F
@@ -979,6 +999,7 @@ ppu_mask_w:
 @off:   lda #$80
         sta force_blank
         sta INIDISP
+        stz tm_now
         jmp reg_done
 
 ; lda/ldx/ldy $2002. N and Z come from the value.

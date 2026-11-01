@@ -473,6 +473,56 @@ def build_spc(prg):
     return bytes(blob)
 
 
+# ---- The notices on the title screen ------------------------------------------------
+
+NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"]
+FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
+OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
+TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
+
+
+def build_overlay(chr_rom):
+    """Tiles and a map for BG2, which shows only on the title: 4 KB for VRAM word $6800."""
+    def recolour(tile):
+        # A box, not see-through: 0 black, shading grey, the letter white.
+        out = bytearray(16)
+        for y in range(8):
+            lo, hi = tile[y], tile[8 + y]
+            a = b = 0
+            for x in range(8):
+                v = (lo >> (7 - x) & 1) | (hi >> (7 - x) & 1) << 1
+                c = {0: 1, 1: 2, 2: 2, 3: 3}[v]
+                a |= (c & 1) << (7 - x)
+                b |= (c >> 1) << (7 - x)
+            out[y * 2], out[y * 2 + 1] = a, b
+        return bytes(out)
+
+    tiles = bytearray(16 * 128)
+    base = FONT_PAGE * 0x400
+    tiles[0:16] = recolour(bytes(16))
+    for i in range(26):
+        tiles[(i + 1) * 16:(i + 2) * 16] = recolour(chr_rom[base + (i + 1) * 16:base + (i + 2) * 16])
+    dash = bytearray(16)
+    dash[3], dash[4] = 0x7E, 0x7E
+    dash[8 + 3], dash[8 + 4] = 0x7E, 0x7E
+    tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = recolour(bytes(dash))
+
+    word = lambda t, front=True: bytes([t, 0x01 | (0x20 if front else 0)])  # tile 256 + t
+    screen = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
+    top = 22
+    width = max(len(t) for t in NOTICES) + 2
+    left = (32 - width) // 2
+    for r in range(top - 1, top + 2 * len(NOTICES)):
+        for c in range(left, left + width):
+            screen[r][c] = word(TILE_BLANK)
+    for n, text in enumerate(NOTICES):
+        c = (32 - len(text)) // 2
+        for i, ch in enumerate(text):
+            t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
+            screen[top + n * 2][c + i] = word(t)
+    return bytes(tiles) + b"".join(w for row in screen for w in row)
+
+
 def attr_table():
     out = []
     for a in range(256):
@@ -583,6 +633,8 @@ def main():
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
     image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
+    overlay = build_overlay(chr_rom)
+    image[OVERLAY_HALF * 0x10000:OVERLAY_HALF * 0x10000 + len(overlay)] = overlay
     for num in range(32):
         at = (PRG_HALF + num // 4) * 0x10000 + (num % 4) * BANK
         image[at:at + BANK] = prg[num * BANK:(num + 1) * BANK]

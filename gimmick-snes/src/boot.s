@@ -11,7 +11,8 @@
 .import irq_line, irq_next, in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
 .import nmi_work, runtime_init
 .import FirstBank, NesNmi, NesIrq, NesReset, SpcAddr, SpcSize, SpcEntry
-SPC_BLOB = $D80000          ; tools/build.py puts it there
+SPC_BLOB = $D80000          ; tools/build.py puts these there
+OVERLAY = $DE0000
 
 .segment "BOOT"
 
@@ -158,11 +159,44 @@ fast:
         ina
 :       sta APUIO0
 
+        ; The notices for the title screen: BG2's tiles and map.
+        lda #$80
+        sta VMAINC
+        ldx #$6800
+        stx VMADDL
+        lda #1
+        sta DMAP7
+        lda #<VMDATAL
+        sta BBAD7
+        ldx #0
+        stx A1T7L
+        lda #^OVERLAY
+        sta A1B7
+        ldx #$1000
+        stx DAS7L
+        lda #$80
+        sta MDMAEN
+        lda #$6C
+        sta BG2SC
+        ; Black, grey and white, as BG2's first palette
+        lda #33
+        sta CGADD
+        stz CGDATA
+        stz CGDATA
+        lda #$73
+        sta CGDATA
+        lda #$4E
+        sta CGDATA
+        lda #$FF
+        sta CGDATA
+        lda #$7F
+        sta CGDATA
+
         ; The picture: mode 0, BG1 only with sprites over it, as the NES's layers.
         stz BGMODE
         lda #$60 | 1        ; maps at $6000, side by side to start with
         sta BG1SC
-        lda #2              ; tiles at $2000
+        lda #$62            ; BG1's tiles at $2000, BG2's at $6000 (its own at tile 256)
         sta BG12NBA
         lda #$00            ; sprite tables at 0, 8x8 and 16x16
         sta OBSEL
