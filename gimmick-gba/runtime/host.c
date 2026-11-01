@@ -64,14 +64,31 @@ static void take_shot(const char *name) {
     int a0 = REG16(0x04000044) >> 8, a1 = REG16(0x04000044) & 255;
     int b0 = REG16(0x04000046) >> 8, b1 = REG16(0x04000046) & 255;
     u16 win_in = REG16(0x04000048), win_out = REG16(0x0400004A);
-#define LAYERS(y) (w0 && (y) >= a0 && (y) < a1 ? win_in & 0xFF : w1 && (y) >= b0 && (y) < b1 ? win_in >> 8 : (w0 || w1) ? win_out : 0x1F)
+    static u8 obj_win[160][240];
+    memset(obj_win, 0, sizeof obj_win);
+    for (int i = 0; i < 128 && (disp & 0x8000); i++) {
+      u16 *o = (u16 *)sim_oam + i * 4;
+      if ((o[0] & 0xF00) != 0x800) continue;
+      int h = o[0] & 0x8000 ? 16 : 8, ox = o[1] & 511, oy = o[0] & 255;
+      if (ox >= 256) ox -= 512;
+      if (oy >= 160) oy -= 256;
+      for (int sy = 0; sy < h; sy++) {
+        int ty = (o[1] & 0x2000) ? h - 1 - sy : sy, y = oy + sy;
+        const u8 *tile = sim_vram + 0x10000 + ((o[2] & 1023) + (ty >> 3)) * 32;
+        for (int sx = 0; sx < 8; sx++) {
+          int x = ox + sx, tx = (o[1] & 0x1000) ? 7 - sx : sx;
+          if (x >= 0 && x < 240 && y >= 0 && y < 160 && ((tile[(ty & 7) * 4 + (tx >> 1)] >> ((tx & 1) * 4)) & 15)) obj_win[y][x] = 1;
+        }
+      }
+    }
+#define LAYERS(x, y) (w0 && (y) >= a0 && (y) < a1 ? win_in & 0xFF : w1 && (y) >= b0 && (y) < b1 ? win_in >> 8 : obj_win[y][x] ? win_out >> 8 : (w0 || w1 || (disp & 0x8000)) ? win_out & 0xFF : 0x1F)
     for (int prio = 3; prio >= 0; prio--) {
       for (int bg = 3; bg >= 0; bg--) {
         if (!(disp >> (8 + bg) & 1) || (REG16(0x04000008 + bg * 2) & 3) != prio) continue;
         for (int y = 0; y < 160; y++) {
-          if (!(LAYERS(y) >> bg & 1)) continue;
           for (int x = 0; x < 240; x++) {
             int solid;
+            if (!(LAYERS(x, y) >> bg & 1)) continue;
             u16 c = bg_pixel(bg, x, y, &solid);
             if (solid) fb[y][x] = c;
           }
@@ -80,19 +97,19 @@ static void take_shot(const char *name) {
       if (!(disp & 0x1000)) continue;
       for (int i = 127; i >= 0; i--) {
         u16 *o = (u16 *)sim_oam + i * 4;
-        if ((o[0] & 0x300) == 0x200 || ((o[2] >> 10) & 3) != prio) continue;
+        if ((o[0] & 0x300) == 0x200 || (o[0] & 0xC00) == 0x800 || ((o[2] >> 10) & 3) != prio) continue;
         int tall = o[0] & 0x8000, h = tall ? 16 : 8;
         int ox = o[1] & 511, oy = o[0] & 255;
         if (ox >= 256) ox -= 512;
         if (oy >= 160) oy -= 256;
         for (int sy = 0; sy < h; sy++) {
           int y = oy + sy;
-          if (y < 0 || y >= 160 || !(LAYERS(y) >> 4 & 1)) continue;
+          if (y < 0 || y >= 160) continue;
           int ty = (o[1] & 0x2000) ? h - 1 - sy : sy;
           const u8 *tile = sim_vram + 0x10000 + ((o[2] & 1023) + (ty >> 3)) * 32;
           for (int sx = 0; sx < 8; sx++) {
             int x = ox + sx;
-            if (x < 0 || x >= 240) continue;
+            if (x < 0 || x >= 240 || !(LAYERS(x, y) >> 4 & 1)) continue;
             int tx = (o[1] & 0x1000) ? 7 - sx : sx;
             int c = (tile[(ty & 7) * 4 + (tx >> 1)] >> ((tx & 1) * 4)) & 15;
             if (c) fb[y][x] = ((u16 *)sim_pal)[256 + (o[2] >> 12) * 16 + c];

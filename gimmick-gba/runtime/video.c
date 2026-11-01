@@ -72,15 +72,19 @@ static int last_sprites;
 // Sprites below a two-part picture's split see that part's graphics pages. Those are
 // a second set of tiles, this far along in sprite memory.
 #define OBJ_LOWER_TILES 512
-HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int split) {
+// Sprites at or below status_line belong to the status bar, like the health pips, and
+// are drawn on it wherever the camera is. With masks, each sprite behind the picture
+// also marks the sprite window, for the title's clouds.
+HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int split, int status_line, int view_h, int masks) {
   int tall = top_ctrl & 0x20;
   int n = 0;
   for (int i = 0; i < 64; i++) {
     const u8 *s = &oam[i * 4];
-    int y = s[0] + 1 - top;
+    int on_status = s[0] + 1 >= status_line;
+    int y = on_status ? s[0] + 1 - status_line + view_h : s[0] + 1 - top;
     int x = s[3] - 8;
     int h = tall ? 16 : 8;
-    if (s[0] >= 0xEF || y <= -h || y >= SCREEN_H || x <= -8 || x >= SCREEN_W) continue;
+    if (s[0] >= 0xEF || y <= -h || y >= (on_status ? SCREEN_H : view_h) || x <= -8 || x >= SCREEN_W) continue;
     u32 tile = tall ? ((s[1] & 1) << 8) | (s[1] & 0xFE) : ((top_ctrl & 8) << 5) | s[1];
     if (split >= 0) {
       int line = s[0] + 1;
@@ -91,7 +95,13 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
     }
     u16 a0 = (y & 0xFF) | (tall ? 0x8000 : 0);
     u16 a1 = (x & 0x1FF) | ((s[2] & 0x40) ? 0x1000 : 0) | ((s[2] & 0x80) ? 0x2000 : 0);
-    u16 a2 = tile | ((s[2] & 0x20) ? 2 : 1) << 10 | (s[2] & 3) << 12;
+    u16 a2 = tile | ((s[2] & 0x20) ? 2 : on_status ? 0 : 1) << 10 | (s[2] & 3) << 12;
+    if (masks && (s[2] & 0x20)) {
+      OAM[n * 4] = a0 | 0x0800;
+      OAM[n * 4 + 1] = a1;
+      OAM[n * 4 + 2] = a2;
+      n++;
+    }
     OAM[n * 4] = a0;
     OAM[n * 4 + 1] = a1;
     OAM[n * 4 + 2] = a2;
@@ -206,8 +216,14 @@ static int camera(int play_h, int view_h, int has_status) {
     int feet = (ram[0xA4] & 15) << 4 | ram[0x9A] >> 4;
     want = feet - view_h * 3 / 5;
   } else {
-    static int centre = 120;
-    if (nt_dirty) centre = content_centre();
+    // The game can fill a nametable while the scroll still points at another, and only
+    // then point at it, so a change of either means looking again.
+    static int centre = 120, centre_nt = -1;
+    int nt = (top_t >> 10) & 3;
+    if (nt_dirty || nt != centre_nt) {
+      centre = content_centre();
+      centre_nt = nt;
+    }
     cam_y = centre - view_h / 2;
     if (cam_y < 0) cam_y = 0;
     if (cam_y > range) cam_y = range;
@@ -302,6 +318,7 @@ void video_present(void) {
   int layer = 1;
   for (int p = 0; p < parts; p++, layer++) {
     struct region *r = &regions[part_line[p]];
+    REG16(0x04000008 + layer * 2) = layer << 2 | layer_map[layer] << 8 | 1;
     int t = (r->t & 0x041F) | (r->own_row ? r->t & ~0x041F : top_t & ~0x041F);
     int y = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + (r->own_row ? top - ((r->line + 7) & ~7) + ((r->line + 7) & ~7) : top);
     load_bg_pages(layer, r->chr, r->ctrl);
@@ -330,29 +347,41 @@ void video_present(void) {
     REG16(0x04000010 + layer * 4) = r->x;
     REG16(0x04000012 + layer * 4) = fine - view_h;
     WIN0V = view_h << 8 | SCREEN_H;
-    win_in |= 1 << layer;  // no sprites on the status bar
+    win_in |= 1 << layer | 0x10;
+    // In front of the sprites, so one crossing its top edge stays behind it. The status
+    // bar's own sprites have priority 0 and stay on top.
+    REG16(0x04000008 + layer * 2) = layer << 2 | layer_map[layer] << 8;
     window_on |= 0x2000;
     enable |= 0x100 << layer;
   }
   WIN0H = SCREEN_W;
   WIN1H = SCREEN_W;
   WININ = win_in;
-  WINOUT = 0x0019;  // the top of the frame, sprites and the notices
+  // The top of the frame, sprites and the notices. Inside the sprite window, no sprites.
+  WINOUT = 0x0919;
   nt_dirty = 0;
   int lower_from = -1;
-  if (parts) {
-    struct region *r = &regions[part_line[0]];
-    lower_from = (r->line + 7) & ~7;
-    for (int i = 0; i < 8; i++) {
-      if (loaded_obj_lower[i] != r->chr[i]) {
-        loaded_obj_lower[i] = r->chr[i];
-        copy_chr(OBJ_VRAM + OBJ_LOWER_TILES * 32 + i * 0x800, loaded_obj_lower[i]);
+  if (parts || status >= 0) {
+    // The status bar's sprites are on the lines after the game's last change of graphics.
+    struct region *r = &regions[parts ? part_line[0] : region_count - 1];
+    int differ = parts;
+    for (int i = 0; i < 8; i++) differ |= r->chr[i] != top_chr[i];
+    if (differ) {
+      lower_from = parts ? (r->line + 7) & ~7 : status_line;
+      for (int i = 0; i < 8; i++) {
+        if (loaded_obj_lower[i] != r->chr[i]) {
+          loaded_obj_lower[i] = r->chr[i];
+          copy_chr(OBJ_VRAM + OBJ_LOWER_TILES * 32 + i * 0x800, loaded_obj_lower[i]);
+        }
       }
     }
   }
-  draw_sprites(top, lower_from);
+  draw_sprites(top, lower_from, status_line, view_h, title);
   if (ppu_mask & 0x18) {
-    DISPCNT = 0x1040 | enable | window_on;
+    // The title hides its clouds behind the logo with sprites behind the picture, early in
+    // OAM, which on the NES hide later sprites and show the picture there. On the GBA
+    // the later sprite would win, so those sprites mark a window without sprites.
+    DISPCNT = 0x1040 | enable | window_on | (title ? 0x8000 : 0);
   } else {
     // The GBA's own blanking is white, and the NES's is black.
     DISPCNT = 0;

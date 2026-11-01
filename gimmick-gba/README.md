@@ -50,7 +50,7 @@ up and down, and the title and cutscenes show the part with something on it.
 - `runtime/core.c` is the FME-7 mapper, the PPU's registers and the loop that runs blocks and takes
   interrupts. `runtime/apu.c` mixes the NES's five sound channels and the Sunsoft 5B's three.
   `runtime/video.c` draws each frame from the NES's nametables and sprites. A split low on the
-  screen is the status bar, on its own background layer. A higher one, like the title's logo over
+  screen is the status bar, on its own background layer, with its own sprites. A higher one, like the title's logo over
   its scrolling ground, is one picture in two parts.
 
 ## How it is checked
