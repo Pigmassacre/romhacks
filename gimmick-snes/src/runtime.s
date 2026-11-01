@@ -126,6 +126,12 @@ data_left:   .res 1         ; tile writes that can go straight to VRAM, without 
 pal_dirty:   .res 1
 w6_bank:     .res 1
 oam_ready:   .res 1
+load_first:  .res 1         ; the one stale sprite page this frame's sprites may wait on: see spr_check
+band_n:      .res 1         ; the portal's blank sprites: see spr_check
+band_top:    .res 1
+band_end:    .res 1
+band_tab:    .res 10
+.export band_tab
 cg_bg:       .res 32
 cg_obj:      .res 32
 
@@ -668,12 +674,16 @@ nmi_work2:
         sta HDMAEN
         jsr scroll_now
         jsr bg2_now
+        jsr band_now
         jsr menu_tick
         lda force_blank
         bne :+
+        jsr top_pages
+        bcs @copied         ; that was the time there was
         jsr load_page
         lda #234
         jsr attr_work
+@copied:
         ; Ready, if the slots that matter have what they asked for.
         ldy #1
         ldx #4
@@ -694,6 +704,140 @@ nmi_work2:
         dex
         cpx #4
         bcs :-
+        rts
+
+; What the game has mapped for the top of the picture, before anything else takes up vblank:
+; by the time it says so itself, in chr_all, there is rarely time left. Sprites first, starting
+; with the one the sprites are waiting on. Carry set if anything was copied.
+top_pages:
+        lda $F0
+        cmp #$AC
+        bne @none           ; the game is part way through a frame
+        stz tmp
+        ldx load_first
+        bmi :+
+        jsr top_obj
+:       ldx #0
+@obj:   cpx #4
+        bcc :+
+        lda obj_used,x
+        beq @obj_next
+:       jsr top_obj
+        bcs @done
+@obj_next:
+        inx
+        cpx #8
+        bne @obj
+        ; The background's pages wait for colours: tiles in the wrong palette show for longer.
+        lda attr_head
+        cmp attr_tail
+        bne @done
+        ldx #4
+@bg:    lda set_want - 4,x
+        cmp set_have - 4,x
+        beq @bg_next
+        jsr top_room
+        bcs @done
+        sta set_have - 4,x
+        tay
+        lda #$80
+        sta VMAINC
+        stz VMADDL
+        txa
+        and #3
+        asl a
+        asl a
+        ora #BGSET_HI
+        sta VMADDH
+        jsr dma_bg_page
+        inc tmp
+@bg_next:
+        inx
+        cpx #8
+        bne @bg
+@done:  lda tmp
+        beq @none
+        sec
+        rts
+@none:  clc
+        rts
+
+; Slot x, if it needs it and there is time. Carry set when there is none.
+top_obj:
+        lda $E1,x
+        cmp chr_obj,x
+        beq @ok
+        jsr top_room
+        bcs @out
+        sta chr_obj,x
+        tay
+        jsr dma_obj_page
+        inc tmp
+@ok:    clc
+@out:   rts
+
+; Room for one more page? One always; a second if the game has no tiles to send. Keeps a.
+top_room:
+        pha
+        lda tmp
+        beq @yes
+        cmp #2
+        bcs @no
+        lda $FA
+        bne @no
+        lda attr_head
+        cmp attr_tail
+        bne @no
+        jsr beam
+        cmp #238            ; or the sprites themselves would be late
+        bcs @no
+@yes:   pla
+        clc
+        rts
+@no:    pla
+        sec
+        rts
+
+; The portal hides what is coming out of it with the NES's limit of 8 sprites on a line: 8
+; blank ones at once, ahead of the rest. The SNES has no such limit, so sprites go off for
+; those lines. The table is lines, then TM's value for them.
+band_now:
+        lda #$40
+        ldx band_n
+        cpx #8
+        bcc @off
+        lda tm_now
+        ora overlay
+        and tm_mask
+        sta tmp + 2
+        lda band_top
+        beq @off2
+        cmp #$80
+        bcs @off2           ; never so low
+        sta band_tab
+        lda tmp + 2
+        sta band_tab + 1
+        lda band_end
+        sec
+        sbc band_top
+        clc
+        adc #16
+        cmp #$80
+        bcs @off2
+        sta band_tab + 2
+        lda tmp + 2
+        and #$EF
+        sta band_tab + 3
+        lda #1
+        sta band_tab + 4
+        lda tmp + 2
+        sta band_tab + 5
+        stz band_tab + 6
+        lda #$50
+@off:   sta HDMAEN
+        rts
+@off2:  lda #$40
+        sta HDMAEN
         rts
 
 ; The options menu, from the title screen. It sits on BG3 in place of the notices.
@@ -1980,7 +2124,7 @@ vram_flush:
 @entry: cpy $FA
         bcc :+
         stz $FA
-        lda #252
+        lda #255
         jmp attr_work
 :       lda $0170,y
         bne :+
@@ -2227,7 +2371,7 @@ attr_item:
 ; NES sprites 8x16 each become two SNES sprites, since it has no size that shape. Each
 ; keeps its place in the order, so priority comes out the same.
 .macro convert_sprites buf, first
-.local @sprite, @hide, @stored, @flip, @next, @even
+.local @sprite, @hide, @flip, @next, @even
         ldx #first
         ldy #0
 @sprite:
@@ -2236,6 +2380,8 @@ attr_item:
         bcs @hide
         sbc #CROP_TOP - 2   ; carry is clear: subtract one more
         sta tmp
+        jsr spr_check
+        bcs @hide
         lda $0203,x
         sta buf,y
         sta buf + 4,y
@@ -2247,20 +2393,6 @@ attr_item:
         lda $0201,x
         and #1
         sta tmp + 1
-        beq @even
-        ; The second table: most slots there go unused, and loading them costs time.
-        lda $0201,x
-        phx
-        lsr a
-        lsr a
-        lsr a
-        lsr a
-        lsr a
-        lsr a
-        tax
-        lda #1
-        sta obj_used + 4,x
-        plx
 @even:  lda $0202,x
         phx
         tax
@@ -2356,8 +2488,90 @@ frame_done:
         plx
         rts
 
+; Sprite x of the game's: its CHR slot, and whether its page will be there in time. Only one
+; stale page is sure to be copied in vblank, so sprites on any other stay off for this frame,
+; since the NES's bank switch is instant and a sprite on the wrong page is garbage. Carry set
+; to hide it. Keeps x and y; tmp is the sprite's line.
+spr_check:
+        lda $0201,x
+        cmp #$80
+        bne @not_band
+        lda $0202,x
+        cmp #$20
+        bne @not_band
+        ; One of the portal's blanks
+        lda band_n
+        bne :+
+        lda tmp
+        sta band_top
+        sta band_end
+:       inc band_n
+        lda tmp
+        cmp band_top
+        bcs :+
+        sta band_top
+:       cmp band_end
+        bcc :+
+        sta band_end
+:       sec
+        rts
+@not_band:
+        ; The status bar's sprites, whose second table is not ready: they would be garbage.
+        lda obj2_ready
+        bne :+
+        lda $4A
+        cmp #1
+        bne :+
+        lda $0200,x
+        cmp #$C0
+        bcc :+
+        lda $90
+        beq :+
+        sec
+        rts
+:       phx
+        lda $0201,x
+        and #1
+        asl a
+        asl a
+        sta tmp + 2
+        lda $0201,x
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        ora tmp + 2
+        tax
+        cpx #4
+        bcc :+
+        lda #1
+        sta obj_used,x
+:       lda force_blank
+        ora map7
+        bne @ok
+        lda $E1,x
+        cmp chr_obj,x
+        beq @ok
+        lda load_first
+        bmi @claim
+        txa
+        cmp load_first
+        beq @ok
+        plx
+        sec
+        rts
+@claim: stx load_first
+@ok:    plx
+        clc
+        rts
+
 convert_oam:
         php
+        lda #$FF
+        sta load_first
+        stz band_n
         stz obj_used + 4
         stz obj_used + 5
         stz obj_used + 6
@@ -2533,6 +2747,24 @@ sound_hook:
         pha
         phx
         phy
+        ldx #$1E
+        jsr spc_send
+        ; The SPC700's sweep moves its copy of a period: a new note sends it again.
+        ldy #3
+@sw:    lda apu_kick,y
+        beq :+
+        tya
+        asl a
+        asl a
+        tax
+        lda apu_regs + 2,x
+        eor #$FF
+        sta apu_sent + 2,x
+        lda apu_regs + 3,x
+        eor #$FF
+        sta apu_sent + 3,x
+:       dey
+        bpl @sw
         ldy #0
 @apu:   lda apu_regs,y
         cmp apu_sent,y
@@ -2583,7 +2815,9 @@ sound_hook:
         lda apu_regs + $15
         ldx #$1C
         jsr spc_send
-:       ply
+:       ldx #$1F
+        jsr spc_send
+        ply
         plx
         pla
         plp

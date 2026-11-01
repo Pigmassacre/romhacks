@@ -28,6 +28,9 @@ tmp2   = $65
 vidx   = $66
 bank   = $67         ; the NES's $C000 bank, for DPCM
 envs   = $68         ; start flags
+half   = $6C         ; set_pitch: an octave down
+batch  = $6D         ; the runtime is part way through a frame's registers
+ticks  = $6E
 
 start:
         mov x,#$EF
@@ -48,9 +51,16 @@ main:
         mov port0,last      ; acknowledge
         call msg
 no_msg:
+        ; A period is two registers: nothing reads them while they are half sent.
+        mov a,batch
+        bne main
         mov a,tout0
         beq main
+        mov ticks,a
+ticks_loop:
         call tick
+        dec ticks
+        bne ticks_loop
         bra main
 
 ; A register in x, its value in a. $00-$17 the APU, $20-$2F the 5B, $18-$1B a new note
@@ -59,6 +69,39 @@ msg:
         cmp x,#$18
         bcs msg_special
         mov regs+x,a
+        cmp x,#$15
+        beq msg_enable
+        cmp x,#1
+        beq msg_sweep0
+        cmp x,#5
+        beq msg_sweep1
+        ret
+; A channel switched off loses its length.
+msg_enable:
+        mov x,#3
+me_loop:
+        mov a,!ch_bit+x
+        and a,regs+$15
+        bne me_next
+        mov a,#0
+        mov len+x,a
+me_next:
+        dec x
+        bpl me_loop
+        ret
+; A new sweep starts its divider again.
+msg_sweep0:
+        mov x,#0
+        bra msg_sweep
+msg_sweep1:
+        mov x,#1
+msg_sweep:
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        and a,#7
+        mov sweepd+x,a
         ret
 msg_special:
         cmp x,#$20
@@ -69,28 +112,46 @@ msg_kick:
         cmp x,#$1C
         bcs msg_dpcm
         ; New note: x-$18. Length from the value's top 5 bits, envelope restarts.
-        mov tmp,x
         mov a,x
         clc
         adc a,#256-$18
         mov x,a
         mov a,#1
         mov envs+x,a
+        mov a,#15
+        mov env+x,a
+        cmp x,#2
+        bne msg_len
+        mov linr,#1
+msg_len:
+        mov a,!ch_bit+x
+        and a,regs+$15
+        beq msg_done        ; off: no length
         mov a,!regs_len_hi+x
         call set_len
-        cmp x,#2
-        bne msg_done
-        mov linr,#1
+        ret
 msg_done:
         ret
 msg_dpcm:
         cmp x,#$1D
         beq msg_bank
+        cmp x,#$1E
+        beq msg_begin
+        cmp x,#$1F
+        beq msg_end
         jmp dpcm_start
+msg_begin:
+        mov batch,#1
+        ret
+msg_end:
+        mov batch,#0
+        jmp update
 msg_bank:
         mov bank,a
         ret
 
+ch_bit:
+        .byte 1,2,4,8
 regs_len_hi:
         .byte regs+3, regs+7, regs+$B, regs+$F
 
@@ -165,7 +226,7 @@ voice_src:
 
 dsp_table:
         .byte $6C,$20       ; echo off, noise clock 0
-        .byte $0C,$60, $1C,$60, $2C,$00, $3C,$00
+        .byte $0C,$58, $1C,$58, $2C,$00, $3C,$00
         .byte $5D,DIR_PAGE
         .byte $3D,$08       ; voice 3 is noise
         .byte $2D,$00, $0D,$00, $4D,$00
@@ -180,8 +241,8 @@ tick:
         bne t_no120
         call tick_len
         call tick_sweep
+        call update         ; at half the rate: this takes most of the time there is
 t_no120:
-        call update
         ret
 
 tick_env:
@@ -326,13 +387,15 @@ sw_shift:
         mov a,!regs+2+y
         clc
         adc a,ptr
-        mov !regs+2+y,a
+        mov ptr,a
         mov a,!regs+3+y
         and a,#7
         adc a,ptr+1
         cmp a,#8
         bcs sw_out          ; over 11 bits: the NES mutes it and stops
         mov tmp2,a
+        mov a,ptr
+        mov !regs+2+y,a
         mov a,!regs+3+y
         and a,#$F8
         or a,tmp2
@@ -342,12 +405,14 @@ sw_down:
         mov a,!regs+2+y
         setc
         sbc a,ptr
-        mov !regs+2+y,a
+        mov ptr,a
         mov a,!regs+3+y
         and a,#7
         sbc a,ptr+1
         bcc sw_out
         mov tmp2,a
+        mov a,ptr
+        mov !regs+2+y,a
         mov a,!regs+3+y
         and a,#$F8
         or a,tmp2
@@ -385,17 +450,24 @@ set_pitch:
         mov ptr,#0
         mov a,[ptr]+y
         mov tmp2,a
+        inc y
+        mov a,[ptr]+y
+        mov y,a
+        mov a,half
+        beq sp_write
+        mov a,y
+        lsr a
+        mov y,a
+        ror tmp2
+sp_write:
         mov a,tmp
         or a,#2
         mov dspa,a
         mov dspd,tmp2
-        inc y
-        mov a,[ptr]+y
-        mov tmp2,a
         mov a,tmp
         or a,#3
         mov dspa,a
-        mov dspd,tmp2
+        mov dspd,y
         ret
 
 ; Volume of DSP voice x*16 from a.
@@ -501,15 +573,23 @@ triangle:
         mov a,regs+$B
         and a,#7
         mov ptr+1,a
+        bne t_on
+        mov a,ptr
+        cmp a,#2
+        bcc t_quiet         ; too high to hear
+t_on:
         mov a,#$20
         call set_pitch
         mov x,#2
         mov a,#TRI_VOL
         jmp set_vol
 t_quiet:
-        ; The NES's triangle holds its level; a sudden stop clicks a little less like this.
-        mov a,#0
-        jmp set_vol
+        ; The NES's triangle stops where it is and holds that level, which makes no click.
+        mov dspa,#$22
+        mov dspd,#0
+        mov dspa,#$23
+        mov dspd,#0
+        ret
 
 noise:
         mov x,#3
@@ -519,12 +599,32 @@ noise:
         mov a,len+3
         beq n_quiet
         mov a,regs+$E
+        bmi n_short
         and a,#$0F
         mov y,a
         mov a,!noise_clock+y
         or a,#$20
         mov dspa,#$6C
         mov dspd,a
+        mov dspa,#$3D
+        mov dspd,#$08
+        bra n_level
+; Short mode repeats every 93 steps, which has a pitch: a sample of that, not the DSP's noise.
+n_short:
+        and a,#$0F
+        asl a
+        mov y,a
+        mov dspa,#$3D
+        mov dspd,#0
+        mov dspa,#$34
+        mov dspd,#SRC_SHORT
+        mov dspa,#$32
+        mov a,!noise_pitch+y
+        mov dspd,a
+        mov dspa,#$33
+        mov a,!noise_pitch+1+y
+        mov dspd,a
+n_level:
         mov a,regs+$C
         and a,#$10
         beq n_env
@@ -540,7 +640,7 @@ n_quiet:
         jmp set_vol
 
 noise_vol:
-        .byte 0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30
+        .byte 0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45
 
 ; A 5B voice (x = 0-2) on DSP voice 5+x.
 fiveb:
@@ -552,11 +652,25 @@ fiveb:
         mov a,!sb+1+y
         and a,#$0F
         mov ptr+1,a
-        ; The 5B divides by the period itself, the table by period + 1.
+        ; The table is for 16 clocks a step and period + 1; the 5B takes 32 and the period
+        ; itself, with 0 the same as 1. So its entry is 2 * period - 1, or half of the
+        ; entry for period - 1 where that is off the end of the table.
+        mov a,ptr+1
+        cmp a,#8
+        bcs fb_long
+        or a,ptr
+        bne fb_some
+        mov ptr,#1
+fb_some:
+        asl ptr
+        rol ptr+1
+        mov half,#0
+        bra fb_less1
+fb_long:
+        mov half,#1
+fb_less1:
         mov a,ptr
         bne fb_dec
-        mov a,ptr+1
-        beq fb_ok
         dec ptr+1
 fb_dec: dec ptr
 fb_ok:
@@ -568,6 +682,7 @@ fb_ok:
         asl a
         asl a
         call set_pitch
+        mov half,#0
         ; tone enabled? the mixer's bits 0-2, low for on
         mov a,x
         mov y,a
@@ -596,7 +711,8 @@ fb_vol: mov tmp,a
 tone_bit:
         .byte 1,2,4
 sb_vol:
-        .byte 0,1,2,3,4,6,9,13,18,26,37,52,73,100,110,120
+        ; 3 dB a step, with step 12 about as loud as a pulse at its loudest
+        .byte 0,1,1,2,3,4,5,8,11,15,21,30,42,60,85,120
 
 ; DPCM: a has $4015's value. Stop it, and start the sample if bit 4 is set.
 dpcm_start:

@@ -38,16 +38,12 @@ SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush"}
 
 # 2C02 colours.
-NES_RGB = [
-    (84,84,84),(0,30,116),(8,16,144),(48,0,136),(68,0,100),(92,0,48),(84,4,0),(60,24,0),
-    (32,42,0),(8,58,0),(0,64,0),(0,60,0),(0,50,60),(0,0,0),(0,0,0),(0,0,0),
-    (152,150,152),(8,76,196),(48,50,236),(92,30,228),(136,20,176),(160,20,100),(152,34,32),(120,60,0),
-    (84,90,0),(40,114,0),(8,124,0),(0,118,40),(0,102,120),(0,0,0),(0,0,0),(0,0,0),
-    (236,238,236),(76,154,236),(120,124,236),(176,98,236),(228,84,236),(236,88,180),(236,106,100),(212,136,32),
-    (160,170,0),(116,196,0),(76,208,32),(56,204,108),(56,180,204),(60,60,60),(0,0,0),(0,0,0),
-    (236,238,236),(168,204,236),(188,188,236),(212,178,236),(236,174,236),(236,174,212),(236,180,176),(228,196,144),
-    (204,210,120),(180,222,120),(168,226,144),(152,226,180),(160,214,228),(160,162,160),(0,0,0),(0,0,0),
-]
+NES_RGB = [tuple(bytes.fromhex(c)) for c in """
+666666 002A88 1412A7 3B00A4 5C007E 6E0040 6C0600 561D00 333500 0B4800 005200 004F08 00404D 000000 000000 000000
+ADADAD 155FD9 4240FF 7527FE A01ACC B71E7B B53120 994E00 6B6D00 388700 0C9300 008F32 007C8D 000000 000000 000000
+FFFEFF 64B0FF 9290FF C676FF F36AFF FE6ECC FE8170 EA9E22 BCBE00 88D800 5CE430 45E082 48CDDE 4F4F4F 000000 000000
+FFFEFF C0DFFF D3D2FF E8C8FF FBC2FF FEC4EA FECCC5 F7D8A5 E4E594 CFEF96 BDF4AB B3F3CC B5EBF2 B8B8B8 000000 000000
+""".split()]
 
 
 def load_survey():
@@ -333,7 +329,8 @@ def brr_encode(samples, loop=False):
     for at in range(0, len(samples), 16):
         block = samples[at:at + 16]
         best = None
-        for flt in range(4):
+        # The DSP does not clear what came before when a sample starts: no filter at first.
+        for flt in range(4 if at else 1):
             for rng in range(13):
                 a, b = p1, p2
                 err = 0
@@ -388,6 +385,22 @@ def triangle_sample():
     return bytes(out)
 
 
+def short_noise_sample():
+    """The noise channel's short mode: 93 steps that repeat. 16 times over, to fill whole blocks."""
+    lfsr, steps = 1, []
+    for _ in range(93):
+        steps.append(lfsr & 1)
+        lfsr = lfsr >> 1 | ((lfsr ^ lfsr >> 6) & 1) << 14
+    bits = steps * 16
+    out = bytearray()
+    for b in range(0, len(bits), 16):
+        out.append(0xC0 | (3 if b + 16 >= len(bits) else 0))
+        nibs = [8 if v else 7 for v in bits[b:b + 16]]
+        for i in range(0, 16, 2):
+            out.append(nibs[i] << 4 | nibs[i + 1])
+    return bytes(out)
+
+
 def dpcm_decode(data):
     """1-bit deltas to samples, one in DPCM_STEP, with the slow drift taken out."""
     level = 64
@@ -406,6 +419,10 @@ def dpcm_decode(data):
         v = sum(part) / len(part)
         dc += (v - dc) / 256
         out.append(int(max(-32768, min(32767, (v - dc) * 300))))
+    # The NES's output stays where it ends; this one stops at 0, which would click.
+    fade = min(64, len(out))
+    for i in range(fade):
+        out[-1 - i] = out[-1 - i] * i // fade
     return out
 
 
@@ -427,10 +444,11 @@ def build_spc(prg):
         src.append((at, at + loop_at))
         return len(src) - 1
 
-    # 0-3 duty, 4 triangle, then samples
+    # 0-3 duty, 4 triangle, 5 the noise's short mode, then samples
     for d in range(4):
         place(duty_sample(d))
     place(triangle_sample())
+    place(short_noise_sample())
     lst = []
     for (bank, addr, length) in sorted(samples):
         off = bank * BANK + addr * 64
@@ -456,9 +474,12 @@ def build_spc(prg):
     for hz in DMC_HZ:
         tables += "  .word %d\n" % min(int(hz / DPCM_STEP * 4096 / 32000), 0x3FFF)
     tables += "noise_clock:\n  .byte " + ",".join(str(v) for v in noise) + "\n"
+    tables += "noise_pitch:\n"
+    for per in NOISE_PERIODS:
+        tables += "  .word %d\n" % min(int(1789773 / per * 4096 / 32000), 0x3FFF)
     text = open(os.path.join(REPO, "src", "sound.spc")).read() + tables
-    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "dir_page": SPC_ORIGIN >> 8,
-                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 56, "dpcm_vol": 64})
+    code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "src_short": 5, "dir_page": SPC_ORIGIN >> 8,
+                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 70, "dpcm_vol": 100})
     print("sound driver: %d bytes" % len(code))
     if SPC_CODE + len(code) > SPC_PITCH:
         sys.exit("the sound driver is too big")
@@ -631,21 +652,26 @@ PUFFS = {
     9: {9: (0x09, 0x06, 0x16, 0x07)},
     11: {21: (0x09, 0x06, 0x16, 0x07, 0x17)},
 }
+# The bank of cloud under them: the rows the title screen has, which meet at their ends, so it
+# loops. Tiles from $40 are the clouds' page; L and W are its fill.
 CLOUD_BANK = {
-    12: {4: (0x08, 0x18)},
-    13: {0: (0x0A, 0x1A, 0x0B, 0x1B, 0x2B, 0x3B, 0x0E, 0x1E, 0x0A, 0x1A, 0x07, 0x17)},
-    14: {0: ("L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C, "L", "L", "L"), 14: (0x08, 0x18)},
-    15: {0: (0x29, "W", "W", "W", "W", "W", "W", 0x3D, "L", "L", 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B, 0x0A, 0x1A,
-             0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
-    16: {0: ("W",) * 8 + (0x20, 0x23, "L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C) + ("L",) * 12 + (0x38, 0x2A, 0x3A)},
-    17: {0: ("W",) * 10 + (0x29,) + ("W",) * 6 + (0x3D,) + ("L",) * 13 + (0x29,)},
-    18: {0: ("W",) * 18 + (0x20, 0x23, 0x22, 0x32, 0x20, 0x23, 0x20, 0x23) + ("W",) * 6},
+    15: {0: (0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B,
+             0x0A, 0x1A, 0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
+    16: {0: ("L",) * 11 + (0x38, 0x2A, 0x3A, "W", "W", 0x2C) + ("L",) * 15},
+    17: {0: (0x24, 0x34, 0x25, 0x35) + ("L",) * 6 + (0x29,) + ("W",) * 6 + (0x3D,) + ("L",) * 14},
+    18: {0: (0x20, 0x23, 0x23, 0x33, 0x20, 0x23, 0x22, 0x32, 0x20, 0x23) + ("W",) * 8 + (0x20, 0x23) * 7},
 }
+for _row in CLOUD_BANK.values():
+    assert len(_row[0]) == 32
 
 
 # The pages of stages with parallax, with their black solid and their sky see-through.
-# Their sky and cloud fill tiles, where the page has them; the clouds' page is all see-through.
-PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,), CLOUD_PAGE: "all"}
+# Their sky and cloud fill tiles, where the page has them. Of the clouds' page, what BG3 draws
+# instead: the rest of it is foreground, such as the shadows under platforms.
+CLOUD_TILES = {v for table in (PUFFS, CLOUD_BANK) for parts in table.values() for seq in parts.values()
+               for v in seq if not isinstance(v, str)}
+PARALLAX_PAGES = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
+                  CLOUD_PAGE: CLOUD_TILES}
 for _p in (0x02, 0x03, 0x10, 0x2C, 0x2D, 0x2E, 0x2F, 0x22, 0x1C, 0x1D, 0x1E, 0x1F, 0x37, 0x35, 0x38, 0x07):
     PARALLAX_PAGES[_p] = ()
 
@@ -657,7 +683,7 @@ def build_parallax_pages(chr_rom):
         alias[page] = 0x80 + n
         for t in range(64):
             c = chr_rom[page * 0x400 + t * 16:page * 0x400 + t * 16 + 16]
-            if sky == "all" or t in sky:
+            if t in sky:
                 out += bytes(32)
                 continue
             rows, solid = bytearray(), bytearray()
@@ -848,7 +874,7 @@ def main():
 
     # Tables and stubs for the assembler
     s = '.segment "TABLES"\n'
-    colors = [min(r * 31 // 236, 31) | min(g * 31 // 236, 31) << 5 | min(b * 31 // 236, 31) << 10 for r, g, b in NES_RGB]
+    colors = [(r * 31 + 127) // 255 | ((g * 31 + 127) // 255) << 5 | ((b * 31 + 127) // 255) << 10 for r, g, b in NES_RGB]
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
