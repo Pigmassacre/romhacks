@@ -526,6 +526,7 @@ PRG030_845A:
 	JSR Do_Title_Screen	; Do the title screen!
 	LDA #GIM_STARTHEALTH
 	STA Gim_MaxHealth
+	STA Gim_MaxHealth+1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; BEGINNING INITIALIZATION OF WORLD MAP!
@@ -1403,6 +1404,8 @@ PRG030_897B:
 	JSR PRGROM_Change_Both2
 
 	JSR LevelLoad_ByTileset			; Load the level layout data!
+	LDY #GIMCALL_LEVELFIX
+	JSR Gim_Call				; Change what Yumetaro can't get through
 	JSR Sprite_RAM_Clear			; Clear the sprites
 	JSR Fill_Tile_AttrTable_ByTileset	; Load tile attribute tiles by the tileset
 
@@ -3142,7 +3145,7 @@ PRG030_92B6:
 	LDA #$04
 	STA Player_Lives,X
 	LDA #GIM_STARTHEALTH
-	STA Gim_MaxHealth
+	STA Gim_MaxHealth,X
 
 	; Set up position variables
 	LDA <Horz_Scroll

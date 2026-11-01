@@ -38,6 +38,17 @@ ATTR = [0xF0] * 8 + [0x2A, 0x8A, 0x66, 0x55, 0x55, 0x99, 0xA2, 0xA8] \
 ROW12_RIGHT = [0x04, 0x05, 0x06, 0x07]
 
 
+# Letters for AI SLOP DO NOT PLAY, drawn like the title's own, over the tiles of "Nintendo" (I S O D N T)
+LETTERS = {
+    0x2A: ["..1111..", "..1221..", "..1221..", "..1221..", "..1221..", "..1221..", "..1221..", "..1111.."],
+    0x2B: [".111111.", "11222211", "12211111", "11222211", "11111221", "12211221", "11222211", ".111111."],
+    0x2C: [".111111.", "11222211", "12211221", "12211221", "12211221", "12211221", "11222211", ".111111."],
+    0x2D: ["111111..", "1222211.", "12211221", "12211221", "12211221", "12211221", "1222211.", "111111.."],
+    0x2E: ["111..111", "12211221", "12221221", "12222221", "12212221", "12211221", "12211221", "11111111"],
+    0x2F: ["11111111", "12222221", "11122111", "..1221..", "..1221..", "..1221..", "..1221..", "..1111.."],
+}
+
+
 def gim_tile(t):
     page = GIM_PAGES[t >> 6]
     return tile_pixels(gchr, page * 1024 + (t & 0x3F) * 16)
@@ -67,6 +78,9 @@ def main():
             out.append(slots[enc])
         rows.append(out)
     print('logo tiles: %d of %d free slots' % (len(slots), len(FREE)))
+    for tile, rows_ in LETTERS.items():
+        pix = [[0 if ch == '.' else int(ch) for ch in row] for row in rows_]
+        chr_data[tile * 16:tile * 16 + 16] = bytes(encode_tile(pix))
 
     os.makedirs(os.path.join(ROOT, 'out', 'chr'), exist_ok=True)
     for i in range(4):
