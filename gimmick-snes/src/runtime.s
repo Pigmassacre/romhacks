@@ -17,14 +17,16 @@
 .import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
-BGSET_HI   = $20            ; three 4 KB tile sets, $1000 words apart, from $2000
+OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
+BGSET_HI   = $20            ; the first tile set of three: see set_hi
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
+IRQ_EARLY  = 12             ; lines ahead of time to start a split's interrupt
 CROP_TOP   = 8              ; the SNES's 224 lines start this far down the NES's 240
 
 .segment "WVARS"
-.export nmi_ptr, irq_ptr, nmi_flags, split_n, split_open, set_have
+.export nmi_ptr, irq_ptr, nmi_flags, set_have
 nmi_ptr:     .res 3         ; the game's NMI code, in the current ROM bank
 irq_ptr:     .res 3
 cur_pbr = nmi_ptr + 2
@@ -47,19 +49,30 @@ mirror:      .res 1
 irq_lo:      .res 1
 irq_hi:      .res 1
 nmi_flags:   .res 1
+irq_flag:    .res 1
+irq_line:    .res 1         ; the SNES line the current split belongs on
+in_split:    .res 1         ; a split's interrupt has run this frame
+.export in_split
+.export irq_flag
 force_blank: .res 1
 vram_step:   .res 1
 split_n:     .res 1         ; how many splits have changed the background's tiles this frame
 split_open:  .res 1         ; a split has changed tiles and not yet shown them
+split_flip:  .res 1         ; the second sprite tables are showing
 tmp:         .res 4
 attr_new:    .res 1
 attr_col:    .res 1
 attr_row:    .res 1
 attr_lo:     .res 1
 attr_hi:     .res 1
+chr_want:    .res 8         ; what the game has mapped for the top of the picture
 chr_obj:     .res 8         ; loaded in the sprite tables
 set_want:    .res 12        ; BG slots 4-7 for each of the three tile sets
 set_have:    .res 12
+obj2_want:   .res 8         ; the sprite pages below a split
+obj2_have:   .res 8
+obj_base:    .res 1
+.export obj2_have
 .export apu_regs, sb_cmd, sb_regs, apu_kick
 apu_regs:    .res 32
 apu_kick:    .res 4
@@ -217,6 +230,7 @@ fme_irqctl:
         and #$81
         cmp #$81
         beq :+
+        stz irq_flag
         lda nmi_flags
         sta NMITIMEN
         jmp fme_done
@@ -249,18 +263,13 @@ arm_irq:
         ror tmp
         lsr a
         ror tmp             ; lines from now
+        cmp #0
         bne @never          ; 256 or more
-        ; Where is the beam? In vblank the NES is at line 241, 21 before line 0.
-        lda SLHV
-        lda OPVCT
-        sta tmp + 1
-        lda OPVCT
-        and #1
-        bne @vblank
-        lda tmp + 1
+        ; From vblank, count from the NES's line 241, 21 before its line 0. From a split,
+        ; count from the line that split was meant for.
+        jsr beam
         cmp #225
         bcc @line
-@vblank:
         ; lines - 29 is the first line on the SNES, unless that is before the picture.
         lda tmp
         sec
@@ -268,19 +277,65 @@ arm_irq:
         bcs @set
         lda #0
         bra @set
-@line:  clc
+@line:  lda irq_line
+        clc
         adc tmp
         bcs @never
 @set:   cmp #225
         bcs @never
+        sta irq_line
+        ; Early, since the game's handler takes much longer here than on the NES. What it
+        ; changes on screen waits for the line, in wait_line.
+        sec
+        sbc #IRQ_EARLY
+        bcs :+
+        lda #0
+:       sta tmp
+        jsr beam
+        cmp tmp
+        bcc :+
+        cmp #225
+        bcs :+
+        ina
+        sta tmp
+:       lda tmp
         sta VTIMEL
         stz VTIMEH
-        lda nmi_flags
-        ora #$20
+        lda #$20
+        sta irq_flag
+        ora nmi_flags
         sta NMITIMEN
         rts
-@never: lda nmi_flags
+@never: stz irq_flag
+        lda nmi_flags
         sta NMITIMEN
+        rts
+
+; The line the beam is on, with everything past 255 as 255.
+beam:
+        lda SLHV
+        lda OPVCT
+        sta tmp + 3
+        lda OPVCT
+        and #1
+        beq :+
+        lda #$FF
+        rts
+:       lda tmp + 3
+        rts
+
+; Wait for the line the current split is meant for, then for its hblank.
+wait_line:
+        lda in_split
+        beq wait_hblank     ; a late write from the NMI: it waits for nothing
+:       jsr beam
+        cmp irq_line
+        bcc :-
+wait_hblank:
+:       bit HVBJOY
+        bvs :-
+:       bit HVBJOY
+        bvc :-
         rts
 
 ; Carry set when the beam is drawing the picture now.
@@ -328,42 +383,28 @@ fme_chr:
         tax
         jsr picture_on
         bcs @split
-        cpx #4
-        bcc @obj
-        ; The first tile set, for the top of the picture
         tya
+        sta chr_want,x
+        cpx #4
+        bcc :+
         sta set_want - 4,x
-        cmp set_have - 4,x
-        beq @obj
-        jsr may_dma
-        bcc @obj
-        sta set_have - 4,x
-        lda #$80
-        sta VMAINC
-        stz VMADDL
-        txa
-        and #3
-        asl a
-        ora #BGSET_HI
-        sta VMADDH
-        jsr dma_bg_page
-@obj:   tya
-        cmp chr_obj,x
-        beq @out
-        jsr may_dma
-        bcc @out
-        sta chr_obj,x
-        jsr dma_obj_page
+:       ; With the picture off the main thread may be part way through writing a map, and
+        ; this may be the NMI. It waits for frame_done, when nothing is writing to VRAM.
+        lda force_blank
+        bne @out
+        jsr load_top_slot
 @out:   jmp fme_done
-@split: cpx #4
-        bcc @out            ; the picture below a split has no sprites
+@split: tya
+        sta obj2_want,x
+        cpx #4
+        bcc @flip
         ; A further tile set for what comes below. It can only be copied in vblank, so
         ; the first frame of a new set still shows the old one.
         lda split_open
         bne @have
         lda split_n
         cmp #2
-        bcs @out
+        bcs @flip
         inc split_n
         inc split_open
         ; Start it from the set above.
@@ -390,7 +431,37 @@ fme_chr:
         tax
         tya
         sta set_want,x
-        bra @out
+@flip:  jsr flip_sprites
+        jmp fme_done
+
+; Bring slot x up to date, if there is time. Keeps x.
+load_top_slot:
+        ldy chr_want,x
+        cpx #4
+        bcc @obj
+        tya
+        cmp set_have - 4,x
+        beq @obj
+        jsr may_dma
+        bcc @obj
+        sta set_have - 4,x
+        lda #$80
+        sta VMAINC
+        stz VMADDL
+        txa
+        and #3
+        asl a
+        ora #BGSET_HI
+        sta VMADDH
+        jsr dma_bg_page
+@obj:   tya
+        cmp chr_obj,x
+        beq @out
+        jsr may_dma
+        bcc @out
+        sta chr_obj,x
+        jsr dma_obj_page
+@out:   rts
 
 ; Page in y; the VRAM address is set. Keeps y.
 dma_bg_page:
@@ -425,6 +496,7 @@ dma_obj_page:
         txa
         asl a
         asl a
+        ora obj_base
         sta VMADDH
         tya
         phx
@@ -450,9 +522,13 @@ dma_obj_page:
         sta MDMAEN
         rts
 
-; At the next line, show the tile set the split changed to, if it has been copied.
+; The tile sets, by the high byte of their VRAM address.
+set_hi: .byte BGSET_HI, $30, $70
+
+; At the next line, show the tiles and sprites a split changed to, once they are copied.
 show_split_set:
-        lda split_open
+        jsr flip_sprites
+@bg:    lda split_open
         beq @out
         stz split_open
         lda split_n
@@ -466,22 +542,58 @@ show_split_set:
         inx
         dey
         bne :-
-        lda split_n
-        clc
-        adc #BGSET_HI >> 4
+        ldx split_n
+        lda set_hi,x
+        lsr a
+        lsr a
+        lsr a
+        lsr a
         sta BG12NBA
 @out:   rts
 
-wait_hblank:
-:       bit HVBJOY
-        bvs :-
-:       bit HVBJOY
-        bvc :-
+; The game sets the sprites' pages one by one: flip when the last one is right.
+flip_sprites:
+        lda split_flip
+        bne @out
+        ldx #7
+:       lda obj2_want,x
+        cmp obj2_have,x
+        bne @out
+        dex
+        bpl :-
+        jsr wait_line
+        lda #OBJ2_HI >> 5
+        sta OBSEL
+        inc split_flip
+@out:   rts
+
+
+; The NMI's work, before the game's code. Copy one page that a split wanted last frame,
+; and start the frame from the sets above the split.
+.export nmi_work
+nmi_work:
+        jsr commit_palette
+        stz split_n
+        stz split_open
+        stz split_flip
+        stz irq_line
+        stz in_split
+        stz OBSEL
+        lda #BGSET_HI >> 4
+        sta BG12NBA
+        lda #$40
+        sta HDMAEN
+        lda force_blank
+        bne :+
+        jsr load_page
+:       ldx #7
+:       lda chr_want,x
+        sta obj2_want,x
+        dex
+        bpl :-
         rts
 
-; Copy a page of tile sets 1 and 2 that a split asked for. From the NMI, once a frame.
-.export load_split_sets
-load_split_sets:
+load_page:
         ldx #4
 @next:  lda set_want,x
         cmp set_have,x
@@ -489,24 +601,39 @@ load_split_sets:
         inx
         cpx #12
         bne @next
+        ldx #7
+@obj:   lda obj2_want,x
+        cmp obj2_have,x
+        bne @load_obj
+        dex
+        bpl @obj
+        rts
+@load_obj:
+        sta obj2_have,x
+        tay
+        lda #OBJ2_HI
+        sta obj_base
+        jsr dma_obj_page
+        stz obj_base
         rts
 @load:  sta set_have,x
         tay
         lda #$80
         sta VMAINC
         stz VMADDL
-        ; x = set * 4 + slot. Sets are $1000 words apart and slots $200.
-        txa
-        and #$FC
-        asl a
-        asl a
-        sta tmp
+        ; x = set * 4 + slot, and slots are $200 words.
         txa
         and #3
         asl a
+        sta tmp
+        txa
+        lsr a
+        lsr a
+        phx
+        tax
+        lda set_hi,x
+        plx
         ora tmp
-        clc
-        adc #BGSET_HI
         sta VMADDH
         jmp dma_bg_page
 
@@ -586,6 +713,18 @@ ppu_ctrl_w:
         eor ppu_ctrl
         sta tmp + 1         ; what changed
         sty ppu_ctrl
+        and #$FB
+        bne @full
+        ; Only the VRAM step, which the game changes all through its vblank.
+        ldx #$FF
+        stx data_left
+        tya
+        lsr a
+        lsr a
+        and #1
+        sta vram_step
+        jmp reg_done
+@full:
         ; t: nametable select
         tya
         and #3
@@ -610,6 +749,7 @@ ppu_ctrl_w:
         tya
         and #$80
         sta nmi_flags
+        ora irq_flag
         sta NMITIMEN
         lda tmp + 1
         and #3
@@ -873,7 +1013,7 @@ apply_scroll:
 
 ; A scroll register written with the picture on: from the next line, x comes from t.
 mid_scroll:
-        jsr wait_hblank
+        jsr wait_line
         jsr apply_h
         jmp show_split_set
 
@@ -891,7 +1031,7 @@ mid_scroll_v:
         lda tmp + 1
         sbc #0
         tax
-        jsr wait_hblank
+        jsr wait_line
         stz HDMAEN
         sty BG1VOFS
         stx BG1VOFS
@@ -998,7 +1138,6 @@ ppu_data_w:
         jmp @next
 
 ; Send the colours the game has changed. From the NMI.
-.export commit_palette
 commit_palette:
         lda pal_dirty
         beq @out
@@ -1027,6 +1166,38 @@ commit_palette:
         bne @set
 @out:   rts
 
+; Stop a run of tiles early, because something else is about to use VRAM: v goes back
+; to where the run has got to.
+end_run:
+        lda data_left
+        bmi @out
+        ldx vram_step
+        bne @down
+        lda ppu_vlo
+        sec
+        sbc data_left
+        sta ppu_vlo
+        bcs @done
+        dec ppu_vhi
+        bra @done
+@down:  stz tmp + 1
+        ldx #5
+:       asl a
+        rol tmp + 1
+        dex
+        bne :-
+        sta tmp
+        lda ppu_vlo
+        sec
+        sbc tmp
+        sta ppu_vlo
+        lda ppu_vhi
+        sbc tmp + 1
+        sta ppu_vhi
+@done:  lda #$FF
+        sta data_left
+@out:   rts
+
 ; After a tile: how many more can go straight to VRAM, which steps by itself, before v
 ; leaves the tiles. v moves past them now, since those stores will not touch it.
 plan_run:
@@ -1035,9 +1206,11 @@ plan_run:
         lda ppu_vhi
         and #3
         cmp #3
-        lda #$BE
-        beq :+
+        php
         lda #$FE
+        plp
+        bne :+
+        lda #$BE
 :       sec
         sbc ppu_vlo
         bcs :+
@@ -1253,18 +1426,18 @@ oam_dma_a:
 @ready: stz oam_ready
         stz OAMADDL
         stz OAMADDH
-        stz DMAP7
+        stz DMAP5
         lda #<OAMDATA
-        sta BBAD7
+        sta BBAD5
         lda #<oam_buf
-        sta A1T7L
+        sta A1T5L
         lda #>oam_buf
-        sta A1T7H
-        stz A1B7
-        stz DAS7L
+        sta A1T5H
+        stz A1B5
+        stz DAS5L
         lda #2
-        sta DAS7H
-        lda #$80
+        sta DAS5H
+        lda #$20
         sta MDMAEN
         ply
         plx
@@ -1280,6 +1453,14 @@ frame_done:
         phx
         phy
         jsr convert_oam
+        lda force_blank
+        beq @on
+        jsr end_run
+        ldx #7
+:       jsr load_top_slot
+        dex
+        bpl :-
+@on:
         lda #1
         sta oam_ready
         lda #$AC
@@ -1347,6 +1528,10 @@ runtime_init:
         lda #$FF
         sta w6_bank
         sta data_left
+        ldx #7
+:       sta obj2_have,x
+        dex
+        bpl :-
         rts
 
 ; lda $2007, which the game only does in code that never ran in the survey.

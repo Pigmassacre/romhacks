@@ -8,8 +8,8 @@
 .include "hw.inc"
 
 .import __WCODE_LOAD__, __WCODE_RUN__, __WCODE_SIZE__
-.import nmi_ptr, irq_ptr, cur_pbr, nmi_flags, split_n, split_open, hdma_tab, set_have
-.import load_split_sets, runtime_init, commit_palette
+.import in_split, irq_flag, nmi_ptr, irq_ptr, cur_pbr, nmi_flags, hdma_tab, set_have
+.import nmi_work, runtime_init
 .import FirstBank, NesNmi, NesIrq, NesReset, TitleTune
 
 .segment "BOOT"
@@ -149,7 +149,11 @@ fast:
         cpx #12
         bne :-
 
+        sep #$10
+        .i8
         jsr runtime_init
+        rep #$10
+        .i16
 
         ; Start the game: the NES's reset code, in the bank for its first mapping.
         lda f:FirstBank
@@ -186,14 +190,7 @@ nmi_emu:
         phx
         phy
         bit RDNMI
-        stz split_n
-        stz split_open
-        lda #2
-        sta BG12NBA
-        lda #$40
-        sta HDMAEN
-        jsr commit_palette
-        jsr load_split_sets
+        jsr nmi_work
         ply
         plx
         pla
@@ -202,6 +199,9 @@ nmi_emu:
 irq_emu:
         pha
         bit TIMEUP
+        stz irq_flag
+        lda #1
+        sta in_split
         lda nmi_flags
         sta NMITIMEN
         pla

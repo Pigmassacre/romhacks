@@ -9,7 +9,7 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "out", "ramdiff") + "/"
-PICK = "PICK = function(f) return {start = f % 60 < 5} end\n" if "--start" in sys.argv else ""
+PICK = "PICK = function(f) if emu.read(0x90, SNES and emu.memType.snesMemory or emu.memType.nesMemory) == 0 then return {start = f % 60 < 5} end return {} end\n"
 
 
 def record(snes, frames):
@@ -26,8 +26,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     frames = int(args[0]) if args else 400
     os.makedirs(OUT, exist_ok=True)
-    if not os.path.exists(OUT + "nes.bin") or os.path.getsize(OUT + "nes.bin") != frames * 0x800:
-        record(False, frames)
+    record(False, frames)
     record(True, frames)
     a = open(OUT + "nes.bin", "rb").read()
     b = open(OUT + "snes.bin", "rb").read()
@@ -37,7 +36,7 @@ def main():
         out = {}
         for n in range(len(d) // 0x800):
             r = d[n * 0x800:(n + 1) * 0x800]
-            if r[0xF0] == 0xAC:
+            if r[0xF0] == 0xAC and r[0x90] != 0xFF:
                 out.setdefault(r[0xED] | r[0xEE] << 8, []).append(r)
         return out
     na, nb = by_count(a), by_count(b)
@@ -45,7 +44,7 @@ def main():
     for c in sorted(set(na) & set(nb)):
         x, y = na[c][0], nb[c][0]
         diffs = [i for i in range(0x800) if x[i] != y[i] and not 0x100 <= i < 0x170 and not 0x190 <= i < 0x200
-                 and not 0x56 <= i < 0x80 and not i >= 0x600]    # the sound driver counts all NMIs
+                 and not 0x56 <= i < 0x80 and not 0xF5 <= i < 0xF9 and not i >= 0x600]    # the sound driver counts all NMIs
         if diffs:
             print("frame %d: %d bytes differ" % (c, len(diffs)))
             for i in diffs[:24]:

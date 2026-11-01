@@ -340,8 +340,9 @@ def main():
 
     # Tables and stubs for the assembler
     s = '.segment "TABLES"\n'
-    s += bytes_asm("ColorLo", [(((r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)) & 0xFF) for r, g, b in NES_RGB])
-    s += bytes_asm("ColorHi", [(((r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)) >> 8) for r, g, b in NES_RGB])
+    colors = [min(r * 31 // 236, 31) | min(g * 31 // 236, 31) << 5 | min(b * 31 // 236, 31) << 10 for r, g, b in NES_RGB]
+    s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
+    s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
     s += bytes_asm("ChrBgBanks", [0xC0 + BG_HALF + p // 32 for p in range(128)])
     s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)])
