@@ -92,7 +92,11 @@ sa_Dead2        = 8
 sa_Begin        = $FF
 
 wa_RegularBeam  = $01       ; projectile status
+wa_WaveBeam     = $02
 wa_BulletExplode = $04
+wa_LayBomb      = $08
+wa_BombCount    = $09
+wa_BombExplode  = $0A
 wa_Missile      = $0B
 
 ; ---- The hack's RAM ----------------------------------------------------------
@@ -151,6 +155,12 @@ RideSlot        = FollowX   ; while Samus moves: the platform she stands on (0 n
 RideLastX       = FollowY   ; and its x in the level last frame
 CV_PLATFORM_POSE = $C9
 
+UP_SCREW        = $08       ; as in Metroid's SamusGear
+UP_WAVE         = $40
+WEAPON_AXE      = $0D       ; Castlevania's CurrentWeapon (low nibble), which unlock them
+WEAPON_CROSS    = $09
+CurrentWeapon   = $015B
+
 HS_SAMUS        = $01       ; Samus's own state is current (else take Simon's position)
 HS_KILL         = $02       ; ask Castlevania to kill Simon
 HS_GROUND       = $04       ; standing on the ground: stairs may start
@@ -182,6 +192,9 @@ SfxSaveX        = $01BF
 DebugFlags      = $01C0     ; for the tests: bit 7, Samus goes through walls
 HudShown        = $01C1     ; 6 bytes: what the HUD's digit columns show
 HudNew          = $01C7     ; 6 bytes: what they should show
+Upgrades        = $01CD     ; UP_*: what Samus has picked up, until a game over
+ScrewWait       = $01CE     ; frames until the Screw Attack can hit again
+BulWave         = $01CF     ; 3 bytes: a wave shot's place in its path (WaveSpeeds)
 LastHearts      = $07F0     ; Hearts last frame, for the missile pickup sound
 
 ; Castlevania's scratch bytes; the hack uses them the same way, as temporaries

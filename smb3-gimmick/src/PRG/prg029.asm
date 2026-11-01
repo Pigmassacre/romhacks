@@ -388,11 +388,19 @@ PRG029_CF1E:
 PRG029_GimFrameMapped:
 	TAY
 PRG029_GimFrameSet:
+	LDA Player_Kuribo
+	BEQ PRG029_GimNoShoe
+	LDY #$00	 ; In the shoe, he stands (it hops); frame 0 leaves two of his sprites free for the shoe
+PRG029_GimNoShoe:
 	LDA <Player_IsDying
 	BEQ PRG029_GimAlive
 	LDY #GIMF_HURT
 PRG029_GimAlive:
 	LDA GimFrame_Page,Y
+	LDX Player_Current
+	BEQ PRG029_GimPageSet
+	SUB #(GIM_PAGE - OHAGI_PAGE)	 ; The second player is the Ohagi: the same frames, from its pages
+PRG029_GimPageSet:
 	STA PatTable_BankSel+2
 	LDA GimFrame_PtrL,Y
 	STA <Player_SprWorkL
@@ -460,6 +468,48 @@ PRG029_GimNextSpr:
 	BNE PRG029_GimSprLoop
 
 	LDX Player_SprOff
+
+	LDA Player_Kuribo
+	BEQ PRG029_D094
+	JSR PRG029_GimDrawShoe
+	JMP PRG029_D094
+
+	; Stock draws Kuribo's shoe from Mario's pages, which are gone: this draws what flies off when he loses it,
+	; under him, in the sprites frame 0 leaves free, with him raised into it
+PRG029_GimDrawShoe:
+	LDA <Player_SpriteY
+	CMP #8
+	BLT PRG029_GimShoeRaised
+	SUB #8
+	STA Sprite_RAM+$0C,X
+	ADD #16
+	STA Sprite_RAM+$00,X
+	STA Sprite_RAM+$04,X
+PRG029_GimShoeRaised:
+	LDA <Player_SpriteY
+	ADD #16
+	STA Sprite_RAM+$08,X
+	STA Sprite_RAM+$10,X
+	LDA #$A9
+	LDY #$AB
+	BIT <Player_FlipBits
+	BVC PRG029_GimShoeLeft
+	LDA #$AB
+	LDY #$A9
+PRG029_GimShoeLeft:
+	STA Sprite_RAM+$09,X
+	TYA
+	STA Sprite_RAM+$11,X
+	LDA <Player_FlipBits
+	AND #SPR_HFLIP
+	ORA #$02
+	STA Sprite_RAM+$0A,X
+	STA Sprite_RAM+$12,X
+	LDA <Player_SpriteX
+	STA Sprite_RAM+$0B,X
+	ADD #8
+	STA Sprite_RAM+$13,X
+	RTS
 
 PRG029_D094:
 	LDA #$00

@@ -2631,7 +2631,7 @@ CFIRE_LASER		= $15	; Laser fire
 	Star_SprX:		.ds 1	; Screen X of the star this frame
 	Star_SprY:		.ds 1	; Screen Y of the star this frame
 	Star_SprVis:		.ds 1	; Bit 0 = left half visible, bit 1 = right half visible
-	Gim_MaxHealth:		.ds 1	; Health refilled at level start (shown as the P-meter arrows)
+	Gim_MaxHealth:		.ds 2	; (Mario/Luigi) Health refilled at level start (shown as the P-meter arrows)
 	Gim_Animated:		.ds 1	; Set when Gim_Animate ran this frame, else Player_Draw maps Player_Frame
 	Gim_SndQ:		.ds 1	; Queued Gimmick! sound effect (GIMSND_*), played on square 1
 	Gim_SndPos:		.ds 1	; Index into GimSnd_Ctl/GimSnd_Lo of the playing Gimmick! sound (0 = none)
@@ -2640,7 +2640,7 @@ CFIRE_LASER		= $15	; Laser fire
 	Gim_OnSlope:		.ds 1	; Set by Gim_Slope while standing on a slope; consumed by the next Gim_GndMov (no friction)
 	Star_OnSlope:		.ds 1	; Slope effect (Slope_PlayerVel_Effect) if the star landed on a slope last step, else 0
 
-				.ds 69	; $7A9B-$7ADF unused
+				.ds 68	; $7A9C-$7ADF unused
 
 	Music_Start:		.ds 1	; Music start index (beginning of this song)
 	Music_End:		.ds 1	; Music end index (inclusive last index to play before loop)
@@ -3633,6 +3633,8 @@ GIM_KNOCKBACKX		= $12
 GIM_KNOCKBACKY		= -$18
 GIM_STARTHEALTH		= 3
 GIM_HEALTHCAP		= 6
+GIM_PAGE		= $50	; Yumetaro's first page of frames
+OHAGI_PAGE		= $40	; The Ohagi's, which has the same layout
 GIMF_JUMP		= 8
 GIMF_HURT		= 11
 
@@ -4902,10 +4904,10 @@ TILE18_BOUNCEDBLOCK	= $C2	; Temporary tile for when block has been bounced
 	.incbin "CHR/chr001.bin"
 	.incbin "CHR/chr002.bin"
 	.incbin "CHR/chr003.bin"
-	.incbin "CHR/chr004.bin"
+	.incbin "../out/chr/chr004.bin"
 	.incbin "CHR/chr005.bin"
 	.incbin "CHR/chr006.bin"
-	.incbin "CHR/chr007.bin"
+	.incbin "../out/chr/chr007.bin"
 	.incbin "CHR/chr008.bin"
 	.incbin "CHR/chr009.bin"
 	.incbin "CHR/chr010.bin"
@@ -4920,8 +4922,8 @@ TILE18_BOUNCEDBLOCK	= $C2	; Temporary tile for when block has been bounced
 	.incbin "CHR/chr019.bin"
 	.incbin "CHR/chr020.bin"
 	.incbin "CHR/chr021.bin"
-	.incbin "CHR/chr022.bin"
-	.incbin "CHR/chr023.bin"
+	.incbin "../out/chr/chr022.bin"
+	.incbin "../out/chr/chr023.bin"
 
 	.incbin "CHR/chr024.bin"
 	.incbin "CHR/chr025.bin"
@@ -4964,10 +4966,10 @@ TILE18_BOUNCEDBLOCK	= $C2	; Temporary tile for when block has been bounced
 	.incbin "CHR/chr061.bin"
 	.incbin "CHR/chr062.bin"
 	.incbin "CHR/chr063.bin"
-	.incbin "CHR/chr064.bin"
-	.incbin "CHR/chr065.bin"
-	.incbin "CHR/chr066.bin"
-	.incbin "CHR/chr067.bin"
+	.incbin "../out/chr/chr064.bin"
+	.incbin "../out/chr/chr065.bin"
+	.incbin "../out/chr/chr066.bin"
+	.incbin "../out/chr/chr067.bin"
 	.incbin "CHR/chr068.bin"
 	.incbin "CHR/chr069.bin"
 	.incbin "CHR/chr070.bin"
@@ -4988,12 +4990,12 @@ TILE18_BOUNCEDBLOCK	= $C2	; Temporary tile for when block has been bounced
 	.incbin "CHR/chr085.bin"
 	.incbin "CHR/chr086.bin"
 	.incbin "CHR/chr087.bin"
-	.incbin "CHR/chr088.bin"
+	.incbin "../out/chr/chr088.bin"
 	.incbin "CHR/chr089.bin"
 	.incbin "CHR/chr090.bin"
 	.incbin "CHR/chr091.bin"
 	.incbin "CHR/chr092.bin"
-	.incbin "CHR/chr093.bin"
+	.incbin "../out/chr/chr093.bin"
 	.incbin "CHR/chr094.bin"
 	.incbin "CHR/chr095.bin"
 	.incbin "CHR/chr096.bin"

@@ -1071,13 +1071,14 @@ PRG008_A523:
 	; Palette colors per power up level -- first byte is never used!
 PowerUp_Palettes:
 	.byte $00, $0B, $2A, $30	; 0 - Mario default palette
-	.byte $00, $0B, $2A, $30	; 1 - Luigi default palette
+	.byte $00, $0F, $00, $30	; 1 - Luigi default palette
 	.byte $00, $27, $36, $16	; 2 - Fire Flower
 	.byte $00, $00, $00, $00	; 3 - Leaf (Not used, uses 0 or 1 as appropriate)
 	.byte $00, $2A, $36, $0F	; 4 - Frog Suit
 	.byte $00, $17, $36, $0F	; 5 - Tanooki Suit
 	.byte $00, $30, $27, $0F	; 6 - Hammer Suit
 	.byte $00, $00, $10, $0F	; 7 - Tanooki Statue
+	.byte $00, $00, $10, $30	; 8 - The Ohagi on a black background
 
 Level_SetPlayerPUpPal:
 	LDY #$07	 ; Y = 7 (select statue palette)
@@ -1097,6 +1098,13 @@ PRG008_A55B:
 	LDY Player_Current
 
 PRG008_A55E:
+	CPY #$01
+	BNE PRG008_GimPalY
+	LDA Palette_Buffer
+	CMP #$0F
+	BNE PRG008_GimPalY
+	LDY #$08
+PRG008_GimPalY:
 	LDX Graphics_BufCnt
 	TXA
 	ADD #$06
@@ -5156,8 +5164,8 @@ LATP_Flower:
 
 	LDY #$05	 ; Y = 5 (spawn a mushroom) (index into PRG001 Bouncer_PUp)
 
-	LDA <Player_Suit
-	BEQ PRG008_B7F9	 ; If Player is small, jump to PRG008_B7F9
+	JSR LATP_GimHurt
+	BCC PRG008_B7F9	 ; If he's hurt, jump to PRG008_B7F9
 
 	LDY #$02	 ; Y = 2 (spawn a fire flower) (index into PRG001 Bouncer_PUp)
 
@@ -5165,14 +5173,25 @@ PRG008_B7F9:
 	RTS		 ; Return
 
 
+	; Yumetaro is always small: a mushroom while he's hurt (carry clear), otherwise what raises his maximum
+LATP_GimHurt:
+	TXA
+	PHA
+	LDX Player_Current
+	LDA Gim_Health
+	CMP Gim_MaxHealth,X
+	PLA
+	TAX
+	RTS
+
 LATP_Leaf:
 	LDA #$00
 	STA PUp_StarManFlash	 ; PUp_StarManFlash = 0 (don't activate star man flash)
 
 	LDY #$05	 ; Y = 5 (spawn a mushroom) (index into PRG001 Bouncer_PUp)
 
-	LDA <Player_Suit
-	BEQ PRG008_B807	 ; If Player is small, jump to PRG008_B807
+	JSR LATP_GimHurt
+	BCC PRG008_B807	 ; If he's hurt, jump to PRG008_B807
 
 	LDY #$03	 ; Y = 3 (spawn a leaf) (index into PRG001 Bouncer_PUp)
 

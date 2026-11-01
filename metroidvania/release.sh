@@ -66,7 +66,9 @@ if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null || [[ -n "$(git ls-re
 fi
 
 notes="$(mktemp)"
-cat > "$notes" << 'NOTES'
+{
+	../release-notes.sh metroidvania
+	cat << 'NOTES'
 Samus, from Nintendo's *Metroid*, in Konami's *Castlevania*: Metroid's movement, beams, missiles, morph ball, HUD and sounds, in Castlevania's stages.
 
 You need your own copy of Castlevania, the original US release. Apply `metroidvania.bps` to it with [Flips](https://github.com/Alcaro/Flips) or [Rom Patcher JS](https://www.marcrobledo.com/RomPatcher.js/).
@@ -77,6 +79,7 @@ You need your own copy of Castlevania, the original US release. Apply `metroidva
 
 The result is a 256 KB ROM on mapper 2 (UOROM) with CHR RAM. It has been tested in Mesen.
 NOTES
+} > "$notes"
 
 git tag "$tag"
 git push origin "$tag"

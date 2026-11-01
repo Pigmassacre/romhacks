@@ -8,6 +8,7 @@ GIMCALL_POWERUP		= 4
 GIMCALL_ANIMATE		= 5
 GIMCALL_SLOPE		= 6
 GIMCALL_CANNONBALL	= 7
+GIMCALL_LEVELFIX	= 8
 
 Gim_Dispatch:
 	LDA Gim_EntryL,Y
@@ -16,8 +17,8 @@ Gim_Dispatch:
 	STA Gim_Vector+1
 	JMP [Gim_Vector]
 
-Gim_EntryL:	.byte LOW(Gim_GndMov), LOW(Gim_LevelInit), LOW(Gim_Star), LOW(Gim_StandOnEnemy), LOW(Gim_PowerUp), LOW(Gim_Animate), LOW(Gim_Slope), LOW(Gim_Cannonball)
-Gim_EntryH:	.byte HIGH(Gim_GndMov), HIGH(Gim_LevelInit), HIGH(Gim_Star), HIGH(Gim_StandOnEnemy), HIGH(Gim_PowerUp), HIGH(Gim_Animate), HIGH(Gim_Slope), HIGH(Gim_Cannonball)
+Gim_EntryL:	.byte LOW(Gim_GndMov), LOW(Gim_LevelInit), LOW(Gim_Star), LOW(Gim_StandOnEnemy), LOW(Gim_PowerUp), LOW(Gim_Animate), LOW(Gim_Slope), LOW(Gim_Cannonball), LOW(Gim_LevelFix)
+Gim_EntryH:	.byte HIGH(Gim_GndMov), HIGH(Gim_LevelInit), HIGH(Gim_Star), HIGH(Gim_StandOnEnemy), HIGH(Gim_PowerUp), HIGH(Gim_Animate), HIGH(Gim_Slope), HIGH(Gim_Cannonball), HIGH(Gim_LevelFix)
 
 	; Temp_Var1 = queued suit + 1; Yumetaro stays small, power-ups become health instead
 Gim_PowerUp:
@@ -30,18 +31,20 @@ Gim_PowerUp:
 	BLT Gim_PowerUpRTS
 	BEQ Gim_PowerUpHeal
 
-	LDA Gim_MaxHealth
+	LDX Player_Current
+	LDA Gim_MaxHealth,X
 	CMP #GIM_HEALTHCAP
 	BGE Gim_PowerUpFull
-	INC Gim_MaxHealth
+	INC Gim_MaxHealth,X
 Gim_PowerUpFull:
-	LDA Gim_MaxHealth
+	LDA Gim_MaxHealth,X
 	STA Gim_Health
 	RTS
 
 Gim_PowerUpHeal:
+	LDX Player_Current
 	LDA Gim_Health
-	CMP Gim_MaxHealth
+	CMP Gim_MaxHealth,X
 	BGE Gim_PowerUpRTS
 	INC Gim_Health
 Gim_PowerUpRTS:
@@ -78,12 +81,53 @@ Gim_StandOnEnemy:
 	LDA <Player_XHi
 	ADC <Temp_Var2
 	STA <Player_XHi
+	LDA <Temp_Var2
+	JSR Gim_RideClamp
 
 Gim_StandStore:
 	LDA <Objects_X,X
 	STA Gim_RideX
 	LDA <Objects_XHi,X
 	STA Gim_RideXHi
+	RTS
+
+	; A = high byte of how far a ride just carried Yumetaro. Walking stops at 16 from the left of the screen and
+	; 232 from its right, but only when walking that way: a ride past them would count as crushed off the screen
+Gim_RideClamp:
+	BMI Gim_RideClampLeft
+	LDA <Player_X
+	SUB <Horz_Scroll
+	STA <Temp_Var1
+	LDA <Player_XHi
+	SBC <Horz_Scroll_Hi
+	BMI Gim_RideClampRTS
+	BNE Gim_RideClampRight
+	LDA <Temp_Var1
+	CMP #233
+	BLT Gim_RideClampRTS
+Gim_RideClampRight:
+	LDA #232
+	BNE Gim_RideClampSet
+Gim_RideClampLeft:
+	LDA <Player_X
+	SUB <Horz_Scroll
+	STA <Temp_Var1
+	LDA <Player_XHi
+	SBC <Horz_Scroll_Hi
+	BMI Gim_RideClampLow
+	BNE Gim_RideClampRTS
+	LDA <Temp_Var1
+	CMP #16
+	BGE Gim_RideClampRTS
+Gim_RideClampLow:
+	LDA #16
+Gim_RideClampSet:
+	ADD <Horz_Scroll
+	STA <Player_X
+	LDA <Horz_Scroll_Hi
+	ADC #0
+	STA <Player_XHi
+Gim_RideClampRTS:
 	RTS
 
 Gim_RideRotate:
@@ -96,6 +140,7 @@ Gim_RideRotate:
 
 	LDA <Player_HaltGame
 	ORA Player_IsDying
+	ORA Level_PipeMove
 	BNE Gim_RideRotateDone
 	LDA <Player_YVel
 	BMI Gim_RideRotateDone
@@ -292,6 +337,8 @@ Gim_CannonCarry:
 	TYA
 	ADC <Player_XHi
 	STA <Player_XHi
+	TYA
+	JSR Gim_RideClamp
 
 Gim_CannonStore:
 	LDA SpecialObj_XLo,X
@@ -316,9 +363,72 @@ Gim_LevelInit:
 	STA Gim_RideSlot
 	STA Gim_RideSlotNew
 	STA Star_State
-	LDA Gim_MaxHealth
+	LDX Player_Current
+	LDA Gim_MaxHealth,X
 	STA Gim_Health
 	RTS
+
+	; Sets the tiles of tools/gen_levelfix.py if this is one of its levels
+Gim_LevelFix:
+	LDA #LOW(Gim_LevelFixes)
+	STA <Temp_Var1
+	LDA #HIGH(Gim_LevelFixes)
+	STA <Temp_Var2
+Gim_FixEntry:
+	LDY #$00
+	LDA [Temp_Var1],Y
+	INY
+	ORA [Temp_Var1],Y
+	BEQ Gim_FixRTS
+	LDY #$03
+	LDA [Temp_Var1],Y	; Tile count
+	STA <Temp_Var3
+	; This level?
+	LDY #$00
+	LDA [Temp_Var1],Y
+	CMP Level_LayPtrOrig_AddrL
+	BNE Gim_FixNext
+	INY
+	LDA [Temp_Var1],Y
+	CMP Level_LayPtrOrig_AddrH
+	BNE Gim_FixNext
+	INY
+	LDA [Temp_Var1],Y
+	CMP Level_Tileset
+	BNE Gim_FixNext
+	; Set its tiles
+	LDY #$04
+Gim_FixTile:
+	LDA [Temp_Var1],Y
+	ADD #$60
+	STA <Temp_Var5
+	INY
+	LDA [Temp_Var1],Y
+	STA <Temp_Var4
+	INY
+	LDA [Temp_Var1],Y
+	INY
+	STY <Temp_Var6
+	LDY #$00
+	STA [Temp_Var4],Y
+	LDY <Temp_Var6
+	DEC <Temp_Var3
+	BNE Gim_FixTile
+Gim_FixRTS:
+	RTS
+Gim_FixNext:
+	; Past its 4 bytes and 3 per tile
+	LDA <Temp_Var3
+	ASL A
+	ADC <Temp_Var3
+	ADC #$04
+	ADC <Temp_Var1
+	STA <Temp_Var1
+	BCC Gim_FixEntry
+	INC <Temp_Var2
+	JMP Gim_FixEntry
+
+	.include "PRG/gim_levelfix.asm"
 
 Gim_Slope:
 	STX Gim_OnSlope
@@ -442,8 +552,15 @@ Gim_FrictionNeg:
 	INC <Player_XVel
 Gim_FrictionDone:
 
+	; Bolt lifts, parabeetles and rotating platforms carry him through the air, and say he may jump from them
+	LDY Player_AllowAirJump
+	BEQ Gim_JumpOnGround
+	DEC Player_AllowAirJump
+	BNE Gim_JumpAllowed
+Gim_JumpOnGround:
 	LDA <Player_InAir
 	BNE Gim_NoJump
+Gim_JumpAllowed:
 	LDA Player_FlashInv
 	CMP #GIM_STUNTIME
 	BGE Gim_NoJump
@@ -455,6 +572,8 @@ Gim_FrictionDone:
 	LDA #$01
 	STA <Player_InAir
 	STA Gim_JumpHold
+	LDA #$00
+	STA Player_AllowAirJump
 	LDA #GIMSND_JUMP
 	STA Gim_SndQ
 Gim_NoJump:

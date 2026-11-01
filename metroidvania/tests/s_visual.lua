@@ -28,7 +28,7 @@ local nextoam = function(o) return emu.read(0x20000 + NEXTOAM - 0x8000 + o, PRG)
 -- Tiles Samus's graphics replaced (src of the lists: tools/samus_gfx.py)
 local TAKEN = {}
 for t = 0x02, 0x3E, 2 do TAKEN[t] = true end
-for _, t in ipairs({0x46, 0x48, 0x4C, 0x4E, 0x56, 0x58, 0x5E, 0x6C, 0x6E}) do TAKEN[t] = true end
+for _, t in ipairs({0x46, 0x48, 0x4C, 0x4E, 0x56, 0x58, 0x5E, 0x6A, 0x6C, 0x6E}) do TAKEN[t] = true end
 for t = 0xD1, 0xFD, 2 do TAKEN[t] = true end
 
 local hack = {}

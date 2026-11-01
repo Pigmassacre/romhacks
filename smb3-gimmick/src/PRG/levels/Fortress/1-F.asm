@@ -20,4 +20,7 @@
 	.byte $62, $01, $11, $64, $E0, $2B, $12, $66, $E0, $29, $13, $68, $E0, $27, $14, $6B
 	.byte $E0, $24, $15, $6F, $E3, $0A, $15, $61, $62, $17, $6D, $00, $64, $63, $32, $0F
 	.byte $16, $7E, $64, $05, $72, $00, $E7, $48, $54, $12, $93, $62, $10, $9F, $E8, $00
-	.byte $E6, $68, $10, $FF
+	.byte $E6, $68, $10
+	; Steps up the shaft to the door of the spike room and the warp whistle, which Mario would fly to
+	.byte $14, $56, $E0, $02, $11, $5B, $E0, $02, $0E, $56, $E0, $02, $0B, $5B, $E0, $02, $08, $5F, $E0, $02
+	.byte $FF

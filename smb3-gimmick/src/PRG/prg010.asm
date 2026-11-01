@@ -59,8 +59,8 @@ Video_DoWXMario00:
 	vaddr $294C
 	.byte $05, $D8, $F0, $E9, $EC, $EE	; WORLD
 
-	vaddr $29AA
-	.byte $05, $BA, $BC, $E9, $FC, $F0	; MARIO
+	vaddr $29A9
+	.byte $08, $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0	; YUMETARO
 
 	vaddr $29B3
 	.byte $01, $FB
@@ -149,8 +149,8 @@ Video_DoWXMario80:
 	vaddr $2940
 	.byte $01, $EE			; D
 
-	vaddr $29BA
-	.byte $05, $BA, $BC, $E9, $FC, $F0 ; MARIO
+	vaddr $29B9
+	.byte $08, $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0 ; YUMETARO
 
 	vaddr $29A3
 	.byte $01, $FB
@@ -580,9 +580,9 @@ PRG010_C303:
 ; it directly sets the graphics buffer, not inserts.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GameOver_MLName:
-	.byte $BA, $BC, $E9, $FC, $F0, $00	; MARIO[Terminator]
-	.byte $EC, $DA, $FC, $EB, $FC, $00	; LUIGI[Terminator]
-GameOver_MLName_Len = 6
+	.byte $CC, $DA, $BA, $E8, $EA, $BC, $E9, $F0, $00	; YUMETARO[Terminator]
+	.byte $F0, $D3, $BC, $EB, $FC, $FE, $FE, $FE, $00	; OHAGI[Terminator]
+GameOver_MLName_Len = 9
 
 GameOver_PatchPlayerName:
 	LDY Player_Current	; Y = Player_Current
@@ -987,8 +987,9 @@ PRG010_C51B:
 
 	; This defines two sprites to make up the Player's current powerup
 Map_WorldIntro_PSpr:
-	.byte $60, $2D, $00, $84	; Left half of Player sprite
-	.byte $60, $2F, $00, $8C	; Right half of Player sprite
+	.byte $60, $2D, $00, $88	; Left half of Player sprite
+	.byte $60, $2F, $00, $90	; Right half of Player sprite
+	.byte $50, $49, $02, $90	; His horn
 
 	; This defines the first pattern to use for the Player sprite based on powerup
 	; The second pattern is implicitly +2 to this value
@@ -1004,9 +1005,10 @@ Map_WorldIntro_PSPat:
 
 	; Draws the tiny Player icon in the world intro box
 Map_WorldIntro_DrawPlayer:
+	JSR Map_PlayerPages
 
-	; Copies in the 2 sprites from Map_WorldIntro_PSpr
-	LDY #$07	 ; Y = 7
+	; Copies in the 3 sprites from Map_WorldIntro_PSpr
+	LDY #$0B	 ; Y = 11
 PRG010_C52D:
 	LDA Map_WorldIntro_PSpr,Y
 	STA Sprite_RAM+$84,Y	
@@ -1450,8 +1452,9 @@ PRG010_C74C:
 	JMP PRG010_C75D	 ; Jump to PRG010_C75D
 
 GameOver_DeadPlayerSprite:
-	.byte $64, $61, $00, $50	; Left half
-	.byte $64, $61, $40, $58	; Right half
+	.byte $64, $2D, $00, $50	; Left half
+	.byte $64, $2F, $00, $58	; Right half
+	.byte $54, $49, $02, $58	; His horn
 	
 PRG010_C75D:
 
@@ -1473,7 +1476,8 @@ PRG010_C75D:
 
 	; Generate the little "dead Player" sprite in the Game Over box
 PRG010_C772:
-	LDY #$07	 ; Y = 7
+	JSR Map_PlayerPages
+	LDY #$0B	 ; Y = 11
 PRG010_C774:
 	LDA GameOver_DeadPlayerSprite,Y	 ; Get dead player sprite byte
 	STA Sprite_RAM+$84,Y	 ; Store into Sprite_RAM
@@ -2570,10 +2574,10 @@ Map_EnterSpecialTiles:
 
 	; Color table for setting the 2nd entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
-Map_PostJC_PUpPP1:	.byte $0B, $0B, $0B, $0B, $0B, $0B, $0B
+Map_PostJC_PUpPP1:	.byte $2A, $00, $0B, $0B, $0B, $0B, $0B
 
 	; In conjunction with the table above; patches $1A (Luigi) for $16 as needed
-Map_PostJC_PUpPML:	.byte $16, $1A
+Map_PostJC_PUpPML:	.byte $0B, $0F
 
 	; Color table for setting the 4th entry power up color on the map used for clearing Judgem's cloud!
 	; NOTE: This is a patch table, you'll want it to agree with PRG027's "InitPals_Per_MapPUp"
@@ -2676,21 +2680,13 @@ PRG010_CE39:
 	LDA World_Map_Power,X
 	STA Map_Power_Disp	
 
-	TAY		 	; A = Player's actual power up
-
-	; Get the color we need to patch in...
-	LDA Map_PostJC_PUpPP1,Y
-	CMP #$16	 
-	BNE PRG010_CE54	 	; If color <> $16 (Mario's red), jump to PRG010_CE54
-
-	; Otherwise possibly change to Luigi green, if that's appropriate...
-	LDA Map_PostJC_PUpPML,X	 
-
-PRG010_CE54:
-	; Copy appropriate power up patch values into the palette buffer
+	; This player's colours, all three (the cloud's middle one once stayed)
+	LDA Map_PostJC_PUpPML,X
 	STA Palette_Buffer+$11
-	LDA Map_PostJC_PUpPP2,Y
-	STA Palette_Buffer+$13	
+	LDA Map_PostJC_PUpPP1,X
+	STA Palette_Buffer+$12
+	LDA Map_PostJC_PUpPP2,X
+	STA Palette_Buffer+$13
 
 	; Queue the palette buffer to update!
 	LDA #$06
@@ -2942,7 +2938,20 @@ Map_BorderSprites:
 	.byte $B0, $0B, $01, $F8
 Map_BorderSprites_End
 
+	; The second player's sprite pages hold the Ohagi in Yumetaro's tiles
+Map_PlayerPage2:	.byte $20, $42
+Map_PlayerPage3:	.byte $21, $43
+
+Map_PlayerPages:
+	LDX Player_Current
+	LDA Map_PlayerPage2,X
+	STA PatTable_BankSel+2
+	LDA Map_PlayerPage3,X
+	STA PatTable_BankSel+3
+	RTS
+
 Map_DrawPlayer:
+	JSR Map_PlayerPages
 	LDX Player_Current	; X = Player_Current
 	LDA <World_Map_Y,X	; A = Player's Y position
 	CMP #$f8

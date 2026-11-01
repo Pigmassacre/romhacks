@@ -11,7 +11,7 @@ tests and license. All of these hacks are AI-assisted, using Claude.
 | [Gimmick! for GBA](gimmick-gba/) | A native port of *Gimmick!* to the Game Boy Advance. | Nothing to download: build it from your *Gimmick! (Japan)* ROM |
 
 Downloads are on the [releases](https://github.com/Pigmassacre/romhacks/releases) page. Release
-tags start with the folder's name, like `gimmick-1.5-v1.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
+tags start with the folder's name, like `gimmick-1.5-v1.0.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
 
 ## Your own ROMs
 
