@@ -69,8 +69,8 @@ a table of matrices, then sets the identity, at which it lines up with the sprit
 ## Gimmick! 1.5, as options
 
 `assemble_15` in `tools/build.py` assembles `../gimmick-1.5/src/` as it is. Its code becomes bank `$20`
-and its far calls go where they do there, in the fixed bank's dead block; its logo and bigger ROM are left
-out. Its hooks in banks `$1D` and `$1E` go through switches in `src/runtime.s` (`opt_jump` and so on): off
+and its far calls go where they do there, in the fixed bank's dead block; its title screen and bigger ROM are
+left out. Its hooks in banks `$1D` and `$1E` go through switches in `src/runtime.s` (`opt_jump` and so on): off
 runs what the game had there, on runs 1.5's routine. Hack and game then share the RAM 1.5 already keeps to.
 
 Coyote time, buffering and Select's tap toggle are one routine, `JumpCheck`, so `opt_jump` keeps what is off

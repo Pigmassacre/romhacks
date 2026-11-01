@@ -482,8 +482,8 @@ PAD_READ = 0xF2D7           # lda $4016: the first pad, in the game's read loop
 
 
 def assemble_15():
-    """Gimmick! 1.5's own source and its own build's assembler step. Its logo and its bigger
-    ROM stay out of it: the fixed bank is still $1F here."""
+    """Gimmick! 1.5's own source and its own build's assembler step. Its title screen and its
+    bigger ROM stay out of it: the fixed bank is still $1F here."""
     import importlib.util
     root = os.path.join(os.path.dirname(REPO), "gimmick-1.5")
     spec = importlib.util.spec_from_file_location("build_15", os.path.join(root, "tools", "build.py"))
@@ -512,6 +512,8 @@ def apply_15(prg):
             hooks[(num, start)] = (label, code)
             far[FAR_NAMES[label]] = code[1] | code[2] << 8
             continue
+        if num not in (FIXED, HACK_BANK):
+            continue            # its title screen: this port has its own notices
         at = num * BANK + (start & 0x1FFF)
         out[at:at + len(code)] = code
         if num == FIXED:

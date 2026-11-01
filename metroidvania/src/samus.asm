@@ -19,11 +19,13 @@ SamusUpdate:
         jsr ReadJoy
         jsr CheckCvDamage
         jsr RidePlatform
+        jsr CheckBombsTouchSamus
         jsr UpdateSamusProjectiles
         ; UpdateSamus
         jsr GoSamusHandler
         jsr SubtractHealth
         jsr CheckMissileToggle
+        jsr ScrewAttackUpdate
         jsr RecentreCamera
         jmp SyncSimon
 
@@ -528,6 +530,14 @@ LCFC5:
         sta SamusJumpDsp
         lda #$FC
         sta SamusSpeedY
+        lda SamusStatus         ; spin jumping, with the Screw Attack
+        cmp #sa_Run
+        bne @noScrew
+        lda Upgrades
+        and #UP_SCREW
+        beq @noScrew
+        jsr SFX_ScrewAttack
+@noScrew:
         jsr SFX_SamusJump
         ldy #$18                ; gravity without the high jump boots
         sty SamusAccelY
@@ -679,6 +689,7 @@ SamusRoll:
         ldx SamusDir
         jsr SetSamusRunAccel
         jsr LCF2E
+        jsr CheckBombLaunch
         lda Joy1Status
         and #BTN_RIGHT | BTN_LEFT
         bne @moving
@@ -1553,6 +1564,7 @@ FireSamusProjectileForwards:
         jsr SearchOpenSamusProjectileSlot
         bne @exit
         jsr InitBullet
+        jsr CheckHorizontalWaveBulletFire
         lda #$0C
         sta BulDie,y
         ldx SamusDir
@@ -1589,6 +1601,7 @@ FireSamusProjectileUpwards:
         jsr SearchOpenSamusProjectileSlot
         bne @exit
         jsr InitBullet
+        jsr CheckVerticalWaveBulletFire
         lda #$0C
         sta BulDie,y
         lda #$FC

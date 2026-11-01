@@ -34,6 +34,8 @@ local START, si, sf, x0, y0 = nil, 1, 0, 0, 0
 -- at the sequence's screen x (the scroll is 0 here)
 function place()
   w(0x122, SEQUENCES[si].x or 0x30); w(0x123, 0)
+  w(0x1CD, SEQUENCES[si].gear or 0); w(0x15B, 0)   -- Screw Attack, Wave Beam
+  w(0x1A, 1)   -- the frame count, as Metroid's: bombs' fuses go by it
   x0, y0 = pos()
 end
 local state = "start"

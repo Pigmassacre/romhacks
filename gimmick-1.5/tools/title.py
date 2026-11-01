@@ -9,6 +9,11 @@ columns left, and draws "1.5" in the space that leaves, in the logo's black
 brush style. The new tiles go into copies of the title's four CHR pages, so
 nothing else that uses those pages changes.
 
+It also writes "ROMHACK BY PIGMASSACRE" and "AI SLOP - DO NOT PLAY" on the sky
+above the panel. The game fills rows 0-3 with sky rather than loading them, so
+TitleNotice (src/main.asm) draws the rows from a table this module fills in.
+Everything below the panel scrolls.
+
     python3 tools/title.py      # writes out/title.png, a preview from the ROM
 """
 import math
@@ -35,6 +40,11 @@ PANEL = (1, 30)             # new panel columns (old: 4-27)
 SHIFT = 3                   # the logo moves this many columns left
 ART_COL, ART_ROW = 24, 8    # "1.5" goes in columns 24-29, rows 8-12
 ART_W, ART_H = 48, 40
+
+NOTICE = ("ROMHACK BY PIGMASSACRE", "AI SLOP - DO NOT PLAY")
+NOTICE_BANK = 0x20
+NOTICE_ADDR = 0xBF00        # NoticeRows in src/defs.asm
+NOTICE_ROW = 1              # NOTICE_PPU in src/defs.asm
 
 
 # ---- Drawing "1.5" -----------------------------------------------------------
@@ -91,6 +101,50 @@ def art():
     return out
 
 
+# ---- Drawing the notice ------------------------------------------------------
+
+FONT = {
+    "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
+    "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
+    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."],
+    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+    "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+    "N": ["#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#"],
+    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+    "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
+    "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
+    "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
+    "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
+    "-": [".....", ".....", ".....", ".###.", ".....", ".....", "....."],
+    " ": [".....", ".....", ".....", ".....", ".....", ".....", "....."],
+}
+
+
+def notice_art():
+    """The notice's lines as rows of colour indices, one tile per letter so that
+    the lines share tiles: white letters with a black shadow, on the sky's colour 1."""
+    cols = max(len(line) for line in NOTICE)
+    out = [[1] * (cols * 8) for _ in range(len(NOTICE) * 8)]
+    for ty, line in enumerate(NOTICE):
+        for tx, c in enumerate(line):
+            for y, glyph_row in enumerate(FONT[c]):
+                for x, v in enumerate(glyph_row):
+                    if v == "#":
+                        out[ty * 8 + y + 1][tx * 8 + x + 2] = 0
+            for y, glyph_row in enumerate(FONT[c]):
+                for x, v in enumerate(glyph_row):
+                    if v == "#":
+                        out[ty * 8 + y][tx * 8 + x + 1] = 3
+    return out
+
+
 # ---- CHR -----------------------------------------------------------------------
 
 def decode_tile(b):
@@ -138,25 +192,42 @@ def patch(rom, chr_base, new_pages, copies):
         pages.append(dst)
     free = [t for t in range(0x100) if t not in used and t != 0]
 
-    # Cut "1.5" into tiles.
-    a = art()
     slots = {}
-    glyph = {}
-    for ty in range(ART_H // 8):
-        for tx in range(ART_W // 8):
-            px = [row[tx * 8:tx * 8 + 8] for row in a[ty * 8:ty * 8 + 8]]
-            if all(v == 3 for r in px for v in r):
-                glyph[(ty, tx)] = WHITE
-                continue
-            enc = encode_tile(px)
-            if enc not in slots:
-                if not free:
-                    raise SystemExit("title: out of free tiles")
-                t = free.pop(0)
-                slots[enc] = t
-                o = pages[t >> 6] + (t & 0x3F) * 16
-                rom[o:o + 16] = enc
-            glyph[(ty, tx)] = slots[enc]
+
+    def cut(a, blank_colour, blank):
+        """Cut art into tiles, returning {(row, column): tile number}."""
+        glyph = {}
+        for ty in range(len(a) // 8):
+            for tx in range(len(a[0]) // 8):
+                px = [row[tx * 8:tx * 8 + 8] for row in a[ty * 8:ty * 8 + 8]]
+                if all(v == blank_colour for r in px for v in r):
+                    glyph[(ty, tx)] = blank
+                    continue
+                enc = encode_tile(px)
+                if enc not in slots:
+                    if not free:
+                        raise SystemExit("title: out of free tiles")
+                    t = free.pop(0)
+                    slots[enc] = t
+                    o = pages[t >> 6] + (t & 0x3F) * 16
+                    rom[o:o + 16] = enc
+                glyph[(ty, tx)] = slots[enc]
+        return glyph
+
+    # Cut "1.5" into tiles.
+    glyph = cut(art(), 3, WHITE)
+
+    # Cut the notice into tiles, and fill in the rows TitleNotice draws.
+    a = notice_art()
+    cells = cut(a, 1, SKY)
+    cols = len(a[0]) // 8
+    table = bytearray()
+    for ty in range(len(NOTICE)):
+        row = [SKY] * 32
+        for tx in range(cols):
+            row[(32 - cols) // 2 + tx] = cells[(ty, tx)]
+        table += bytes(row)
+    rom[_off(NOTICE_BANK, NOTICE_ADDR):_off(NOTICE_BANK, NOTICE_ADDR) + len(table)] = table
 
     # New rows 4-14.
     lo, hi = PANEL
@@ -242,6 +313,8 @@ def preview(rom, chr_base, path):
     for trow in range(17):
         for tcol in range(32):
             t = rom[nt_off + (trow - NT_ROW0) * 32 + tcol] if NT_ROW0 <= trow < 30 else SKY
+            if NOTICE_ROW <= trow < NOTICE_ROW + len(NOTICE):
+                t = rom[_off(NOTICE_BANK, NOTICE_ADDR) + (trow - NOTICE_ROW) * 32 + tcol]
             i = (trow // 4) * 8 + tcol // 4
             sh = ((trow % 4) // 2) * 4 + ((tcol % 4) // 2) * 2
             p = (rom[at + i] >> sh) & 3

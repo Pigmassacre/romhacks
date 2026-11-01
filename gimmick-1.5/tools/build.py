@@ -15,7 +15,8 @@ Steps:
    `;@ seg <bank> <start> <end>` lines. Each segment is assembled at its CPU
    address and its bytes are written into that bank. A segment may be shorter
    than its range, never longer.
-4. Rebuild the title screen to say "Gimmick! 1.5" (tools/title.py).
+4. Rebuild the title screen to say "Gimmick! 1.5" and that it is AI slop
+   (tools/title.py).
 5. Write the ROM and BPS patches for both common dumps (iNES and NES 2.0
    headers). A patch copies everything it can from the original ROM, so it
    holds only the new code.
@@ -326,7 +327,7 @@ def main():
     n = title.patch(rom, chr_base, TITLE_PAGES, copied)
     for dst, page in copied:
         COPIES.append((dst, 16 + OLD_PRG_BANKS * BANK + page * 1024, 1024))
-    print("  title: \"1.5\" in %d new tiles, CHR pages %s" % (n, " ".join("%02X" % p for p in TITLE_PAGES)))
+    print("  title: \"1.5\" and the notice in %d new tiles, CHR pages %s" % (n, " ".join("%02X" % p for p in TITLE_PAGES)))
     open(ROM_OUT, "wb").write(rom)
     print("built %s (%d KB)" % (os.path.relpath(ROM_OUT, REPO), len(rom) // 1024))
     title.preview(rom, chr_base, os.path.join(OUT, "title.png"))

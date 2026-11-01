@@ -12,7 +12,7 @@ The whole game runs in the NMI (`$C052`); the main loop only stirs a random numb
 
 ### RAM the hack uses
 
-Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D9`, so the hack uses `$01B2-$01CC` only. `tests/t_ramguard.lua` checks both.
+Over the attract demos and long stretches of play, Castlevania never writes `$0100-$012F`, `$01B2-$01E5` (its stack stays above `$01E6`) or `$07CF-$07F0`. With the hack the stack reaches `$01D5`, so the hack uses `$01B2-$01D1` only. `tests/t_ramguard.lua` checks both.
 
 ### Objects
 
@@ -83,7 +83,7 @@ Subweapons hit things at `$E5EB`: any object in slots `$14-$16` with an AI type 
 
 ### The CHR loader and the font
 
-`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46`, `$48`, `$4C`, `$4E`, `$56`, `$58`, `$5E`, `$6C` and `$6E`. (Poses `$27-$29`, the cross, use `$4A`, `$52` and `$54`; `$A2` and `$A3`, the orb, `$5A` and `$5C`; the title's bat `$6A`. Every other pair is some item's or candle's: none is free.) The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again, and a continue doesn't load the stage's graphics again either: the hack puts the font back for the Game Over screen, and Samus's tiles back while the continued stage loads (mode 5, part 1, when Castlevania's game turns the screen off for the rest of the frame).
+`$FD23` copies a list of blocks (bank, source, destination, length) into CHR RAM with the screen off, then `$C102` turns it back on. Simon's tiles are sprite tiles `$00-$6F`, from bank 1 `$9008` (tile 0); only Simon and the whip use `$02-$3E`, `$46`, `$48`, `$4C`, `$4E`, `$56`, `$58`, `$5E`, `$6A`, `$6C` and `$6E`. (Poses `$27-$29`, the cross, use `$4A`, `$52` and `$54`; `$A2` and `$A3`, the orb, `$5A` and `$5C`. Every other pair is some item's or candle's, but for `$6A`, in a pose only the title uses, and the title doesn't load these tiles at all.) The status bar's font is background tiles `$D0-$FF`, from bank 3 `$BC08`, loaded with each stage. The Game Over screen uses it without loading it again, and a continue doesn't load the stage's graphics again either: the hack puts the font back for the Game Over screen, and Samus's tiles back while the continued stage loads (mode 5, part 1, when Castlevania's game turns the screen off for the rest of the frame).
 
 Items and dropped weapons are drawn with background-table tiles (odd tile numbers, in 8x16 mode).
 
@@ -119,11 +119,21 @@ Metroid's main loop sometimes takes more than a frame; then Samus doesn't move t
 
 `ObjFramePtrTable` (`$860B`), `ObjPlacePtrTable` (`$86DF`) and `ObjectAnimIndexTbl` (`$8572`) are in bank 1 (and each area bank). A frame is a header (flips, palette, placement table), the radii, then tiles with control bytes: `$FC` move, `$FD` new attributes, `$FE` skip a place, `$FF` end. The sprites have the priority bit set, which the hack drops: Castlevania's backgrounds are opaque where Metroid's are not. Samus's graphics are bank 6 `$8000` (tiles `$00-$99`), the HUD's digits bank 6 `$B4C0` (tiles `$A0-$A9`).
 
-Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; with the HUD's 10, 62 of the 63 the hack has (pair $00 stays blank). The explosion's six don't fit: the one left holds one, and five go in over Castlevania's as she dies, a pair a frame through the update buffer, with her still standing there. Since coming back from a death doesn't load a stage's graphics, `HS_LENT` has `RestoreSamusChr` put Castlevania's back as the stage loads.
+Samus's 37 frames need 52 distinct 8x16 tile pairs, counting a pair and its mirror images once; her bombs' ticks 2 more; with the HUD's 10, all 64 the hack has (pair $00 stays blank). A blast's own three frames would need more, so the frames stand in for them as the missile's (`FRAME_ALIASES`), with Metroid's timing and radii. The explosion's six don't fit either: they go in as she dies, a pair a frame through the update buffer, with her still standing there, over the orb's, the flying cross's and two that only her front view at the castle gate uses. Since coming back from a death doesn't load a stage's graphics, `HS_LENT` has `RestoreSamusChr` put Castlevania's back as the stage loads.
 
 ### HUD and palettes
 
 `DisplayHUD` draws 10 sprites: "EN" and ".." at y `$21`, the energy digits beside them, the missile and its count at y `$2B`, energy tanks at y `$17` (tiles `$6E` empty, `$6F` full). In the escape, the missile row shows the time instead: tiles `$58-$59`, "TIME", in the HUD's colours, and three digits. The hack has both, so the time gets a row of its own. Samus's palette is sprite palette 0, `0F 16 19 27`; with missiles armed its colour 2 is `$2C`. The HUD's is palette 1, `0F 12 30 21`.
+
+### Bombs
+
+`CheckBombLaunch` is called in the ball handler. A bomb takes a projectile slot: `wa_LayBomb`, then `wa_BombCount` with a fuse of `$18` counted on odd frames, then `wa_BombExplode`. Metroid looks for Samus touching a blast in its collision pass, before projectiles next update, with the radii of the frame the bomb then shows, which is 0 on its blank frames. A hit there is a knockback with no health change, away from the bomb (straight up if at the same x), and the same i-frames as a hit, but no blinking. `tests/physics_inputs.lua`'s three bomb sequences hold the throw to Metroid frame by frame. Castlevania's subweapon test only knows points: the hack moves a dagger around the blast from frame to frame, and puts it back after each hit up to twice a blast.
+
+### Wave Beam and Screw Attack
+
+The Wave Beam's path is a table of 12 steps, one a frame, sideways at 3 pixels a frame or up at 3, with the middle shot starting halfway. It collides with walls as the power beam does. The Screw Attack is only a palette cycle in Metroid's drawing, a sound and a check in its collision pass: nothing about her movement changes. Both are held to Metroid by `tests/physics_inputs.lua`. The hack keeps `$5B` set while it's active, which stops enemies touching her but not items being picked up (`$E6BB` looks at items first), and it hurts through a dagger in a free shot slot, with `$10` frames between hits: a hit every frame would end any boss on contact.
+
+The candles' items are objects of AI `$28`, with what they hold in `$0584` (`tests/s_candles.lua`). Along the bot's route the first axe (`$0D`) is on stage 3 and the first cross (`$09`) on stage 4. Picking up a subweapon sets `CurrentWeapon` (`$015B`) to its type, whichever the hack looks at each frame in play. With the stack at `$01D5` at its lowest, in a whole game with both upgrades, `$01B2-$01D1` is the hack's.
 
 ### Sound effects
 

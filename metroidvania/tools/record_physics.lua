@@ -23,6 +23,8 @@ local function flatten()
 end
 local function begin()
   w(0x30E, SEQUENCES[si].x or 0x30)
+  w(0x2D, 0)   -- the frame count: bombs' fuses go by it
+  w(0x6878, (r(0x6878) & 0xB7) | (SEQUENCES[si].gear or 0))   -- Screw Attack, Wave Beam
   x0, y0 = pos(); steps = 0; state = "run"
   out:write("seq " .. SEQUENCES[si].name .. "\n")
 end
@@ -61,7 +63,7 @@ FRAME = function(f)
     id = emu.addMemoryCallback(function()
       emu.removeMemoryCallback(id, emu.callbackType.exec, 0x8000, 0xFFFF)
       flatten(); w(0x30D, 0xB1); for a = 0x310, 0x313 do w(a, 0) end
-      w(0x6878, r(0x6878) | 0x10)     -- the Maru Mari, which the hack gives Samus from the start
+      w(0x6878, r(0x6878) | 0x11)     -- bombs and the Maru Mari, which the hack gives Samus from the start
       w(0x6879, 5); w(0x687A, 5)       -- 5 missiles, as the hack's 5 hearts
       w(0x300, 0); w(0x305, 0x07); w(0x306, 0x08); w(0x303, 0x08); w(0x304, 0)   -- standing, as the hack starts
       START = emu.createSavestate()

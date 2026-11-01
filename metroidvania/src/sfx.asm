@@ -44,6 +44,18 @@ SFX_Beep:
         .db $2C
 SFX_SamusHit:
         lda #10
+        .db $2C
+SFX_BombLaunch:
+        lda #11
+        .db $2C
+SFX_BombExplode:
+        lda #12
+        .db $2C
+SFX_WaveFire:
+        lda #13
+        .db $2C
+SFX_ScrewAttack:
+        lda #14
 ; A = effect: start it on its stream, over whatever that stream played.
 ; Keeps X and Y.
 SfxStart:
@@ -70,12 +82,15 @@ SfxStart:
 SfxLo:
         .db <SfxWalk, <SfxMissileLaunch, <SfxJump, <SfxBulletFire, <SfxEnemyHit
         .db <SfxEnergyPickup, <SfxMissilePickup, <SfxDie, <SfxBall, <SfxBeep, <SfxHit
+        .db <SfxBombLaunch, <SfxBombExplode, <SfxWaveFire, <SfxScrewAttack
 SfxHi:
         .db >SfxWalk, >SfxMissileLaunch, >SfxJump, >SfxBulletFire, >SfxEnemyHit
         .db >SfxEnergyPickup, >SfxMissilePickup, >SfxDie, >SfxBall, >SfxBeep, >SfxHit
+        .db >SfxBombLaunch, >SfxBombExplode, >SfxWaveFire, >SfxScrewAttack
 SfxStream:
         .db SFX_NOISE, SFX_NOISE, SFX_SQ1, SFX_SQ1, SFX_SQ1
         .db SFX_SQ1, SFX_SQ1, SFX_TRI, SFX_TRI, SFX_TRI, SFX_MULTI
+        .db SFX_TRI, SFX_NOISE, SFX_SQ1, SFX_NOISE
 
 ; Each NMI, after Castlevania's music (Bank0_Music).
 SfxPtr = $BA                ; Castlevania's music is done with these by now

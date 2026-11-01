@@ -43,8 +43,14 @@ ANIMS = {
     "SamusJumpPntUp": 0x35, "SamusRunPntUp": 0x37, "SamusRunPntUpFire1": 0x3B,
     "SamusRunPntUpFire2": 0x3D, "SamusRunPntUpFire3": 0x3F, "MissileLeft": 0x8B,
     "MissileRight": 0x8D, "MissileUp": 0x8F, "MissileExplode": 0x91,
+    "BombTick": 0x7F, "BombExplode": 0x82, "WaveBeam": 0x7D,
 }
+# Frames drawn as other frames, for want of tile pairs: a bomb's blast looks like
+# a missile's (frame $4A, between them, shows nothing), and the Wave Beam like the
+# power beam, in other colours.
+FRAME_ALIASES = {0x3C: 0x67, 0x49: 0x68, 0x4D: 0x69, 0x4B: 0x28}
 FRAME_NAMES = {
+    0x4E: "Bomb0", 0x4F: "Bomb1",
     0x03: "SamusRun0", 0x04: "SamusRun1", 0x05: "SamusRun2", 0x07: "SamusFront",
     0x08: "SamusStand", 0x0C: "SamusRunFire0", 0x0D: "SamusRunFire1", 0x0E: "SamusRunFire2",
     0x10: "SamusJump", 0x12: "SamusJumpFire", 0x17: "SamusSalto0", 0x18: "SamusSalto1",
@@ -61,11 +67,12 @@ FRAME_NAMES = {
 # Sprite tiles that only Simon and the whip use (even = top of a pair). Pair
 # $00 is blank, and stays blank: Castlevania leaves some of its own sprites
 # (Dracula's head, 1-8) on it to hide them.
-SPRITE_PAIRS = (list(range(0x02, 0x40, 2)) + [0x46, 0x48, 0x4C, 0x4E, 0x56, 0x58, 0x5E, 0x6C, 0x6E])
-# Castlevania's own, and left alone: the cross ($4A, $52, $54), the orb ($5A, $5C)
-# and the title's bat ($6A). All but the cross are lent to the explosion when she
-# dies, as they don't fit otherwise: see BORROWED below.
-BORROWED = [0x6A, 0x52, 0x54, 0x5A, 0x5C]
+SPRITE_PAIRS = (list(range(0x02, 0x40, 2)) + [0x46, 0x48, 0x4C, 0x4E, 0x56, 0x58, 0x5E, 0x6A, 0x6C, 0x6E])
+# Castlevania's own, and left alone: the cross ($4A, $52, $54) and the orb ($5A,
+# $5C). All but the first are lent to her explosion when she dies, as it doesn't
+# fit otherwise, with two pairs only her front view at the castle gate uses.
+BORROWED = [0x52, 0x54, 0x5A, 0x5C]
+FRONT_FRAME = 0x07
 # The status bar font, $1D00-$1FDF, as sprite tile numbers (odd: $1000 table).
 # $FE-$FF stay: they are sprite 0's.
 FONT_PAIRS = list(range(0xD1, 0xFE, 2))
@@ -247,9 +254,12 @@ def build(met_prg, simon_chr, outdir):
 
     slots = SPRITE_PAIRS[HUD_PAIRS:] + FONT_PAIRS
     pairs = {}          # stored 32 bytes -> CV tile number
+    pair_frames = {}    # stored 32 bytes -> the frames using it
 
     framedata = {}
     for fid in used:
+        if fid in FRAME_ALIASES:
+            continue
         spr = decode_frame(met, fid)
         if spr is None:
             framedata[fid] = None
@@ -261,28 +271,29 @@ def build(met_prg, simon_chr, outdir):
                 if len(pairs) == len(slots):
                     raise ValueError("Samus needs more than %d tile pairs" % len(slots))
                 pairs[data] = slots[len(pairs)]
+            pair_frames.setdefault(data, set()).add(fid)
             out.append((y, x, pairs[data], flips | pal))
         framedata[fid] = out
+    for fid, other in FRAME_ALIASES.items():
+        framedata[fid] = framedata[other]
 
     # Samus's explosion (frame $35, drawn by code): six single tiles. What room
     # is left holds as many as it can; the rest go in over BORROWED as she dies.
     explode, lent = [], []
-    borrowed = list(BORROWED)
+    borrowed = list(BORROWED) + [pairs[d] for d, f in pair_frames.items() if f == {FRONT_FRAME}]
+    own = {pairs[d]: d for d in pairs}      # what a borrowed pair goes back to
+    pairs_static = dict(pairs)
     for t in (0x0B, 0x0C, 0x1B, 0x1C, 0x2B, 0x2C):
         data = met.tile(t) + BLANK
-        if data in pairs:
-            pass
-        elif len(pairs) < len(slots):
-            pairs[data] = slots[len(pairs)]
-        else:
-            pairs[data] = borrowed.pop(0)
-            lent.append((pairs[data], data))
+        assert data not in pairs
+        pairs[data] = borrowed.pop(0)
+        lent.append((pairs[data], data))
         explode.append(pairs[data])
     for _, d in lent:
         # (the update buffer's rule: see GlyphTable)
         assert all(d[k + 1] >= 3 for k in range(31) if d[k] == 0xFF) and d[-1] != 0xFF
-    lentd = {t for t, _ in lent}
-    pairs_static = {d: t for d, t in pairs.items() if t not in lentd}
+    pair_addr = lambda t: (0x1000 if t & 1 else 0) + (t & 0xFE) * 16
+    restored = [(t, own.get(t, simon_chr[t * 16:t * 16 + 32])) for t, _ in lent]
 
     sprite_chr = [(t, d) for d, t in pairs_static.items() if t % 2 == 0]
     for k, (top, bottom) in enumerate(((0x58, 0x76), (0x59, 0x7F))):
@@ -311,15 +322,16 @@ def build(met_prg, simon_chr, outdir):
         for k in range(HUD_PAIRS):
             f.write("HudTile%d = $%02X\n" % (k, SPRITE_PAIRS[k]))
         f.write("ExplodeTiles:\n  .db " + ",".join("$%02X" % t for t in explode) + "\n")
-        f.write("\n; The explosion's tile pairs that go in as she dies, and what they lend\n; them from: Castlevania's own, put back with Samus's tiles.\n")
-        f.write("LENT_PAIRS = %d\nLentHi:\n  .db %s\nLentLo:\n  .db %s\n" % (
-            len(lent), ",".join("$%02X" % (0 if False else t >> 4) for t, _ in lent), ",".join("$%02X" % ((t << 4) & 0xFF) for t, _ in lent)))
+        f.write("\n; The explosion's tile pairs that go in as she dies, over these, and what those\n; pairs hold otherwise.\n")
+        f.write("LENT_PAIRS = %d\nOwnHi:\n  .db %s\nOwnLo:\n  .db %s\n" % (
+            len(lent), ",".join("$%02X" % (pair_addr(t) >> 8) for t, _ in restored),
+            ",".join("$%02X" % (pair_addr(t) & 0xFF) for t, _ in restored)))
         f.write("LentChr:\n")
         for _, d in lent:
             hexrows(f, d)
-        f.write("LentOwn:\n")
-        for t, _ in lent:
-            hexrows(f, simon_chr[t * 16:t * 16 + 32])
+        f.write("OwnChr:\n")
+        for _, d in restored:
+            hexrows(f, d)
 
     with open(os.path.join(outdir, "samus_frames.asm"), "w") as f:
         f.write("; Generated by tools/samus_gfx.py from Metroid's frames. Do not edit.\n\n")
@@ -327,6 +339,8 @@ def build(met_prg, simon_chr, outdir):
             f.write("ObjAnim_%s = $%02X\n" % (a, o))
         f.write("\n")
         for fid in used:
+            if fid in FRAME_ALIASES:
+                continue
             f.write("ObjFrame_%s = $%02X\n" % (FRAME_NAMES.get(fid, "%02X" % fid), fid))
         f.write("FrameNone = $F7\nFrameEnd = $FF\n")
         f.write("\n; Metroid's ObjectAnimIndexTbl, unchanged: animation offsets index it.\n")
@@ -368,7 +382,7 @@ def build(met_prg, simon_chr, outdir):
                         x, a = -x - 8, a ^ 0x40
                     f.write("  .db $%02X,$%02X,$%02X,$%02X\n" % (y & 0xFF, t, a, x & 0xFF))
     build.last = (framedata, pairs)
-    return sprite_chr, len(pairs), len(slots)
+    return sprite_chr, len(pairs_static), len(slots)
 
 
 if __name__ == "__main__":

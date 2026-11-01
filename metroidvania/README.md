@@ -19,17 +19,22 @@ The result is a 256 KB ROM: Castlevania's 128 KB of PRG ROM doubled, still on ma
 ## What you get
 
 - **Samus moves as in Metroid.** Running, turning, jumping and spin jumping, aiming up, the morph ball, being knocked back: Metroid's code, ported, with its numbers. A test plays the same inputs in both games and checks that Samus's position, animation frame and shots match frame by frame.
-- **Her weapons.** B fires the power beam, short as at the start of Metroid. Castlevania's whip upgrade gives her the Long Beam. Select arms missiles, and missiles are Castlevania's hearts: each one costs a heart.
+- **Her weapons.** B fires the power beam, short as at the start of Metroid. Castlevania's whip upgrade gives her the Long Beam. Select arms missiles, and missiles are Castlevania's hearts: each one costs a heart. In the morph ball, B lays bombs.
 - **Metroid's HUD.** "EN", the energy and the missile count, in Metroid's font and colours. Above them, what Castlevania's status bar told: the time, under the "TIME" of Metroid's escape countdown, and in a boss fight, the boss's health beside an energy tank.
 - **Metroid's energy.** 99 at most. Castlevania's hits take one and a half energy per point of Simon's health, so it takes as many hits to die as before; a pork chop gives energy back, and clearing a stage fills it up. Run out and Samus explodes as in Metroid.
-- **Metroid's sounds** for jumping, shooting, missiles, rolling, steps, getting hit, the low energy beep and dying, taken from Metroid's sound engine.
+- **Metroid's sounds** for jumping, shooting, the Wave Beam, the Screw Attack, missiles, bombs, rolling, steps, getting hit, the low energy beep and dying, taken from Metroid's sound engine.
 - **Metroid's camera.** The screen follows Samus once she leaves the middle of it, as in Metroid.
 - **The attract demo** is played by Samus, from Simon's recorded inputs.
 - **Castlevania everywhere else.** Pressing Up or Down at the foot or top of stairs climbs them (holding Up is aiming, so walking past stairs with it held does not), and B fires forwards from them. Moving platforms carry her. Shots break candles, hurt enemies and bosses, and break the breakable walls. Stage exits, doors, items and deaths are Castlevania's.
 
-The morph ball is there from the start: Down rolls, Up or A stands up again where there is room.
+The morph ball is there from the start: Down rolls, Up or A stands up again where there is room. B in the ball lays a bomb, as in Metroid, up to three at a time: the blast throws Samus without hurting her, hurts what's near it and breaks blocks. Metroid's blast takes more tiles than there are, so it looks like a missile's.
 
-What doesn't carry over: Simon's subweapons. Their items still drop, but Samus can't throw them, and the double and triple shot items do nothing. The score and lives still count, but nothing shows them.
+**Upgrades** are Castlevania's subweapons, as Samus can't throw them. Picking one up plays Metroid's item sound, and she keeps it until a game over:
+
+- **The axe unlocks the Screw Attack.** While she spin jumps her colours cycle, enemies can't touch her and she hurts them on contact. The first axe is on stage 3.
+- **The cross unlocks the Wave Beam.** Her beam weaves as in Metroid and turns purple. The first cross is on stage 4. Armed missiles still take priority, and the Long Beam works with it.
+
+What doesn't carry over: the other subweapons (their items still drop, and do nothing), and the double and triple shot items. The score and lives still count, but nothing shows them.
 
 ## Credits
 
@@ -61,7 +66,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 
 | Test | What it checks |
 |---|---|
-| `physics` | Samus's position, animation frame and first shot match Metroid frame by frame, for 16 input sequences: jumps, runs, turns, the morph ball, beams, missiles, aiming up |
+| `physics` | Samus's position, animation frame and first shot match Metroid frame by frame, for 24 input sequences: jumps, runs, turns, the morph ball, beams, missiles, aiming up, bombs and being thrown by them, the Wave Beam's path and the Screw Attack's jumps |
 | `hud` | The HUD's sprites and digits, no more on a line than a line can show, the blank status bar, the HUD's colours ending at the split, and Castlevania's own sprites (1-6) left alone |
 | `hudrows` | The HUD's time, which runs, and the boss's health, only while the screen is locked for a boss |
 | `hudflash` | The HUD keeps its colours on late frames and after long update buffers (it once flashed in Castlevania's) |
@@ -94,10 +99,13 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 | `boss` | The screen locks for the Phantom Bat, no zombies come into the fight, and Samus's shots beat it |
 | `pause` | Start stops everything: she, the time and the HUD stay as they were, and no button does anything |
 | `whipflash` | A whip upgrade stops the game a moment, and she flashes through the palettes as Simon does (she once just froze) |
+| `pausedeath` | Paused for a long time as she dies, in a pit: the tiles stay as they were (her explosion's counter once ran on and wrote junk all over them, for good) |
 | `clear` | Clearing a stage fills her energy |
 | `tally` | At a stage's end all the time's digits count down on the HUD (only the last one once did, as it changed every time and the others never got a turn) |
-| `lenttiles` | The cross, the orb and the title's bat keep their own tiles (a dropped cross and the orb once showed as scraps of Samus); dying, the explosion borrows them, and coming back gives them back |
+| `lenttiles` | The cross and the orb keep their own tiles (they once showed as scraps of Samus); dying, the explosion borrows the tiles it needs, and coming back puts them all back |
 | `shotsgone` | Shots end when Castlevania takes over for good (dying, doors, a stage's end): they once hung in the air through a death |
+| `upgrades` | The axe unlocks the Screw Attack and the cross the Wave Beam, through a death but not a game over; wave shots and spinning hit zombies, and spinning into them doesn't hurt her |
+| `bombs` | B in the ball lays a bomb; its blast throws her with no damage and costs no heart, hurts zombies no more than twice a blast, with no sprite for its dagger, and breaks the hall's block |
 | `missiles` | Select arms missiles and each one costs a heart, also after B was pressed with all three shots in flight (that once broke missiles for good) |
 | `sfx` | Jumping plays Metroid's jump sound, and the music keeps off its channel |
 | `death` | Samus explodes; on the last life, the Game Over screen has its font, and continuing gives Samus her tiles back |
@@ -118,7 +126,7 @@ That first makes the savestates the tests start from (`tests/s_states.lua`: just
 
 Sweeps go through the whole game, for looking over rather than passing: `tour` (every stage, with screenshots), `allstairs` (every staircase, up and down), `stairsoff` (every staircase, started from each side of the middle of the screen), `exits` (every stage's exit), `bosses` (every boss, then the stage's end) and `items` (every item), each with `python3 tests/run.py <name>` and logging where Samus ends up. `fuzz` presses random buttons on every stage and flies her to random places, stairs and exits, watching every frame for hangs, the split on the wrong line, walls, jumps of her or the screen and more (`out/test/fuzz_<seed>.log`; `FUZZ_SEED`, `FUZZ_FROM`, `FUZZ_TO`, `FUZZ_FRAMES`). `PLAY_WARP=1 PLAY_FROM=n` starts the bot at any stage without a savestate.
 
-For the visuals: `visual` plays the game with the bot while checking every frame for sprites using Samus's tiles or colours, things over the status bar and the stage's columns changing on screen (`out/test/visual.log`; `VIS_SHOTS=n` for a screenshot every n frames, `VIS_TRANS=n` outside play); `gallery` draws every sprite pose Castlevania has, on the hack and with `--rom "Castlevania I.nes"`, and `tools/gallery_diff.py` shows the ones that look different; `samus` takes every frame of hers both ways, and `seq` a death, a hit, a whip upgrade and the potion.
+For the visuals: `visual` plays the game with the bot while checking every frame for sprites using Samus's tiles or colours, things over the status bar and the stage's columns changing on screen (`out/test/visual.log`; `VIS_SHOTS=n` for a screenshot every n frames, `VIS_TRANS=n` outside play); `gallery` draws every sprite pose Castlevania has, on the hack and with `--rom "Castlevania I.nes"`, and `tools/gallery_diff.py` shows the ones that look different; `samus` takes every frame of hers both ways, and `seq` a death, a hit, a whip upgrade and the potion. `candles` logs what the candles hold along the bot's route.
 
 `tests/s_bench.lua` and `tests/s_hot.lua` are measurements rather than tests: how much of each frame the game takes, and where the hack spends its time (`python3 tests/run.py bench`).
 
@@ -132,7 +140,7 @@ The source is `src/`. `tools/build.py` assembles `src/main.asm` with asm6; each 
 2. **Far calls.** `FarCall`, in padding before the vectors, maps bank `$08` and calls one of its routines. Castlevania runs its whole game in the NMI, and the NMI's sound code switches banks and back, so `FarCall` keeps Castlevania's bank shadow (`$27`) right.
 3. **Samus.** `src/samus.asm` is Metroid's Samus code: its handlers, its animation, its acceleration and per-pixel movement. Where Metroid looks up its room, she looks up Castlevania's collision map (8x8 cells, like Metroid's), and where Metroid scrolls, she moves Castlevania's scroll. Her shots (`src/bullets.asm`) each hold one of Castlevania's three subweapon slots as an unmoving dagger, so Castlevania's own collision code hurts enemies and breaks candles with them.
 4. **Castlevania around her** (`src/cv.asm`). Every frame Samus writes her position into Simon's variables, which Castlevania's enemies, items, stage exits and stairs use. For the stairs, walking in and dying, Castlevania moves Simon and Samus follows. Castlevania's damage arrives as changes to Simon's health, which is kept at a constant value and turned into Metroid's energy.
-5. **Graphics.** `tools/samus_gfx.py` converts Samus's frames from Metroid's 8x8 sprites to Castlevania's 8x16 ones: it decodes each frame as Metroid draws it, pairs sprites into 8x16, and stores each distinct pair (and its mirror image) once. The pairs go over Simon's tiles in the sprite pattern table, and the rest over the status bar's font, which the hack copies back for the Game Over screen. Her explosion doesn't all fit: as she dies it borrows the tiles of the orb, the cross in flight and the title's bat for a moment.
+5. **Graphics.** `tools/samus_gfx.py` converts Samus's frames from Metroid's 8x8 sprites to Castlevania's 8x16 ones: it decodes each frame as Metroid draws it, pairs sprites into 8x16, and stores each distinct pair (and its mirror image) once. The pairs go over Simon's tiles in the sprite pattern table, and the rest over the status bar's font, which the hack copies back for the Game Over screen. Her explosion doesn't all fit: as she dies it borrows the tiles of the orb, the cross in flight and two of her own only seen at the castle gate for a moment.
 6. **The HUD** (`src/hud.asm`) is 10 sprites over the blanked status bar, in four rows, no line showing more than 8 of them. Its digits are drawn into the pattern table when they change. Metroid's HUD colours go in sprite palette 2 at the top of the screen, and Castlevania's come back at the status bar split, on its last blank lines.
 7. **Sounds** (`src/sfx.asm`) are Metroid's APU writes, played back after Castlevania's music each frame; while one plays, Castlevania's writes to that channel go to an unused register.
 

@@ -9,9 +9,10 @@ build, tests and license. All of these hacks are AI-assisted, using Claude.
 | [SMB3 Gimmick](smb3-gimmick/) | Yumetaro from *Gimmick!* in the worlds of *Super Mario Bros. 3*, with his own jump, star and health. | A BPS patch for your *Super Mario Bros. 3* ROM, from the releases named SMB3 Gimmick |
 | [Gimmick! for SNES](gimmick-snes/) | *Gimmick!* running natively on the Super Nintendo, with its sound, parallax clouds, a Mode 7 world map and Gimmick! 1.5's features as options. | Build it from your *Gimmick! (Japan)* ROM |
 | [Metroidvania](metroidvania/) | Samus from *Metroid* in *Castlevania*, moving, shooting and rolling exactly as in Metroid, with Metroid's HUD and sounds. | A BPS patch for your *Castlevania* ROM, from the releases named Metroidvania |
+| [Gimmick! for GBA](gimmick-gba/) | A native port of *Gimmick!* to the Game Boy Advance. | Nothing to download: build it from your *Gimmick! (Japan)* ROM |
 
 Downloads are on the [releases](https://github.com/Pigmassacre/romhacks/releases) page. Release
-tags start with the folder's name, like `gimmick-1.5-v1.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
+tags start with the folder's name, like `gimmick-1.5-v1.0.0`, `smb3-gimmick-v2.0.0` or `metroidvania-v1.0.0`.
 
 ## Your own ROMs
 
