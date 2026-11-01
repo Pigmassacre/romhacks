@@ -29,6 +29,7 @@ function DUMP_NT(what)
   end
   h = io.open(OUT .. "st_" .. what .. ".txt", "w")
   h:write(string.format("FC=%02X FD=%02X FF=%02X A4=%02X B8=%02X 90=%02X", r(0xFC), r(0xFD), r(0xFF), r(0xA4), r(0xB8), r(0x90)))
+  h:write(string.format(" chr=%02X,%02X,%02X,%02X", r(0xE5), r(0xE6), r(0xE7), r(0xE8)))
   h:close()
 end
 local nmi = 0

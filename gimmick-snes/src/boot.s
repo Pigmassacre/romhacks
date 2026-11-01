@@ -176,10 +176,18 @@ fast:
         stx DAS7L
         lda #$80
         sta MDMAEN
+        ; The clouds' two maps, for parallax
+        ldx #$7800
+        stx VMADDL
+        ldx #$1000
+        stx A1T7L
+        stx DAS7L
+        lda #$80
+        sta MDMAEN
         lda #$6C
         sta BG2SC
-        ; Black, grey and white, as BG2's first palette
-        lda #33
+        ; Black, grey and white, for the notices. BG2's first palette is the clouds'.
+        lda #49
         sta CGADD
         stz CGDATA
         stz CGDATA

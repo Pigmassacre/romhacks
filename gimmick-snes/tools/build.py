@@ -477,8 +477,27 @@ def build_spc(prg):
 
 NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"]
 FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
+BLANK_HALF = 29             # a lower half left at 0, for blank tiles
 OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
 TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
+
+# Clouds for parallax, on BG2: the game's own page of them, arranged as it does in stage 1
+# and in stages 2 and 4. An entry is a tile of that page; S is sky, L and W its fill tiles.
+CLOUD_PAGE, FILL_PAGE, TILE_CLOUDS = 0x01, 0x00, 28
+PUFFS = {
+    3: {5: (0x09, 0x06, 0x16, 0x07, 0x17, 0x08, 0x18)},
+    6: {0: (0x02, 0x12, 0x04, 0x14), 30: (0x00, 0x10)},
+    7: {0: (0x03, 0x13, 0x05, 0x15, 0x08, 0x18), 13: (0x09, 0x08, 0x18), 29: (0x09, 0x01, 0x11)},
+    9: {9: (0x09, 0x06, 0x16, 0x07)},
+    11: {21: (0x09, 0x06, 0x16, 0x07, 0x17)},
+}
+CLOUD_BANK = {
+    12: {4: (0x08, 0x18)},
+    13: {0: (0x0A, 0x1A, 0x0B, 0x1B, 0x2B, 0x3B, 0x0E, 0x1E, 0x0A, 0x1A, 0x07, 0x17)},
+    14: {0: ("L", 0x38, 0x2A, 0x3A, "W", "W", 0x2C, "L", "L", "L"), 14: (0x08, 0x18)},
+    15: {0: (0x29, "W", "W", "W", "W", "W", "W", 0x3D, "L", "L", 0x0B, 0x1B, 0x0A, 0x1A, 0x2B, 0x3B, 0x0A, 0x1A,
+             0x0B, 0x1B, 0x0C, 0x1C, 0x0D, 0x1D, 0x0E, 0x1E, 0x0B, 0x1B, 0x0A, 0x1A, 0x0B, 0x1B)},
+}
 
 
 def build_overlay(chr_rom):
@@ -506,8 +525,35 @@ def build_overlay(chr_rom):
     dash[3], dash[4] = 0x7E, 0x7E
     dash[8 + 3], dash[8 + 4] = 0x7E, 0x7E
     tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = recolour(bytes(dash))
+    for i in range(64):
+        at = (TILE_CLOUDS + i) * 16
+        tiles[at:at + 16] = tile_2bpp(chr_rom[CLOUD_PAGE * 0x400 + i * 16:CLOUD_PAGE * 0x400 + i * 16 + 16])
+    for i, t in enumerate((0x11, 0x01)):
+        at = (TILE_CLOUDS + 64 + i) * 16
+        tiles[at:at + 16] = tile_2bpp(chr_rom[FILL_PAGE * 0x400 + t * 16:FILL_PAGE * 0x400 + t * 16 + 16])
 
-    word = lambda t, front=True: bytes([t, 0x01 | (0x20 if front else 0)])  # tile 256 + t
+    def cloud_map(rows, fill_from):
+        none = bytes([TILE_NONE, 0x01])
+        out = [[none] * 32 for _ in range(32)]
+
+        def cell(v):
+            t = TILE_CLOUDS + (64 if v == "L" else 65 if v == "W" else v)
+            return bytes([t, 0x01])
+
+        for table in rows:
+            for r, parts in table.items():
+                for c, seq in parts.items():
+                    for i, v in enumerate(seq):
+                        out[r][(c + i) % 32] = cell(v)
+        if fill_from is not None:
+            for r in range(fill_from, 22):
+                for c in range(32):
+                    out[r][c] = cell("W" if r > 17 else "L")
+        return b"".join(w for row in out for w in row)
+
+    maps = cloud_map([PUFFS, CLOUD_BANK], 16) + cloud_map([PUFFS], None)
+
+    word = lambda t, front=True: bytes([t, 0x01 | 0x10 | (0x20 if front else 0)])  # tile 256 + t, palette 4
     screen = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
     top = 22
     width = max(len(t) for t in NOTICES) + 2
@@ -520,7 +566,7 @@ def build_overlay(chr_rom):
         for i, ch in enumerate(text):
             t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
             screen[top + n * 2][c + i] = word(t)
-    return bytes(tiles) + b"".join(w for row in screen for w in row)
+    return bytes(tiles) + b"".join(w for row in screen for w in row) + maps
 
 
 def attr_table():
@@ -571,7 +617,8 @@ def main():
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
-    s += bytes_asm("ChrBgBanks", [0xC0 + BG_HALF + p // 32 for p in range(128)])
+    # Pages from $80 are the blank ones parallax puts in place of the clouds' page.
+    s += bytes_asm("ChrBgBanks", [0xC0 + BG_HALF + p // 32 for p in range(128)] + [0xC0 + BLANK_HALF] * 128)
     s += bytes_asm("ChrObjBanks", [0xC0 + OBJ_HALF + p // 16 for p in range(128)])
     s += bytes_asm("ComboIdx8", idx[0])
     s += bytes_asm("ComboIdxA", idx[1])
@@ -633,6 +680,7 @@ def main():
         image[at + 2 * BANK:at + 3 * BANK] = patched[0x0F]
         image[at + 3 * BANK:at + 4 * BANK] = patched[FIXED]
     image[SPC_BANK * 0x10000:SPC_BANK * 0x10000 + len(spc)] = spc
+    image[BLANK_HALF * 0x10000:BLANK_HALF * 0x10000 + 0x8000] = bytes(0x8000)
     overlay = build_overlay(chr_rom)
     image[OVERLAY_HALF * 0x10000:OVERLAY_HALF * 0x10000 + len(overlay)] = overlay
     for num in range(32):

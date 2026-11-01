@@ -19,6 +19,7 @@
 ; VRAM layout, as word addresses.
 OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
 BGSET_HI   = $20            ; the first tile set of three: see set_hi
+CLOUD_PAGE = 1              ; the CHR page of clouds, for parallax
 BG2_NIBBLE = $60            ; BG2's tiles, for BG12NBA's other half
 MAP_HI     = $60            ; nametable A at $6000, B at $6400
 HIDDEN_Y   = $F0
@@ -55,6 +56,12 @@ irq_line:    .res 1         ; the SNES line the current split belongs on
 irq_next:    .res 1         ; and the next one's: it becomes irq_line when it starts
 .export irq_line, irq_next
 scroll_done: .res 1
+parallax:    .res 1
+band_pal:    .res 1
+cam_lo:      .res 1
+cam_hi:      .res 1
+cam_prev:    .res 2
+cam_acc:     .res 2
 tm_now:      .res 1         ; what the game has switched on
 overlay:     .res 1         ; and BG2, on the title screen
 in_split:    .res 1         ; a split's interrupt has run this frame
@@ -459,15 +466,15 @@ fme_chr:
 
 ; Bring slot x up to date, if there is time. Keeps x.
 load_top_slot:
-        ldy chr_want,x
         cpx #4
         bcc @obj
-        tya
+        lda set_want - 4,x
         cmp set_have - 4,x
         beq @obj
         jsr may_dma
         bcc @obj
         sta set_have - 4,x
+        tay
         lda #$80
         sta VMAINC
         stz VMADDL
@@ -477,7 +484,8 @@ load_top_slot:
         ora #BGSET_HI
         sta VMADDH
         jsr dma_bg_page
-@obj:   cpx #4
+@obj:   ldy chr_want,x
+        cpx #4
         bcc :+
         lda obj_used,x
         beq @out
@@ -598,6 +606,8 @@ flip_sprites:
 @out:   rts
 
 
+.segment "BOOT"             ; only ever called from the NMI, in bank 0: there is room here
+
 ; The NMI's work, before the game's code. Copy one page that a split wanted last frame,
 ; and start the frame from the sets above the split.
 .export nmi_work
@@ -632,21 +642,8 @@ nmi_work2:
         sta BG12NBA
         lda #$40
         sta HDMAEN
-        ; The notices show on the title screen: $4A = 3, as for the ending, and before play.
-        ldx #0
-        lda $4A
-        cmp #3
-        bne :+
-        lda $90
-        bne :+
-        ldx #2
-:       stx overlay
-        lda tm_now
-        beq :+              ; the game's picture is off
-        ora overlay
-        sta TM
-:
         jsr scroll_now
+        jsr bg2_now
         lda force_blank
         bne :+
         jsr load_page
@@ -721,7 +718,119 @@ scroll_now:
         sta ppu_thi
         jsr apply_scroll
         inc scroll_done
+        ; The camera, as 9 bits
+        lda ppu_tlo
+        asl a
+        asl a
+        asl a
+        ora ppu_finex
+        sta cam_lo
+        lda ppu_thi
+        lsr a
+        lsr a
+        and #1
+        sta cam_hi
 @out:   rts
+
+; BG2: the notices on the title screen, clouds behind stages that have them. $4A is 3 and
+; $90 is 0 on the title; $4A is 1 in play, where the clouds' page is at $E6 or $E7.
+bg2_now:
+        ldx #0
+        stx parallax
+        bra @begin
+@off:   jmp @really_off
+@done2: jmp @done
+@begin: lda $4A
+        cmp #3
+        bne @not_title
+        lda $90
+        bne @off
+        lda #$6C
+        sta BG2SC
+        stz BG2HOFS
+        stz BG2HOFS
+        stz BG2VOFS
+        stz BG2VOFS
+        ldx #2
+        bra @done2
+@not_title:
+        cmp #1
+        bne @off
+        lda $90
+        beq @off
+        lda $E6
+        cmp #CLOUD_PAGE
+        beq :+
+        lda $E7
+        cmp #CLOUD_PAGE
+        bne @off
+:       ldy $1B
+        cpy #7
+        bcs @off
+        lda cloud_sc,y
+        beq @off
+        sta BG2SC
+        inc parallax
+        lda cloud_pal,y
+        cmp band_pal
+        beq :+
+        sta band_pal
+        lda #1
+        sta pal_dirty
+:       lda cloud_y,y
+        sta BG2VOFS
+        lda cloud_yh,y
+        sta BG2VOFS
+        ; Half the camera's speed: a jump is a new screen, not movement.
+        lda cam_lo
+        sec
+        sbc cam_prev
+        sta tmp + 2
+        lda cam_hi
+        sbc cam_prev + 1
+        and #1              ; 9 bits, so x is -256 to 255
+        beq :+
+        lda tmp + 2
+        cmp #$C0
+        bcs @neg
+        bra @moved
+:       lda tmp + 2
+        cmp #$40
+        bcs @moved
+        clc
+        adc cam_acc
+        sta cam_acc
+        bcc @moved
+        inc cam_acc + 1
+        bra @moved
+@neg:   clc
+        adc cam_acc
+        sta cam_acc
+        bcs @moved
+        dec cam_acc + 1
+@moved: lda cam_lo
+        sta cam_prev
+        lda cam_hi
+        sta cam_prev + 1
+        lda cam_acc + 1
+        lsr a
+        sta tmp + 3
+        lda cam_acc
+        ror a
+        sta BG2HOFS
+        lda tmp + 3
+        and #3
+        sta BG2HOFS
+        ldx #2
+        bra @done
+@really_off:
+        ldx #0
+@done:  stx overlay
+        lda tm_now
+        beq :+
+        ora overlay
+        sta TM
+:       rts
 
 ; One page, what matters most first: what the last frame's splits wrote, then the sprites'
 ; second table above the split, then the rest of the split sets and second sprite tables.
@@ -803,6 +912,14 @@ load_page:
         sta VMADDH
         jmp dma_bg_page
 
+.segment "WCODE"
+
+; For each stage: BG2's map (0 for none), the palette its clouds use and where they sit.
+cloud_sc:  .byte $78, $78, $00, $7C, $00, $00, $00
+cloud_pal: .byte 1, 1, 0, 3, 0, 0, 0
+cloud_y:   .byte <(7), <(7 - 40), 0, <(7), 0, 0, 0
+cloud_yh:  .byte >(7), >(7 - 40), 0, >(7), 0, 0, 0
+
 ; $F06B in the game: slots 0-7 from $E1-$E8, in vblank. The same, without eight trips
 ; through the FME-7's registers. X and Y are the caller's.
 .export chr_all
@@ -814,7 +931,13 @@ chr_all:
         sta chr_want,x
         cpx #4
         bcc :+
-        sta set_want - 4,x
+        ; With parallax the clouds are on BG2, and blank tiles take their place on BG1.
+        ldy parallax
+        beq @plain
+        cmp #CLOUD_PAGE
+        bne @plain
+        ora #$80
+@plain: sta set_want - 4,x
 :       lda force_blank
         bne :+
         jsr load_top_slot   ; which also picks up what there was no time for last frame
@@ -1359,6 +1482,22 @@ commit_palette:
         sta CGDATA
         inx
         cpx #32
+        bne :-
+        ; The clouds' palette, for BG2
+        lda band_pal
+        asl a
+        asl a
+        asl a
+        tax
+        lda #33
+        sta CGADD
+        inx
+        inx
+        ldy #6
+:       lda cg_bg,x
+        sta CGDATA
+        inx
+        dey
         bne :-
         ldx #0
         ldy #128
