@@ -43,9 +43,9 @@ for key, value in values:
 for w in windows:
     if final and w["nmi"] > final.get("nmi", 0):
         break
-    print("to frame %6d: average %3.0f%% (draw %2.0f%%, sound %2.0f%%), worst %3.0f%%, over budget on %3d, first bad RAM: %s" % (
+    print("to frame %6d: average %3.0f%% (draw %2.0f%%, sound %2.0f%%), worst %3.0f%%, over budget on %3d, drew %3d of 500, longest gap %3d, first bad RAM: %s" % (
         w["nmi"], 100 * w["avg_500"] / FRAME_CYCLES, 100 * w["draw_500"] / FRAME_CYCLES, 100 * w["mix_500"] / FRAME_CYCLES,
-        100 * w["max_500"] / FRAME_CYCLES, w["over_500"], w["first_bad"] or "none"))
+        100 * w["max_500"] / FRAME_CYCLES, w["over_500"], w["drawn_500"], w["gap_500"], w["first_bad"] or "none"))
 if final:
     print("whole run: %.0f%% on average, over budget on %d of %d frames; RAM checked at %d NMIs, first bad: %s" % (
         100 * final["cycles_sum"] / (final["frames"] - 1) / FRAME_CYCLES, final["over_budget"], final["frames"],

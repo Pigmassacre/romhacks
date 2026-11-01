@@ -25,7 +25,7 @@ FIXED_BANK = 0x1F
 WAIT_LOOP = (0xF29A, 0xF2A5)
 # How much fast RAM the blocks may take. The exact-timing test build's code is bigger,
 # and speed does not matter there, so tools/build_gba.py gives it less.
-HOT_BYTES = int(os.environ.get("HOT_BYTES", 40000))
+HOT_BYTES = int(os.environ.get("HOT_BYTES", 44000))
 ARM_BYTES_PER_INSTR = 36     # rough size of a translated instruction as ARM code
 # $F319 reads an inline jump table after its JSR, so nothing returns there.
 NO_RETURN = {0xF319}
@@ -170,9 +170,9 @@ def rd(a, mode):
             return "window[%d][0x%04X + %s]" % ((a - 0x8000) >> 13, a & 0x1FFF, i)
         return "rd((u16)(0x%04X + %s))" % (a, i)
     if mode == "inx":
-        return "rd(IND(0x%02X + X))" % a
+        return "RD_ANY(IND(0x%02X + X))" % a
     if mode == "iny":
-        return "rd((u16)(IND(0x%02X) + Y))" % a
+        return "RD_ANY((u16)(IND(0x%02X) + Y))" % a
     raise ValueError(mode)
 
 
@@ -201,6 +201,8 @@ def wr(a, mode, val):
             return "ram[0x%04X] = %s;" % (a & 0x7FF, val)
         if 0x6000 <= a < 0x8000:
             return "w6000w[0x%04X] = %s;" % (a - 0x6000, val)
+        if a == 0x2007:
+            return "ppu_data_write(%s);" % val
         return "wr(0x%04X, %s);" % (a, val)
     if mode in ("abx", "aby"):
         i = "X" if mode == "abx" else "Y"
@@ -211,9 +213,9 @@ def wr(a, mode, val):
             return "w6000w[0x%04X + %s] = %s;" % (a - 0x6000, i, val)
         return "wr((u16)(0x%04X + %s), %s);" % (a, i, val)
     if mode == "inx":
-        return "wr(IND(0x%02X + X), %s);" % (a, val)
+        return "WR_ANY(IND(0x%02X + X), %s);" % (a, val)
     if mode == "iny":
-        return "wr((u16)(IND(0x%02X) + Y), %s);" % (a, val)
+        return "WR_ANY((u16)(IND(0x%02X) + Y), %s);" % (a, val)
     raise ValueError(mode)
 
 
@@ -346,9 +348,8 @@ def has_mapper_write(bank, start):
     """Does this block write the mapper? Then its bank may no longer be mapped when
     the block ends, and a jump inside the bank has to look again."""
     for _, ins in block_pcs(bank, start):
-        if ins and ins[0] in ("sta", "stx", "sty") and (ins[1] != "abs" or ins[3] >= 0x8000):
-            if ins[1] not in ("zp", "zpx", "zpy"):
-                return True
+        if ins and ins[0] in ("sta", "stx", "sty") and ins[1] in ("abs", "abx", "aby") and ins[3] >= 0x8000:
+            return True
     return False
 
 

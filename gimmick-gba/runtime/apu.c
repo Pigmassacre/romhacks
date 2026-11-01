@@ -6,17 +6,23 @@
 
 #define CPU_HZ 1789773u
 #define QUARTERS 4
+#define OUTPUT_GAIN 280
+#ifdef HOST
+int apu_only = 0xFF;  // the PC build can render one channel at a time
+#endif
 #define MAX_SPAN 128  // samples between frame counter ticks, at most
 
 static const u8 duty_steps[4] = {0x40, 0x60, 0x78, 0x9F};  // one bit per step
 static const u8 length_table[32] = {10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30};
 static const u16 noise_periods[16] = {4,8,16,32,64,96,128,160,202,254,380,508,762,1016,2034,4068};
 static const u16 dmc_periods[16] = {428,380,340,320,286,254,226,214,190,160,142,128,106,84,72,54};
-// 5B levels fall 3 dB a step, scaled to sit with the NES channels.
-static const u8 fiveb_levels[16] = {0,1,1,2,2,3,4,6,8,11,16,22,31,44,62,88};
+// The channels' levels relative to each other come from Mesen's mixer, at the volumes
+// the game uses: a pulse step is 2 here, a triangle step 3.75, a noise step 2.5, and the 5B's
+// levels fall 3 dB a step.
+static const u8 fiveb_levels[16] = {0,1,1,2,3,4,5,7,10,14,20,28,39,55,78,110};
 
 struct pulse {
-  u32 phase, inc;
+  u32 phase, inc, inverse;
   u16 timer;
   u8 duty, length, env_on, env_loop, env_period, env_div, env_vol, const_vol, start;
   u8 sweep_on, sweep_period, sweep_neg, sweep_shift, sweep_div, sweep_reload, halt, enabled;
@@ -43,7 +49,7 @@ static struct {
 
 static struct {
   u8 regs[16], select;
-  u32 phase[3], inc[3];
+  u32 phase[3], inc[3], inverse[3];
   u32 env_phase, env_inc, noise_accum, noise_inc;
   u16 noise_lfsr;
   u8 env_step, env_held, env_hold_level;
@@ -56,11 +62,21 @@ static int noise_period = 4;
 // music writes these registers all the time, so this has to be a plain 32-bit divide.
 static u32 hz_scale;
 HOT static u32 period_to_inc(u32 divisor) {
-  return divisor ? (hz_scale / divisor) << 8 : 0;
+  if (!divisor) return 0;
+  u32 scaled = hz_scale / divisor;
+  // Faster than the sample rate does not fit, and only noise goes there: a step every
+  // sample sounds the same as more of them.
+  return scaled >= 1u << 24 ? 0xFFFFFFFFu : scaled << 8;
 }
 
-HOT static void pulse_update(struct pulse *p) {
+HOT // DPCM's rates are cycles per bit, and can be more than one bit a sample: 16.16 bits.
+static u32 dmc_rate(u32 period) {
+  return (hz_scale / period) >> 8;
+}
+
+static void pulse_update(struct pulse *p) {
   p->inc = p->timer >= 8 ? period_to_inc(16u * (p->timer + 1)) : 0;
+  p->inverse = p->inc >> 16 ? 65536 / (p->inc >> 16) : 0;
 }
 HOT static void tri_update(void) {
   tri.inc = tri.timer >= 2 ? period_to_inc(32u * (tri.timer + 1)) : 0;
@@ -68,13 +84,14 @@ HOT static void tri_update(void) {
 HOT static void fiveb_update(int c) {
   u32 period = fb.regs[c * 2] | (fb.regs[c * 2 + 1] & 15) << 8;
   fb.inc[c] = period_to_inc(32u * (period ? period : 1));  // measured in Mesen: 2 cycles a step, 16 steps
+  fb.inverse[c] = fb.inc[c] >> 16 ? 65536 / (fb.inc[c] >> 16) : 0;
 }
 
 void apu_init(u32 hz) {
   sample_hz = hz;
   hz_scale = (u32)(((uint64_t)CPU_HZ << 24) / hz);
   noise.inc = period_to_inc(noise_periods[0]);
-  dmc.inc = period_to_inc(dmc_periods[0] * 8);
+  dmc.inc = dmc_rate(dmc_periods[0]);
   fb.noise_inc = period_to_inc(32);
   fb.env_inc = period_to_inc(32);
 }
@@ -140,7 +157,7 @@ HOT void apu_write(u16 a, u8 v) {
     noise.start = 1;
   } else if (a == 0x4010) {
     dmc.loop = (v >> 6) & 1;
-    dmc.inc = period_to_inc(dmc_periods[v & 15] * 8u);
+    dmc.inc = dmc_rate(dmc_periods[v & 15]);
   } else if (a == 0x4011) {
     dmc.level = v & 0x7F;
   } else if (a == 0x4012) {
@@ -241,18 +258,45 @@ static inline u32 fiveb_env_level(void) {
 
 // Each channel is added to the buffer in a loop of its own, and a silent one costs
 // only its phase. No tables: on the GBA, those would be read from slow ROM.
-HOT static void mix_pulse(short *buf, int n, struct pulse *p, u32 duty) {
-  u32 phase = p->phase, inc = p->inc;
-  int vol = pulse_level(p) * 2;
-  if (vol) {
-    for (int i = 0; i < n; i++) {
-      phase += inc;
-      if ((duty >> (phase >> 29)) & 1) buf[i] += vol;
+// A square wave's edges land between samples. Sampling it plainly turns that into
+// harsh aliasing, so a sample an edge falls in gets the share of its time spent high.
+// The wave has 8 steps, one bit each in shape. Almost every sample is between edges, so
+// it works out how many there are until the next step and adds those in one go.
+// inverse is 2^16 / (inc >> 16).
+HOT static u32 add_square(short *buf, int n, u32 phase, u32 inc, u32 inverse, int vol, u32 shape) {
+  int i = 0;
+  while (i < n) {
+    u32 left = 0x20000000 - (phase & 0x1FFFFFFF);
+    int run = ((left >> 16) * inverse) >> 16;
+    if (run > n - i) run = n - i;
+    if (run) {
+      if ((shape >> (phase >> 29)) & 1) {
+        short *to = buf + i;
+        for (int j = run; j; j--) *to++ += vol;
+      }
+      i += run;
+      phase += inc * run;
+      if (i >= n) break;
     }
-  } else {
-    phase += inc * n;
+    u32 was_high = (shape >> (phase >> 29)) & 1;
+    phase += inc;
+    u32 high = (shape >> (phase >> 29)) & 1;
+    if (was_high == high) {
+      if (high) buf[i] += vol;
+    } else {
+      u32 since = (((phase & 0x1FFFFFFF) >> 16) * inverse) >> 16;
+      if (since > 65535) since = 65535;
+      buf[i] += (vol * (high ? since : 65535 - since)) >> 16;
+    }
+    i++;
   }
-  p->phase = phase;
+  return phase;
+}
+
+HOT static void mix_pulse(short *buf, int n, struct pulse *p, u32 duty) {
+  int vol = pulse_level(p) * 2;
+  if (vol && p->inverse) p->phase = add_square(buf, n, p->phase, p->inc, p->inverse, vol, duty);
+  else p->phase += p->inc * n;
 }
 
 HOT static void mix_tri(short *buf, int n) {
@@ -261,7 +305,7 @@ HOT static void mix_tri(short *buf, int n) {
   for (int i = 0; i < n; i++) {
     phase += inc;
     u32 x = phase >> 27;
-    buf[i] += (x < 16 ? 15 - x : x - 16) * 2;
+    buf[i] += (x < 16 ? 15 - x : x - 16) * 15 >> 2;
   }
   tri.phase = phase;
 }
@@ -277,7 +321,7 @@ HOT static void mix_noise(short *buf, int n) {
       u32 bit = (lfsr ^ (lfsr >> tap)) & 1;
       lfsr = lfsr >> 1 | bit << 14;
     }
-    if (!(lfsr & 1)) buf[i] += vol;
+    if (!(lfsr & 1)) buf[i] += vol * 5 >> 1;
   }
   noise.accum = accum;
   noise.lfsr = lfsr;
@@ -287,9 +331,9 @@ HOT static void mix_dmc(short *buf, int n) {
   u32 accum = dmc.accum, inc = dmc.inc;
   int level = dmc.level;
   for (int i = 0; i < n; i++) {
-    u32 before = accum;
     accum += inc;
-    if (accum < before) {
+    while (accum >= 0x10000) {
+      accum -= 0x10000;
       if (!dmc.bits) {
         if (dmc.left) {
           dmc.shift = rd(dmc.addr);
@@ -308,7 +352,7 @@ HOT static void mix_dmc(short *buf, int n) {
         dmc.bits--;
       }
     }
-    buf[i] += (level * 3) >> 3;
+    buf[i] += (level * 15) >> 4;
   }
   dmc.accum = accum;
   dmc.level = level;
@@ -324,9 +368,9 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
     int vol = levels[r & 15];
     u32 phase = fb.phase[c], inc = fb.inc[c];
     if (vol && !noise_on) {
-      if (tone_on) {
-        for (int i = 0; i < n; i++) { phase += inc; if (phase >> 31) buf[i] += vol; }
-      } else {
+      if (tone_on && fb.inverse[c]) {
+        phase = add_square(buf, n, phase, inc, fb.inverse[c], vol, 0xF0);
+      } else if (!tone_on) {
         for (int i = 0; i < n; i++) buf[i] += vol;
       }
     } else if (!vol || !tone_on) {
@@ -371,26 +415,47 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
   }
 }
 
+// What is in the buffer so far is one channel: keep it only if it is wanted.
+#ifdef HOST
+#define ONLY(bit) do { static short keep[MAX_SPAN]; \
+    for (int i = 0; i < n; i++) { keep[i] = (apu_only & (bit)) ? buf[i] : 0; buf[i] = 0; } \
+    for (int i = 0; i < n; i++) total[i] += keep[i]; } while (0)
+#else
+#define ONLY(bit)
+#endif
+
 HOT static void mix_span(s8 *out, int n) {
+#ifdef HOST
+  short total[MAX_SPAN] = {0};
+#endif
   short buf[MAX_SPAN];
   u8 levels[16], duties[4];
   for (int i = 0; i < 16; i++) levels[i] = fiveb_levels[i];
   for (int i = 0; i < 4; i++) duties[i] = duty_steps[i];
   for (int i = 0; i < n; i++) buf[i] = 0;
   mix_pulse(buf, n, &pulses[0], duties[pulses[0].duty]);
+  ONLY(1);
   mix_pulse(buf, n, &pulses[1], duties[pulses[1].duty]);
+  ONLY(2);
   mix_tri(buf, n);
+  ONLY(4);
   mix_noise(buf, n);
+  ONLY(8);
   mix_dmc(buf, n);
+  ONLY(16);
   mix_fiveb(buf, n, levels);
+  ONLY(32);
   // The NES's output stage blocks DC, so the DPCM level drifting does not push the
   // whole mix up and down. This is the same idea: a high-pass filter, at about 90 Hz.
+#ifdef HOST
+  for (int i = 0; i < n; i++) buf[i] = total[i];
+#endif
   static int dc;
   int level = dc;
   for (int i = 0; i < n; i++) {
     int in = buf[i] << 8;
     level += (in - level) >> 5;
-    int s = ((in - level) >> 8) * 15 >> 3;
+    int s = ((in - level) >> 8) * OUTPUT_GAIN >> 8;
     out[i] = s > 127 ? 127 : s < -128 ? -128 : s;
   }
   dc = level;

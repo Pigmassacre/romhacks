@@ -5,7 +5,8 @@
     python3 tools/compare_sound.py
 
 Envelopes tick at slightly different moments in a frame here, so a value that matches
-the frame before or after counts as a match.
+the frame before or after counts as a match. tools/compare_audio.py compares the sound
+itself.
 """
 import os
 
