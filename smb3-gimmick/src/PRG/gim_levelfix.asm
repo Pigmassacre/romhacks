@@ -21,16 +21,54 @@ Gim_LevelFixes:
 	.byte $03, $31, $99
 	; World 7 fortress 2
 	.word W7F2L
-	.byte 2, 2
+	.byte 2, 4
 	.byte $01, $68, $E4
 	.byte $01, $69, $E4
+	.byte $03, $30, $E4
+	.byte $08, $44, $E4
 	; 5-8
 	.word W508L
-	.byte 13, 4
+	.byte 13, 10
 	.byte $01, $89, $D5
 	.byte $01, $99, $EC
 	.byte $01, $8A, $D6
 	.byte $01, $9A, $ED
+	.byte $03, $48, $D1
+	.byte $03, $49, $D3
+	.byte $03, $58, $E8
+	.byte $03, $59, $EA
+	.byte $04, $FD, $D1
+	.byte $05, $0D, $E8
+	; 7-8
+	.word W708L
+	.byte 1, 3
+	.byte $03, $2C, $63
+	.byte $03, $2D, $63
+	.byte $04, $EF, $63
+	; World 5 fortress
+	.word W5F1L
+	.byte 2, 1
+	.byte $01, $9E, $E4
+	; World 4 fortress 2
+	.word W4F2L
+	.byte 2, 5
+	.byte $03, $0B, $5B
+	.byte $03, $0C, $5B
+	.byte $04, $CE, $5B
+	.byte $06, $6B, $5B
+	.byte $08, $13, $5B
+	; 6-4
+	.word W604L
+	.byte 12, 4
+	.byte $01, $95, $8F
+	.byte $01, $A5, $53
+	.byte $01, $96, $90
+	.byte $01, $A6, $54
+	; World 7 plant 2
+	.word W7I2L
+	.byte 5, 2
+	.byte $01, $6A, $B8
+	.byte $01, $6B, $B8
 	; 4-6
 	.word W46AL
 	.byte 1, 2
