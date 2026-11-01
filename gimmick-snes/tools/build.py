@@ -229,6 +229,16 @@ def find_patches(instrs, stubs):
                         bad.append("%02X:%04X %s %s $%04X" % (num, pc, m, mode, a))
                 else:
                     p[pc] = label
+    # A $2005 just before a $2000: those two take effect together.
+    for num, code in instrs.items():
+        for pc, ins in code.items():
+            if not ins or ins[1] != "abs" or ins[2] != 0x2005 or ins[0] not in ("sta", "stx", "sty"):
+                continue
+            nxt = code.get(pc + 3)
+            if nxt and nxt[0] in ("lda", "ldx", "ldy") and nxt[1] != "abs":
+                nxt = code.get(pc + 3 + nxt[3])
+            if nxt and nxt[1] == "abs" and nxt[2] == 0x2000 and nxt[0] in ("sta", "stx", "sty"):
+                patches[num][pc] = "ppu_scroll_hold_%s" % ins[0][2]
     return patches, bad
 
 

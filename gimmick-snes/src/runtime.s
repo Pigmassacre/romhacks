@@ -120,12 +120,19 @@ sb_regs:     .res 16
 hdma_tab:    .res 16
 .export hdma_tab
 attr_shadow: .res 128
-oam_buf:     .res 512
+oam_buf:     .res 544       ; with the high table, all zeros: small sprites, x under 256
 data_left:   .res 1         ; tile writes that can go straight to VRAM, without a look at v
 .export pal_dirty, cg_bg, cg_obj
 pal_dirty:   .res 1
 w6_bank:     .res 1
 oam_ready:   .res 1
+vf_limit:    .res 1         ; the line vram_flush may go on to work on colours until
+oam_sent:    .res 1         ; nmi_work has sent this frame's sprites
+scroll_hold: .res 1         ; $2000 comes next, with the rest of this split's scroll
+split_cnt:   .res 1         ; scroll changes in this frame's splits
+bg_at:       .res 1         ; the one that changed the tile set last frame
+bg_at_new:   .res 1
+spr_tmp:     .res 3         ; not tmp: a split's interrupt can land in the middle of the sprites, and uses that
 load_first:  .res 1         ; the one stale sprite page this frame's sprites may wait on: see spr_check
 band_n:      .res 1         ; the portal's blank sprites: see spr_check
 band_top:    .res 1
@@ -310,11 +317,11 @@ arm_irq:
         ror itmp             ; lines from now
         cmp #0
         bne @never          ; 256 or more
-        ; From vblank, count from the NES's line 241, 21 before its line 0. From a split,
-        ; count from the line that split was meant for.
-        jsr beam
-        cmp #225
-        bcc @line
+        ; From the NMI, count from the NES's line 241, 21 before its line 0. From a split,
+        ; count from the line that split was meant for. Not by where the beam is: the game's
+        ; NMI can start after vblank, when there is a lot to do first.
+        lda in_split
+        bne @line
         ; lines - 29 is the first line on the SNES, unless that is before the picture.
         lda itmp
         sec
@@ -449,6 +456,9 @@ fme_chr:
         bne @flip           ; there is one further tile set
         inc split_n
         inc split_open
+        lda split_cnt
+        sta bg_at_new
+        lda #0
         ; Start it from the set above.
         asl a
         asl a
@@ -584,21 +594,22 @@ show_split_set:
         jsr flip_sprites
 flip_bg:
         lda split_n
-        beq @out
+        beq flip_out
         asl a
         asl a
         tax
         ldy #4
-:       lda set_wr,x
+@wr:    lda set_wr,x
         beq :+
         lda set_want,x
         cmp set_have,x
-        bne @out
+        bne flip_out
 :       inx
         dey
-        bne :--
+        bne @wr
         jsr wait_line
         ldx split_n
+flip_set:
         lda set_hi,x
         lsr a
         lsr a
@@ -607,7 +618,7 @@ flip_bg:
         sta BG12NBA
         ; Below the split the backdrop is the game's again, not the sky, and no clouds.
         lda parallax
-        beq @out
+        beq flip_out
         lda tm_now
         sta TM
         stz CGADD
@@ -615,7 +626,26 @@ flip_bg:
         sta CGDATA
         lda cg_bg + 1
         sta CGDATA
-@out:   rts
+flip_out:
+        rts
+
+; A split changes scroll and then tiles, and those stubs take lines to get through, where the
+; NES takes moments. So on the scroll change that was followed by new tiles last frame, the
+; tiles change too, if they are copied. The beam is in this line's hblank.
+split_early:
+        inc split_cnt
+        lda split_cnt
+        cmp bg_at
+        bne flip_out
+        ldx #4
+:       lda set_want,x
+        cmp set_have,x
+        bne flip_out
+        inx
+        cpx #8
+        bne :-
+        ldx #1
+        bra flip_set
 
 ; Below the first split, the sprites use what the splits left the pages as last frame.
 flip_sprites:
@@ -655,6 +685,17 @@ nmi_work:
         sta tmp
         rts
 nmi_work2:
+        ; Sprites before anything that could use up vblank. The game would send them next, if
+        ; it has finished the frame.
+        lda $F0
+        cmp #$AC
+        bne @not_done
+        lda oam_ready
+        beq @not_done
+        jsr oam_send
+        lda #1
+        sta oam_sent
+@not_done:
         jsr commit_palette
         jsr map_now
         lda map7
@@ -664,6 +705,10 @@ nmi_work2:
 :
         stz split_n
         stz split_open
+        stz split_cnt
+        lda bg_at_new
+        sta bg_at
+        stz bg_at_new
         stz split_flip
         stz irq_line
         stz in_split
@@ -677,13 +722,31 @@ nmi_work2:
         jsr band_now
         jsr menu_tick
         lda force_blank
-        bne :+
+        bne :+              ; the main thread may be using VRAM
+        ; Tiles, while there is sure to be time: the game's own call then finds its buffer empty.
+        lda $F0
+        cmp #$AC
+        bne @no_tiles
+        stz vf_limit
+        jsr vram_flush_now
+@no_tiles:
+        ; Then sprites' pages, colours, the pages for below a split, and more colours.
         jsr top_pages
         bcs @copied         ; that was the time there was
-        jsr load_page
-        lda #234
+        lda #240
         jsr attr_work
+        lda attr_head
+        cmp attr_tail
+        bne @copied         ; colours first: tiles in the wrong palette show for longer
+        jsr beam
+        cmp #225
+        bcc @copied         ; vblank has already gone
+        cmp #244
+        bcs @copied         ; a page would not finish in time
+        jsr load_page
 @copied:
+        lda #252
+        jsr attr_work
         ; Ready, if the slots that matter have what they asked for.
         ldy #1
         ldx #4
@@ -779,6 +842,11 @@ top_obj:
 ; Room for one more page? One always; a second if the game has no tiles to send. Keeps a.
 top_room:
         pha
+        jsr beam
+        cmp #225
+        bcc @no             ; vblank has already gone
+        cmp #246
+        bcs @no             ; it would not finish in time
         lda tmp
         beq @yes
         cmp #2
@@ -950,7 +1018,8 @@ menu_draw:
         bne @row
         rts
 
-; The world map, in Mode 7. It is the screen with $4A = 0 and these pages for the background.
+; The world map, in Mode 7. It is the screen with $4A = 0 and these pages for the background,
+; with $90 at 0 the first time, from the title, and 1 after a stage.
 MODE7_BANK = $DA
 M7_FRAMES  = 72
 M7_AT      = 48 * 8
@@ -958,9 +1027,6 @@ map_now:
         lda map7
         bne @on
         lda $4A
-        bne @out
-        lda $90
-        cmp #1
         bne @out
         lda $E5
         cmp #$54
@@ -1202,7 +1268,10 @@ bg2_now:
         bne @not_title
         lda $90             ; the title the first time; the credits have this set
         bne @off
-@title: lda #1
+@title: lda $E6
+        cmp #$65            ; 4A = 2 is also the credits, with other pages
+        bne @off
+        lda #1
         sta is_title
         lda menu_open
         beq :+
@@ -1386,6 +1455,77 @@ load_page:
         sta VMADDH
         jmp dma_bg_page
 
+; Send the colours the game has changed. From the NMI.
+commit_palette:
+        lda pal_dirty
+        beq @out
+        stz pal_dirty
+        ; BG1 is 16 colours a palette: the NES's three, then the backdrop's colour for its
+        ; black when that has to be solid. BG3's are in the gaps, 5-7 for the clouds.
+        ldy #0
+@pal:   tya
+        asl a
+        asl a
+        asl a
+        asl a
+        ina
+        sta CGADD
+        tya
+        asl a
+        asl a
+        asl a
+        tax
+        lda cg_bg + 2,x
+        sta CGDATA
+        lda cg_bg + 3,x
+        sta CGDATA
+        lda cg_bg + 4,x
+        sta CGDATA
+        lda cg_bg + 5,x
+        sta CGDATA
+        lda cg_bg + 6,x
+        sta CGDATA
+        lda cg_bg + 7,x
+        sta CGDATA
+        lda cg_bg
+        sta CGDATA
+        lda cg_bg + 1
+        sta CGDATA
+        iny
+        cpy #4
+        bne @pal
+        lda band_pal
+        asl a
+        asl a
+        asl a
+        tax
+        lda #5
+        sta CGADD
+        inx
+        inx
+        ldy #6
+:       lda cg_bg,x
+        sta CGDATA
+        inx
+        dey
+        bne :-
+        ldx #0
+        ldy #128
+@set:   sty CGADD
+:       lda cg_obj,x
+        sta CGDATA
+        inx
+        txa
+        and #7
+        bne :-
+        tya
+        clc
+        adc #16
+        tay
+        cpx #32
+        bne @set
+@out:   rts
+
 .segment "WCODE"
 
 ; For each stage: BG2's map (0 for none), the palette its clouds use and where they sit.
@@ -1449,6 +1589,7 @@ chr_all:
 reg_stub "ppu_ctrl", ppu_ctrl_w
 reg_stub "ppu_mask", ppu_mask_w
 reg_stub "ppu_scroll", ppu_scroll_w
+reg_stub "ppu_scroll_hold", ppu_scroll_hold_w
 reg_stub "ppu_addr", ppu_addr_w
 
 ; A run of tiles needs nothing but the store, until v leaves the nametable's tiles.
@@ -1494,6 +1635,15 @@ reg_done:
         plp
         rts
 
+; The last $2005 before a $2000, as a split's handler has it: the scroll takes effect in one
+; go, at the $2000, or the lines between would show the wrong nametable.
+ppu_scroll_hold_w:
+        lda #1
+        sta scroll_hold
+        pla
+        pha
+        jmp ppu_scroll_w
+
 ppu_ctrl_w:
         phx
         phy
@@ -1502,6 +1652,8 @@ ppu_ctrl_w:
         sta tmp + 1         ; what changed
         sty ppu_ctrl
         and #$FB
+        bne @full
+        lda scroll_hold
         bne @full
         ; Only the VRAM step, which the game changes all through its vblank.
         ldx #$FF
@@ -1513,6 +1665,7 @@ ppu_ctrl_w:
         sta vram_step
         jmp reg_done
 @full:
+        stz scroll_hold
         ; t: nametable select
         tya
         and #3
@@ -1680,10 +1833,13 @@ ppu_scroll_w:
         sta ppu_tlo
         jsr picture_on
         bcs @on
+        stz scroll_hold
         jsr apply_scroll
         jmp reg_done
-@on:    jsr mid_scroll
-        jmp reg_done
+@on:    lda scroll_hold
+        bne :+
+        jsr mid_scroll
+:       jmp reg_done
 
 ppu_addr_w:
         phx
@@ -1821,10 +1977,9 @@ mid_scroll:
         beq :+
         jsr wait_line
         jsr apply_h
+        jsr split_early
         jmp show_split_set
 :       rts
-        jsr apply_h
-        jmp show_split_set
 
 ; $2006 with the picture on moved v, so y jumps too: this line shows row y of the map.
 mid_scroll_v:
@@ -1848,6 +2003,7 @@ mid_scroll_v:
         sty BG1VOFS
         stx BG1VOFS
         jsr apply_h
+        jsr split_early
         jmp show_split_set
 
 ; Which SNES nametable each NES one lands on, for each FME-7 mirroring mode.
@@ -1949,77 +2105,6 @@ ppu_data_w:
         sta pal_dirty
         jmp @next
 
-; Send the colours the game has changed. From the NMI.
-commit_palette:
-        lda pal_dirty
-        beq @out
-        stz pal_dirty
-        ; BG1 is 16 colours a palette: the NES's three, then the backdrop's colour for its
-        ; black when that has to be solid. BG3's are in the gaps, 5-7 for the clouds.
-        ldy #0
-@pal:   tya
-        asl a
-        asl a
-        asl a
-        asl a
-        ina
-        sta CGADD
-        tya
-        asl a
-        asl a
-        asl a
-        tax
-        lda cg_bg + 2,x
-        sta CGDATA
-        lda cg_bg + 3,x
-        sta CGDATA
-        lda cg_bg + 4,x
-        sta CGDATA
-        lda cg_bg + 5,x
-        sta CGDATA
-        lda cg_bg + 6,x
-        sta CGDATA
-        lda cg_bg + 7,x
-        sta CGDATA
-        lda cg_bg
-        sta CGDATA
-        lda cg_bg + 1
-        sta CGDATA
-        iny
-        cpy #4
-        bne @pal
-        lda band_pal
-        asl a
-        asl a
-        asl a
-        tax
-        lda #5
-        sta CGADD
-        inx
-        inx
-        ldy #6
-:       lda cg_bg,x
-        sta CGDATA
-        inx
-        dey
-        bne :-
-        ldx #0
-        ldy #128
-@set:   sty CGADD
-:       lda cg_obj,x
-        sta CGDATA
-        inx
-        txa
-        and #7
-        bne :-
-        tya
-        clc
-        adc #16
-        tay
-        cpx #32
-        bne @set
-@out:   rts
-
 ; Stop a run of tiles early, because something else is about to use VRAM: v goes back
 ; to where the run has got to.
 end_run:
@@ -2117,6 +2202,9 @@ plan_run:
 ; the tiles going straight to VRAM. It may change X, Y and A, as that does.
 .export vram_flush
 vram_flush:
+        lda #255
+        sta vf_limit
+vram_flush_now:
         stz ppu_w
         ldy #0
         ldx #$FF
@@ -2124,7 +2212,7 @@ vram_flush:
 @entry: cpy $FA
         bcc :+
         stz $FA
-        lda #255
+        lda vf_limit
         jmp attr_work
 :       lda $0170,y
         bne :+
@@ -2157,21 +2245,44 @@ vram_flush:
         ; Tiles on the way across or down stay in the map, unless they reach attributes.
         lda ppu_vhi
         cmp #$3F
-        bcs @slow
-        and #3
+        bcc :+
+        jmp @slow
+:       and #3
         cmp #3
         bne @fast
         lda ppu_vlo
         cmp #$C0 - 64       ; well short of the attributes, on the last page
-        bcs @slow
+        bcc @fast
+        jmp @slow
 @fast:  lda vram_step
-        bne @slow           ; down: a column may reach attributes
+        bne @column
         ; Would it leave the page?
         lda ppu_vlo
         clc
         adc vf_left
-        bcs @slow
-        phy
+        bcc @run
+        jmp @slow
+@column:
+        ; Would it reach the attributes? The game sends a column like this every frame.
+        lda ppu_vhi
+        and #3
+        asl a
+        asl a
+        asl a
+        sta tmp
+        lda ppu_vlo
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        ora tmp
+        clc
+        adc vf_left
+        cmp #31
+        bcc @run
+        jmp @slow
+@run:   phy
         lda ppu_vhi
         and #$0C
         lsr a
@@ -2190,7 +2301,8 @@ vram_flush:
         and #3
         ora tmp
         ora #MAP_HI
-        stz VMAINC
+        ldx vram_step
+        stx VMAINC
         sta VMADDH
         lda ppu_vlo
         sta VMADDL
@@ -2379,7 +2491,7 @@ attr_item:
         cmp #$EF
         bcs @hide
         sbc #CROP_TOP - 2   ; carry is clear: subtract one more
-        sta tmp
+        sta spr_tmp
         jsr spr_check
         bcs @hide
         lda $0203,x
@@ -2392,24 +2504,24 @@ attr_item:
         sta buf + 6,y
         lda $0201,x
         and #1
-        sta tmp + 1
+        sta spr_tmp + 1
 @even:  lda $0202,x
         phx
         tax
         lda f:AttrTable,x
         plx
-        ora tmp + 1
+        ora spr_tmp + 1
         sta buf + 3,y
         sta buf + 7,y
         lda $0202,x
         bmi @flip
-        lda tmp
+        lda spr_tmp
         sta buf + 1,y
         clc
         adc #8
         sta buf + 5,y
         bra @next
-@flip:  lda tmp
+@flip:  lda spr_tmp
         sta buf + 5,y
         clc
         adc #8
@@ -2439,10 +2551,24 @@ oam_dma_a:
         pha
         phx
         phy
-        lda oam_ready
+        lda oam_sent
+        beq :+
+        stz oam_sent
+        bra @out
+:       lda oam_ready
         bne @ready
         jsr convert_oam
-@ready: stz oam_ready
+@ready: jsr oam_send
+@out:   ply
+        plx
+        pla
+        plp
+        rts
+
+; All of OAM, by DMA. Past the end of vblank this would corrupt it, the high table for good
+; if that were not sent too.
+oam_send:
+        stz oam_ready
         stz OAMADDL
         stz OAMADDH
         stz DMAP5
@@ -2453,15 +2579,12 @@ oam_dma_a:
         lda #>oam_buf
         sta A1T5H
         stz A1B5
-        stz DAS5L
+        lda #<544
+        sta DAS5L
         lda #2
         sta DAS5H
         lda #$20
         sta MDMAEN
-        ply
-        plx
-        pla
-        plp
         rts
 
 ; The game calls this when the frame is done and it will wait for vblank: the time to
@@ -2491,7 +2614,7 @@ frame_done:
 ; Sprite x of the game's: its CHR slot, and whether its page will be there in time. Only one
 ; stale page is sure to be copied in vblank, so sprites on any other stay off for this frame,
 ; since the NES's bank switch is instant and a sprite on the wrong page is garbage. Carry set
-; to hide it. Keeps x and y; tmp is the sprite's line.
+; to hide it. Keeps x and y; spr_tmp is the sprite's line.
 spr_check:
         lda $0201,x
         cmp #$80
@@ -2502,11 +2625,11 @@ spr_check:
         ; One of the portal's blanks
         lda band_n
         bne :+
-        lda tmp
+        lda spr_tmp
         sta band_top
         sta band_end
 :       inc band_n
-        lda tmp
+        lda spr_tmp
         cmp band_top
         bcs :+
         sta band_top
@@ -2534,7 +2657,7 @@ spr_check:
         and #1
         asl a
         asl a
-        sta tmp + 2
+        sta spr_tmp + 2
         lda $0201,x
         lsr a
         lsr a
@@ -2542,7 +2665,7 @@ spr_check:
         lsr a
         lsr a
         lsr a
-        ora tmp + 2
+        ora spr_tmp + 2
         tax
         cpx #4
         bcc :+

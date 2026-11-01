@@ -44,6 +44,15 @@ NES sprites are 8x16, which the SNES lacks: each is two 8x8 sprites, keeping its
 A tile row can wrap at line 240 on the NES; the SNES's map has 2 more rows there, so an HDMA table adds
 16 to the vertical scroll where the picture crosses them.
 
+**Sprites.** `nmi_work` sends them first thing in vblank, and the game's own `$4014` then does nothing. Late, they would
+corrupt OAM, and they include the high table so that such damage cannot last. `convert_sprites` keeps to `spr_tmp`, as
+it runs at the end of the main thread's frame, and a split's interrupt can land in it and use `tmp`.
+
+**The order in vblank.** Everything does not fit, so `nmi_work` decides: sprites, palette, scroll, the game's tile
+buffer, sprites' CHR pages, colours, then second-set pages. Anything written to VRAM after vblank is lost, so a copy
+must not start where it cannot finish, and a line number from the next picture is not "early". `vram_flush` writes runs
+and columns directly, as the game resends a column of 24 tiles every frame. The game's own calls then find little left.
+
 **CHR pages.** The NES's bank switch is instant and a page here takes 12 lines of vblank, so the game's own
 order, with CHR last, is usually too late. `top_pages` runs first in `nmi_work`, from what the game has at `$E1-$E8`:
 sprites' pages, then the background's if no colours are waiting (`attr_work`), one page a frame, or two if there
@@ -53,6 +62,10 @@ is sure of being copied, so `spr_check` keeps sprites on any other off for that 
 **The portal.** It hides what comes out of it with the NES's limit of 8 sprites on a line: 16 blank sprites, tile
 `$80` with attribute `$20`, in two stacks of 8, ahead of the others. The SNES has no such limit, so `spr_check` notes them
 and `band_now` turns sprites off for those lines, by HDMA on TM.
+
+**Splits take longer than on the NES.** A split changes scroll and then tiles, and the stubs for that take several
+lines. So `split_early` changes tiles along with the scroll that came before them last frame. A handler's `$2005` just
+before a `$2000` becomes `ppu_scroll_hold`, so that both apply at once and no line shows the wrong nametable.
 
 **The status bar.** The game takes an FME-7 interrupt, counted in CPU cycles, and changes CHR pages and
 scroll for what is below. The SNES interrupts on a line (`arm_irq`). Its handler takes much longer here,
