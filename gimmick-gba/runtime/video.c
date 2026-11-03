@@ -91,7 +91,8 @@ static int band_from, band_to;
 
 // The title's third entry, OPTIONS, under START and CONTINUE: the game's own letters,
 // tall sprites with the letter in their lower half, and a P drawn to match in a tile
-// the title's sprites never use. All three go up 8 lines to fit the GBA's screen.
+// the title's sprites never use. All three go up 8 lines, to sit between the logo and
+// the bottom of the GBA's screen.
 // gba.c moves title_cursor; on OPTIONS, START and CONTINUE are both grey, as the
 // game draws the one not chosen, and OPTIONS blinks as the game blinks its choice.
 int title_cursor;
@@ -105,7 +106,7 @@ __attribute__((noinline)) static void put_p_tile(int tile);
 // OPTIONS and the title's own sprites. Not in fast RAM: only the title has them.
 static int blink;
 
-// The game's sprites with START and CONTINUE moved up, and grey while OPTIONS is chosen.
+// The game's sprites, with START and CONTINUE moved up, and grey while OPTIONS is chosen.
 __attribute__((noinline)) static const u8 *title_sprites(void) {
   static u8 copy[256] SLOW_RAM;
   blink = 1;
@@ -211,6 +212,7 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
 #define TEXT_TILE 256
 #define NOTICE_PALETTE 15
 #define BAR_PALETTE 14
+#define SPLASH_PALETTE 13
 static const struct { char c; char rows[7][8]; } font[] = {
   {' ', {".......", ".......", ".......", ".......", ".......", ".......", "......."}},
   {'-', {".......", ".......", ".......", ".#####.", ".......", ".......", "......."}},
@@ -245,14 +247,19 @@ static const struct { char c; char rows[7][8]; } font[] = {
 #define BAR_TILE (TEXT_TILE + FONT_SIZE)      // then the bar's: its letters, then its ends
 #define MENU_TILE (BAR_TILE + FONT_SIZE + 2)
 #define CLEAR_TILE (MENU_TILE + FONT_SIZE)
-// Rows of the map, which sits 5 lines up so that the bar's white inside, lines 99 to
-// 105, starts a row. The notices go on the sky above the logo, as Gimmick! 1.5's do.
-#define TEXT_SCROLL 5
+// The title's camera: the line of the NES's picture at the top of the screen. It leaves
+// the sky above the logo room for the notice.
+#define TITLE_TOP 15
+// Rows of the map, which scrolls so that the bar's white inside, lines 99 to 105 of the
+// NES's picture, starts a row. The notice goes on the sky above the logo, as Gimmick!
+// 1.5's do.
+#define TEXT_SCROLL (TITLE_TOP - 1)
 #define BAR_ROW 13
 #define BAR_LEFT 4      // its tiles: the bar's ends are lines at x 32 and 207
 #define BAR_RIGHT 25
-#define NOTICE_ROW 1
-static const char *const notices[2] = {"PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"};
+#define NOTICE_ROW 2
+#define CREDIT "PORT BY PIGMASSACRE"
+#define WARNING "AI SLOP - DO NOT PLAY"
 static const char bar_text[] = "A  D  V  A  N  C  E";
 
 static int is_ink(int g, int x, int y) {
@@ -293,6 +300,7 @@ static void font_init(void) {
   put_tile(CLEAR_TILE, px);
   BG_PAL[NOTICE_PALETTE * 16 + 1] = nes_colors[0x10];
   BG_PAL[NOTICE_PALETTE * 16 + 2] = RGB(0, 0, 0);
+  BG_PAL[SPLASH_PALETTE * 16 + 1] = nes_colors[0x30];
   BG_PAL[BAR_PALETTE * 16 + 1] = RGB(0, 0, 0);
   BG_PAL[BAR_PALETTE * 16 + 3] = nes_colors[0x30];
 }
@@ -317,17 +325,18 @@ __attribute__((noinline)) static void put_p_tile(int tile) {
   p_loaded = 1;
 }
 
+// A line of text, across the middle of the screen.
+static void text_line(volatile u16 *map, int row, const char *t, int palette) {
+  int len = 0;
+  while (t[len]) len++;
+  int left = (30 - len) / 2;
+  for (int i = 0; i < len; i++) map[row * 32 + left + i] = (TEXT_TILE + glyph(t[i])) | palette << 12;
+}
+
 static void draw_notices(void) {
   volatile u16 *map = MAP(MAP_TEXT);
   for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
-  for (int n = 0; n < 2; n++) {
-    const char *t = notices[n];
-    int len = 0;
-    while (t[len]) len++;
-    int left = (30 - len) / 2;
-    for (int i = 0; i < len; i++)
-      map[(NOTICE_ROW + n) * 32 + left + i] = (TEXT_TILE + glyph(t[i])) | NOTICE_PALETTE << 12;
-  }
+  text_line(map, NOTICE_ROW, WARNING, NOTICE_PALETTE);
   int len = sizeof bar_text - 1, left = BAR_LEFT + (BAR_RIGHT - BAR_LEFT + 1 - len) / 2;
   for (int c = BAR_LEFT; c <= BAR_RIGHT; c++) {
     int tile = c == BAR_LEFT ? BAR_TILE + FONT_SIZE : c == BAR_RIGHT ? BAR_TILE + FONT_SIZE + 1
@@ -336,6 +345,24 @@ static void draw_notices(void) {
   }
   REG16(0x0400001C) = 0;
   REG16(0x0400001E) = TEXT_SCROLL;
+}
+
+// The first screen, before the game's own: who made the port, in white, and the
+// warning, in the title's grey, on black like SUNSOFT PRESENTS. gba.c shows it.
+void splash_draw(int show) {
+  volatile u16 *map = MAP(MAP_TEXT);
+  if (!show) {
+    DISPCNT = 0x0080;
+    draw_notices();
+    return;
+  }
+  for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
+  text_line(map, 9, CREDIT, SPLASH_PALETTE);
+  text_line(map, 11, WARNING, NOTICE_PALETTE);
+  REG16(0x0400001C) = 0;
+  REG16(0x0400001E) = 4;  // the two lines, 72 to 95 of the map, about the screen's middle
+  BG_PAL[0] = 0;
+  DISPCNT = 0x0800;
 }
 
 // Gimmick! 1.5's features as options: a white box over the logo, from the title's
@@ -370,7 +397,6 @@ static inline int on_title(void) {
   return top_chr[5] == 0x65 && top_chr[6] == 0x66 && top_chr[7] == 0x67;
 }
 int video_on_title(void) { return on_title(); }
-#define TITLE_TOP 6    // the sky above the logo, for the notices, down to CONTINUE
 #define STATUS_FROM 184  // a mid-frame change this low is the status bar
 
 // Which lines of a screen without a status bar have something on them: everything
