@@ -105,10 +105,10 @@ the background, BG3, BG4. BG2 is above them all, for the title's notices and men
 background shows through colour 0 and is hidden by the rest, so with sky behind everything colour 0 has to be black over
 the sky and yet behind that sprite: only a layer of its own can do that.
 
-- **BG2** has the title's additions: SUPER over the logo, a line under CONTINUE in the menu's own font and
-  colours, and the notices on a white plate like the logo's. That font is the options menu's too, white on black
-  in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title (`NOTICE_DOWN`), so the
-  line is as far under CONTINUE as that is under START.
+- **BG2** has the title's additions: SUPER in the logo, on white over its small print, OPTIONS under CONTINUE in
+  the menu's own font and colours, and the notices on a white plate like the logo's. That font is the options menu's
+  too, white on black in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title
+  (`NOTICE_DOWN`), so that OPTIONS is as far under CONTINUE as that is under START.
 - **BG1** is the NES's background, 2 bits a pixel as it is on the NES, in 4 palettes of 4.
 - **BG3** uses BG1's map, with its own tiles: colour 1, always the backdrop's colour, where the NES has colour 0.
 - **BG4** is sky and clouds, at half the camera's speed (`bg2_now`). The bank of cloud is the title screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`.
@@ -140,7 +140,9 @@ from happening: an old stamp for the floor, no memory of the press, no Select bi
 call the routine at all.
 
 `pad_read` takes the place of the game's read of the first pad, to keep a copy for the menu and to show the
-game nothing while the menu is open. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
+game nothing while the menu is open, nor after it closes until the pad is let go. `title_menu` takes the place
+of the game's title cursor at `$1B:813C`: `$05` goes to 2 for OPTIONS, which flashes as START and CONTINUE do,
+and Start there opens the menu. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
 the power goes off: cartridge RAM holds the stage's tables, so there is nowhere to save them.
 
 ## Sound
