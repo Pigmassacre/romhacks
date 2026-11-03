@@ -75,10 +75,47 @@ static int last_sprites;
 // Sprites at or below status_line belong to the status bar, like the health pips, and
 // are drawn on it wherever the camera is. With masks, each sprite behind the picture
 // also marks the sprite window, for the title's clouds.
+//
+// The game fills OAM from slot 8 up on even frames and from slot 63 down on odd ones,
+// to share out the flicker of the NES's 8 sprites on a line. The GBA has no such limit,
+// and overlapping sprites would swap places 30 times a second, so odd frames are read
+// backwards.
+//
+// The portal hides Yumetaro both ways at once on the NES: on even frames its black box
+// is in front of him, on odd ones 8 blank sprites come first on the lines below it, and
+// the NES's limit of 8 on a line leaves him out. The second needs doing by hand: on the
+// lines with 8 blanks, band_from to band_to on screen, no sprite shows.
+static int band_from, band_to;
+#define BLANK(s) ((s)[1] == 0x80 && ((s)[2] & 0x20) && (s)[0] < 0xEF)
 HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int split, int status_line, int view_h, int masks) {
   int tall = top_ctrl & 0x20;
   int n = 0;
-  for (int i = 0; i < 64; i++) {
+  int blanks = 0;
+  for (int i = 8; i < 64; i++) blanks += BLANK(&oam[i * 4]);
+  band_from = band_to = 0;
+  if (blanks >= 8) {
+    u8 count[256] = {0};
+    int lo = 256, hi = 0;
+    for (int i = 8; i < 64; i++) {
+      const u8 *s = &oam[i * 4];
+      if (!BLANK(s)) continue;
+      for (int l = s[0] + 1; l < s[0] + 1 + (tall ? 16 : 8) && l < 256; l++) {
+        if (++count[l] == 8) {
+          if (l < lo) lo = l;
+          if (l > hi) hi = l;
+        }
+      }
+    }
+    if (lo <= hi) {
+      band_from = lo - top < 0 ? 0 : lo - top;
+      band_to = hi + 1 - top > view_h ? view_h : hi + 1 - top;
+    }
+  }
+  // Which way this frame went shows in which end is in use. Only with both in use does
+  // it take the game's frame counter, whose parity picks the way.
+  int odd = (oam[8 * 4] < 0xEF) == (oam[63 * 4] < 0xEF) ? ram[0xED] & 1 : oam[63 * 4] < 0xEF;
+  for (int k = 0; k < 64; k++) {
+    int i = k < 8 || !odd ? k : 71 - k;
     const u8 *s = &oam[i * 4];
     int on_status = s[0] + 1 >= status_line;
     int y = on_status ? s[0] + 1 - status_line + view_h : s[0] + 1 - top;
@@ -212,7 +249,7 @@ static int camera(int play_h, int view_h, int has_status) {
     return cam_y;
   }
   if (has_status && ram[0x90]) {
-    // $A4:$9A holds Yumetaro's feet as a screen number and a line on that screen.
+    // $A4:$9A holds Yumetaro's feet: the room in the top 4 bits, then the line in it.
     int feet = (ram[0xA4] & 15) << 4 | ram[0x9A] >> 4;
     want = feet - view_h * 3 / 5;
   } else {
@@ -231,6 +268,14 @@ static int camera(int play_h, int view_h, int has_status) {
   }
   if (want < 0) want = 0;
   if (want > range) want = range;
+  // Going to another room, the NES shows it at once, and so does the camera. Easing
+  // over to Yumetaro's new place looked like the camera racing to catch up.
+  static int last_room = -1;
+  if (ram[0xA4] >> 4 != last_room) {
+    last_room = ram[0xA4] >> 4;
+    cam_y = want;
+    return cam_y;
+  }
   int d = want - cam_y;
   if (d > 4) d = 4;
   if (d < -4) d = -4;
@@ -356,7 +401,6 @@ void video_present(void) {
   }
   WIN0H = SCREEN_W;
   WIN1H = SCREEN_W;
-  WININ = win_in;
   // The top of the frame, sprites and the notices. Inside the sprite window, no sprites.
   WINOUT = 0x0919;
   nt_dirty = 0;
@@ -377,6 +421,13 @@ void video_present(void) {
     }
   }
   draw_sprites(top, lower_from, status_line, view_h, title);
+  if (band_from < band_to && !(window_on & 0x4000)) {
+    // The portal's lines: everything but the sprites.
+    WIN1V = band_from << 8 | band_to;
+    win_in |= 0x09 << 8;  // the top of the frame and the notices, as outside
+    window_on |= 0x4000;
+  }
+  WININ = win_in;
   if (ppu_mask & 0x18) {
     // The title hides its clouds behind the logo with sprites behind the picture, early in
     // OAM, which on the NES hide later sprites and show the picture there. On the GBA
