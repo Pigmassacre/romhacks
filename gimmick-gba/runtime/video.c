@@ -88,6 +88,56 @@ static int last_sprites;
 // lines with 8 blanks, band_from to band_to on screen, no sprite shows.
 static int band_from, band_to;
 #define BLANK(s) ((s)[1] == 0x80 && ((s)[2] & 0x20) && (s)[0] < 0xEF)
+
+// The title's third entry, OPTIONS, under START and CONTINUE: the game's own letters,
+// tall sprites with the letter in their lower half, and a P drawn to match in a tile
+// the title's sprites never use. All three go up 8 lines to fit the GBA's screen.
+// gba.c moves title_cursor; on OPTIONS, START and CONTINUE are both grey, as the
+// game draws the one not chosen, and OPTIONS blinks as the game blinks its choice.
+int title_cursor;
+#define ENTRY(s) (!((s)[2] & 0x20) && ((s)[0] == 124 || (s)[0] == 140))
+#define ENTRY_RISE 8
+#define OPTIONS_Y (156 - ENTRY_RISE)
+#define P_TILE 511
+static const u8 options_tiles[7] = {0x28, 0, 0x32, 0x38, 0x28, 0x36, 0x30};  // O P T I O N S
+static int p_loaded;
+__attribute__((noinline)) static void put_p_tile(int tile);
+// OPTIONS and the title's own sprites. Not in fast RAM: only the title has them.
+static int blink;
+
+// The game's sprites with START and CONTINUE moved up, and grey while OPTIONS is chosen.
+__attribute__((noinline)) static const u8 *title_sprites(void) {
+  static u8 copy[256] SLOW_RAM;
+  blink = 1;
+  for (int i = 0; i < 256; i += 4) {
+    u8 *s = &copy[i];
+    s[0] = oam[i]; s[1] = oam[i + 1]; s[2] = oam[i + 2]; s[3] = oam[i + 3];
+    if (!ENTRY(s)) continue;
+    if (s[0] == ((ram[5] & 1) ? 140 : 124)) blink = s[2] & 3;
+    if (title_cursor == 2) s[2] = (s[2] & ~3) | 1;
+    s[0] -= ENTRY_RISE;
+  }
+  return copy;
+}
+
+__attribute__((noinline)) static int draw_options(int n, int top, int split) {
+  int lower = split >= 0 && OPTIONS_Y + 1 >= split ? OBJ_LOWER_TILES : 0;
+  put_p_tile(P_TILE + lower);
+  int y = OPTIONS_Y + 1 - top;
+  u16 pal = (title_cursor == 2 ? blink : 1) << 12 | 1 << 10;
+  for (int i = 0; i < 7; i++, n++) {
+    if (options_tiles[i]) {
+      OAM[n * 4] = (y & 0xFF) | 0x8000;
+      OAM[n * 4 + 2] = (options_tiles[i] + lower) | pal;
+    } else {
+      OAM[n * 4] = (y + 8) & 0xFF;
+      OAM[n * 4 + 2] = (P_TILE + lower) | pal;
+    }
+    OAM[n * 4 + 1] = 88 + i * 8;
+  }
+  return n;
+}
+
 HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int split, int status_line, int view_h, int masks) {
   int tall = top_ctrl & 0x20;
   int n = 0;
@@ -115,9 +165,10 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
   // Which way this frame went shows in which end is in use. Only with both in use does
   // it take the game's frame counter, whose parity picks the way.
   int odd = (oam[8 * 4] < 0xEF) == (oam[63 * 4] < 0xEF) ? ram[0xED] & 1 : oam[63 * 4] < 0xEF;
+  const u8 *sprites = masks ? title_sprites() : oam;
   for (int k = 0; k < 64; k++) {
     int i = k < 8 || !odd ? k : 71 - k;
-    const u8 *s = &oam[i * 4];
+    const u8 *s = &sprites[i * 4];
     int on_status = s[0] + 1 >= status_line;
     int y = on_status ? s[0] + 1 - status_line + view_h : s[0] + 1 - top;
     int x = s[3] - 8;
@@ -145,6 +196,7 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
     OAM[n * 4 + 2] = a2;
     n++;
   }
+  if (masks && n + 7 <= 128) n = draw_options(n, top, split);
   for (int i = n; i < last_sprites; i++) OAM[i * 4] = 0x0200;  // hidden
   last_sprites = n;
 }
@@ -251,6 +303,20 @@ static int glyph(char c) {
   return g < FONT_SIZE ? g : 0;
 }
 
+// OPTIONS' P, as the game draws its letters: colour 3, with colour 1 down and right.
+__attribute__((noinline)) static void put_p_tile(int tile) {
+  int g = glyph('P');
+  volatile u16 *t = (volatile u16 *)(OBJ_VRAM + tile * 32);
+  for (int y = 0; y < 8; y++) {
+    u32 row = 0;
+    for (int x = 0; x < 8; x++)
+      row |= (u32)(is_ink(g, x, y) ? 3 : is_ink(g, x - 1, y - 1) ? 1 : 0) << (x * 4);
+    t[y * 2] = row;
+    t[y * 2 + 1] = row >> 16;
+  }
+  p_loaded = 1;
+}
+
 static void draw_notices(void) {
   volatile u16 *map = MAP(MAP_TEXT);
   for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
@@ -272,8 +338,8 @@ static void draw_notices(void) {
   REG16(0x0400001E) = TEXT_SCROLL;
 }
 
-// Gimmick! 1.5's features as options: a white box over the logo, from Select on the
-// title. The rows it covers go back to clear when it closes.
+// Gimmick! 1.5's features as options: a white box over the logo, from the title's
+// OPTIONS. The rows it covers go back to clear when it closes.
 #define MENU_TOP 4
 #define MENU_ROWS 9
 static const char *const option_names[5] = {"STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON",
@@ -524,6 +590,10 @@ static int layer_map_up_to_date(int layer, int t, int row) {
 }
 
 void video_present(void) {
+  if (p_loaded && !on_title()) {
+    p_loaded = 0;
+    loaded_obj[7] = loaded_obj_lower[7] = 0xFF;  // the P's tile is the last page's
+  }
   for (int i = 0; i < 8; i++) {
     if (loaded_obj[i] != top_chr[i]) {
       loaded_obj[i] = top_chr[i];

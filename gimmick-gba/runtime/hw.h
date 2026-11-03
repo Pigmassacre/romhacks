@@ -76,5 +76,6 @@ extern const u8 *chr4, *parallax;   // the CHR converted to GBA tiles
 void video_init(void);
 void video_present(void);
 int video_on_title(void);
+extern int title_cursor;  // 0 START, 1 CONTINUE, 2 OPTIONS
 void menu_draw(int open, int cursor, int opts);
 #endif

@@ -30,6 +30,8 @@ The GBA's screen is 160 lines tall and the NES playfield is 192, so the camera f
 up and down, and the title and cutscenes show the part with something on it.
 
 The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
+It has a third entry, OPTIONS, under START and CONTINUE, which are 8 lines higher than on the NES
+so that all three fit. Select, up and down move between them.
 
 **Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
 behind the stage, at half its speed, as in the SNES port.
@@ -37,9 +39,9 @@ behind the stage, at half its speed, as in the SNES port.
 **The world map in Mode 7.** The island spins in from far away when the map opens, on the
 GBA's affine layer, then settles on the same picture as the original.
 
-**Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
-skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
-right switch it, and Select or B goes back. They start off, so the game plays as it always did, and
+**Gimmick! 1.5's features, as options.** Choose OPTIONS on the title screen, with Start or A,
+for star recall, skipping stones, tap to summon, coyote time and jump buffering. Up and down pick
+one, A or left and right switch it, and Start, Select or B goes back. They start off, so the game plays as it always did, and
 the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 
 ## Known limits
