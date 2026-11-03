@@ -677,11 +677,10 @@ PLATE_ROWS, PLATE_COLS = (22, 27), (4, 28)
 OPTIONS_AT = (19, 12)       # under START and CONTINUE, which are sprites at x 96
 NOTICE_DOWN = 6             # src/runtime.s has the same number
 TILE_LOGO = 96              # the logo's SUPER, then OPTIONS's letters
-# S U P E R in the logo, over its three lines of small print: white over this box of the screen, and
-# the letters' top left corners, each in two columns of tiles so that there are few. The box ends
-# at the k.
+# SUPER in the logo, over its three lines of small print: src/logo_super.txt is this box of the
+# screen, black (#) on white (.). It ends at the k. tools/super_edit.py edits it.
 LOGO_BOX = (80, 33, 167, 53)
-LOGO_LETTERS = [(82 + i * 16, 37) for i in range(5)]
+LOGO_FILE = os.path.join(REPO, "src", "logo_super.txt")
 MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
 MENU_MAP, MENU_LEFT = 0x3C00, 5     # src/runtime.s has the first; the cursor's column
 MENU_ROWS = [11, 13, 15, 17, 19]
@@ -721,23 +720,6 @@ MENU_FONT = {
     "Z": ["#######", "....##.", "...##..", "..##...", ".##....", "##.....", "#######"],
     "-": [".......", ".......", ".......", "######.", ".......", ".......", "......."],
 }
-# SUPER, black and as heavy as the logo's own letters: 14 by 15.
-_BOWL = ["###########...", "#############.", "####.....#####", "####......####", "####......####",
-         "####.....#####", "#############.", "###########..."]
-SUPER = {
-    "S": ["...#########..", ".############.", "#####....#####", "####..........", "####..........",
-          "####..........", "#####.........", ".###########..", "..###########.", ".........#####",
-          "..........####", "..........####", "#####....#####", ".############.", "..#########..."],
-    "U": ["####......####"] * 12 + ["#####....#####", ".############.", "...########..."],
-    "P": _BOWL + ["####.........."] * 7,
-    "E": ["##############"] * 3 + ["####.........."] * 3 + ["###########..."] * 3
-         + ["####.........."] * 3 + ["##############"] * 3,
-    "R": _BOWL + ["####...####...", "####....####..", "####....####..", "####.....####.", "####.....####.",
-                  "####......####", "####......####"],
-}
-for _g in SUPER.values():
-    assert len(_g) == 15 and all(len(_r) == 14 for _r in _g)
-
 # Clouds for parallax, on BG2: the game's own page of them, arranged as it does in stage 1
 # and in stages 2 and 4. An entry is a tile of that page; S is sky, L and W its fill tiles.
 TILE_CLOUDS, FILL_PAGE = 28, 0x00
@@ -847,14 +829,12 @@ def build_overlay(chr_rom):
     # SUPER, palette 4: black on white.
     logo = {}
     x0, y0, x1, y1 = LOGO_BOX
-    for y in range(y0, y1):
-        for x in range(x0, x1):
-            logo[x, y] = 3
-    for ch, (lx, ly) in zip("SUPER", LOGO_LETTERS):
-        for y, row in enumerate(SUPER[ch]):
-            for x, v in enumerate(row):
-                if v == "#":
-                    logo[lx + x, ly + y] = 1
+    rows = open(LOGO_FILE).read().split()
+    if len(rows) != y1 - y0 or any(len(r) != x1 - x0 for r in rows):
+        sys.exit("src/logo_super.txt has to be %d lines of %d" % (y1 - y0, x1 - x0))
+    for y, row in enumerate(rows):
+        for x, v in enumerate(row):
+            logo[x0 + x, y0 + y] = 1 if v == "#" else 3
     logo_cells = {}
     for (x, y) in logo:
         logo_cells.setdefault(((y - NOTICE_DOWN + 1) // 8, x // 8), None)
@@ -934,7 +914,7 @@ def build_overlay(chr_rom):
     for row, item in zip(MENU_ROWS, MENU_ITEMS):
         text(row, MENU_LEFT + 2, item)
         text(row, MENU_LEFT + 18, "OFF")
-    text(22, 10, "START - BACK")
+    text(22, 12, "B - BACK")
     for (r, c), t in logo_cells.items():
         menu[r][c] = word(t, pal=4)
     return bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)

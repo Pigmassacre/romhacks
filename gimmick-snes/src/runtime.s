@@ -59,6 +59,9 @@ irq_next:    .res 1         ; and the next one's: it becomes irq_line when it st
 opt_flags:   .res 1         ; Gimmick! 1.5's features: bit 0 up, in the menu's order
 raw_pad:     .res 1         ; the pad, in the same order as the game's $F5
 pad_prev:    .res 1
+pad_a:       .res 1         ; the SNES's A button, which the game does not read
+pad_a_prev:  .res 1
+pad_a_new:   .res 1
 menu_open:   .res 1
 menu_at:     .res 1
 menu_req:    .res 1         ; Start on OPTIONS: menu_tick opens the menu in the next vblank
@@ -996,6 +999,12 @@ menu_tick:
         sty pad_prev
         and raw_pad
         sta itmp            ; newly pressed
+        lda pad_a
+        tay
+        eor pad_a_prev
+        sty pad_a_prev
+        and pad_a
+        sta pad_a_new       ; and A
         lda is_title
         bne @title
         stz menu_open
@@ -1028,8 +1037,10 @@ menu_tick:
         stz menu_at
         jmp menu_draw
 @open:  lda itmp
+        ora pad_a_new
         beq @out
-        and #$70            ; Start, Select, or Y (the NES's B): back to the title
+        lda itmp
+        and #$B0            ; B (the NES's A), Start or Select: back to the title
         beq :+
         stz menu_open
         inc pad_hold
@@ -1052,7 +1063,8 @@ menu_tick:
         stz menu_at
         bra @moved
 :       lda itmp
-        and #$83            ; B (the NES's A), Left, Right: switch it
+        and #$43            ; Y (the NES's B), Left, Right, or A: switch it
+        ora pad_a_new
         beq @out
         ldx menu_at
         lda f:menu_bits,x
@@ -3536,7 +3548,12 @@ pad_read:
         lda $4016
         lsr a
         rol raw_pad
-        lda menu_open
+        cpx #1              ; the game's last read: a ninth gets the SNES's A, for the menu
+        bne :+
+        lda $4016
+        and #1
+        sta pad_a
+:       lda menu_open
         ora menu_req
         ora pad_hold
         beq :+

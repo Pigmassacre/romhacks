@@ -105,7 +105,8 @@ the background, BG3, BG4. BG2 is above them all, for the title's notices and men
 background shows through colour 0 and is hidden by the rest, so with sky behind everything colour 0 has to be black over
 the sky and yet behind that sprite: only a layer of its own can do that.
 
-- **BG2** has the title's additions: SUPER in the logo, on white over its small print, OPTIONS under CONTINUE in
+- **BG2** has the title's additions: SUPER in the logo, on white over its small print (`src/logo_super.txt`, at
+  most as many different tiles as BG2 has left; `tools/super_edit.py` counts them), OPTIONS under CONTINUE in
   the menu's own font and colours, and the notices on a white plate like the logo's. That font is the options menu's
   too, white on black in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title
   (`NOTICE_DOWN`), so that OPTIONS is as far under CONTINUE as that is under START.
@@ -142,7 +143,8 @@ call the routine at all.
 `pad_read` takes the place of the game's read of the first pad, to keep a copy for the menu and to show the
 game nothing while the menu is open, nor after it closes until the pad is let go. `title_menu` takes the place
 of the game's title cursor at `$1B:813C`: `$05` goes to 2 for OPTIONS, which flashes as START and CONTINUE do,
-and Start there opens the menu. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
+and Start there opens the menu. After the game's eighth read of the pad, `pad_read` reads a ninth bit,
+the SNES's A, which the game never sees but the menu uses. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
 the power goes off: cartridge RAM holds the stage's tables, so there is nowhere to save them.
 
 ## Sound
