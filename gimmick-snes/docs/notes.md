@@ -172,7 +172,19 @@ From about 1 kHz a voice switches to a wave with fewer harmonics (`band_sample`,
 filter to speak of when it steps over samples, and a square's edges would fold back as scratchy noise.
 
 Waves are short looped samples, and DPCM samples are converted to BRR at build time, at a third of their
-rate to fit. `tools/spcasm.py` is a small assembler for the SPC700. The noise channel's short mode is a
+rate to fit. Which samples there are comes from the game's own table, at `$FD68` in the PRG (`DPCM_TABLE`): the
+survey's play-through hears only some of them.
+
+No sample has its lowest value, -8 at the top shift, three times in a row. The DSP's Gaussian interpolation adds
+three of its four points with no clamp, and its weights come to a little over 1 at some positions, so three of
+those wrap round to the highest value: a full-scale pop, once a cycle at some pitches, which made the pulses and
+the 5B crackle. The squares go from +7 to -7, and DPCM is scaled to stay clear of it. The DSP also clamps as it
+adds up the voices, before the main volume, so their volumes are low enough that all of them together stay
+under that, and the main volume is at its highest to make up for it.
+
+A DPCM sample stops by fading out, with GAIN, in 2 ms, and a new one starts once the old one has (`dpcm_key`),
+as a cut clicks where the NES's level stays put. Key off was missed: the DSP looks at it every 64 cycles, and the
+driver let go of it sooner, so a stopped sample played on, as when the intro is skipped. `tools/spcasm.py` is a small assembler for the SPC700. The noise channel's short mode is a
 sample too, as its 93 steps have a pitch. The 5B's envelope and noise are not handled: the game writes the
 mixer's noise bits only rarely, and never sets an envelope volume.
 

@@ -32,6 +32,9 @@ half   = $6C         ; set_pitch: an octave down
 batch  = $6D         ; the runtime is part way through a frame's registers
 ticks  = $6E
 srcb   = $6F         ; set_pitch: the duty to choose a sample for, or negative for none
+dp_pend = $70        ; a DPCM sample waits for the one before to fade: dpcm_key
+dp_src = $71         ; its sample and pitch
+dp_pitch = $72       ; 2 bytes
 
 start:
         mov x,#$EF
@@ -53,6 +56,13 @@ main:
         mov port0,last      ; acknowledge
         call msg
 no_msg:
+        mov a,dp_pend
+        beq no_dpcm
+        mov dspa,#$48       ; ENVX: has the sample before faded out?
+        mov a,dspd
+        bne no_dpcm
+        call dpcm_key
+no_dpcm:
         ; A period is two registers: nothing reads them while they are half sent.
         mov a,batch
         bne main
@@ -228,7 +238,9 @@ voice_src:
 
 dsp_table:
         .byte $6C,$20       ; echo off, noise clock 0
-        .byte $0C,$58, $1C,$58, $2C,$00, $3C,$00
+        ; The voices' volumes are low enough that all of them at once do not reach the clamp
+        ; where they are added up, and the main volume makes up for it.
+        .byte $0C,$7F, $1C,$7F, $2C,$00, $3C,$00
         .byte $5D,DIR_PAGE
         .byte $3D,$08       ; voice 3 is noise
         .byte $2D,$00, $0D,$00, $4D,$00
@@ -574,7 +586,7 @@ p_quiet:
         jmp set_vol
 
 pulse_vol:
-        .byte 0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45
+        .byte 0,2,4,6,8,10,12,14,16,18,20,21,23,25,27,29
 
 triangle:
         mov x,#2
@@ -657,7 +669,7 @@ n_quiet:
         jmp set_vol
 
 noise_vol:
-        .byte 0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45
+        .byte 0,2,4,6,8,10,12,14,16,18,20,21,23,25,27,29
 
 ; A 5B voice (x = 0-2) on DSP voice 5+x.
 fiveb:
@@ -731,13 +743,16 @@ tone_bit:
         .byte 1,2,4
 sb_vol:
         ; 3 dB a step, with step 12 about as loud as a pulse at its loudest
-        .byte 0,1,1,2,3,4,5,8,11,15,21,30,42,60,85,120
+        .byte 0,1,1,1,2,3,3,5,7,10,14,20,27,39,55,78
 
-; DPCM: a has $4015's value. Stop it, and start the sample if bit 4 is set.
+; DPCM: a has $4015's value. Whatever plays fades out, in 2 ms, as a cut would click where the
+; NES's level stays put. With bit 4 set, the sample starts once it has: main calls dpcm_key.
+; Not by key off, which the DSP looks at only every 64 cycles and would miss if it were let go
+; at once, nor kept on, which would need letting go before the next start.
 dpcm_start:
-        mov dspa,#$5C
-        mov dspd,#$10
-        mov tmp,a
+        mov dp_pend,#0
+        mov dspa,#$47
+        mov dspd,#$9F       ; GAIN: down by 32 each sample
         and a,#$10
         beq dp_off
         ; find (bank, $4012, $4013) in the list
@@ -755,27 +770,18 @@ dp_find:
         cmp a,regs+$13
         bne dp_next
         mov a,!dpcm_list+3+y
-        mov tmp2,a
-        mov dspa,#$44
-        mov dspd,tmp2
+        mov dp_src,a
         ; pitch from the rate
         mov a,regs+$10
         and a,#$0F
         asl a
         mov y,a
-        mov dspa,#$42
         mov a,!dpcm_pitch+y
-        mov dspd,a
-        mov dspa,#$43
+        mov dp_pitch,a
         mov a,!dpcm_pitch+1+y
-        mov dspd,a
-        mov x,#4
-        mov a,#DPCM_VOL
-        call set_vol
-        mov dspa,#$5C
-        mov dspd,#0
-        mov dspa,#$4C
-        mov dspd,#$10
+        mov dp_pitch+1,a
+        mov dp_pend,#1
+dp_off:
         ret
 dp_next:
         mov a,y
@@ -783,7 +789,20 @@ dp_next:
         adc a,#4
         mov y,a
         bra dp_find
-dp_off:
-        mov dspa,#$5C
-        mov dspd,#0
+
+dpcm_key:
+        mov dp_pend,#0
+        mov dspa,#$44
+        mov dspd,dp_src
+        mov dspa,#$42
+        mov dspd,dp_pitch
+        mov dspa,#$43
+        mov dspd,dp_pitch+1
+        mov dspa,#$47
+        mov dspd,#$7F       ; full, directly
+        mov x,#4
+        mov a,#DPCM_VOL
+        call set_vol
+        mov dspa,#$4C
+        mov dspd,#$10
         ret

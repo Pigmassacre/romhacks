@@ -325,6 +325,8 @@ SPC_CODE = 0x0600
 SPC_PITCH = 0x2000
 SPC_BRR = 0x4000
 DPCM_STEP = 3               # samples kept: 1 in this many, for them all to fit
+DPCM_TABLE, DPCM_TABLE_LEN = 0xFD68, 76     # in the PRG: see build_spc
+DPCM_SCALE = 240            # a step of the NES's level, low enough that none comes near the bottom
 BAND_HARMONICS = (7, 3, 2)  # for pitches from 1, 2 and 4 kHz: src/sound.spc picks by the pitch
 DMC_HZ = [4181.71, 4709.93, 5264.04, 5593.04, 6257.95, 7046.35, 7918.63, 8363.42,
           9419.86, 11186.1, 12604.0, 13982.6, 16884.6, 21306.8, 24858.0, 33143.9]
@@ -381,11 +383,14 @@ def brr_encode(samples, loop=False):
     return bytes(out)
 
 
+# A sample's lowest value, -8 at the top shift, must not come three times in a row: the DSP's
+# interpolation adds three of four points with no clamp, and its weights there come to a little over
+# 1, so a sum below the lowest value wraps round to the highest, a full-scale pop.
 def duty_sample(duty):
     """16 samples of a pulse wave, one BRR block that loops."""
     pattern = {0: "1100000000000000", 1: "1111000000000000", 2: "1111111100000000", 3: "1111111111110000"}[duty]
     out = bytearray([0xC3])
-    nibs = [7 if c == "1" else 8 for c in pattern]     # +7, -8 in 4 bits
+    nibs = [7 if c == "1" else 9 for c in pattern]     # +7, -7 in 4 bits: see above
     for i in range(0, 16, 2):
         out.append(nibs[i] << 4 | nibs[i + 1])
     return bytes(out)
@@ -412,7 +417,7 @@ def band_sample(duty, harmonics):
         v = 2 * d - 1
         for n in range(1, harmonics + 1):
             v += 4 / (n * math.pi) * math.sin(n * math.pi * d) * math.cos(2 * math.pi * n * (x - d / 2))
-        nibs.append(max(-8, min(7, round(v * 7.5 - 0.5))) & 15)
+        nibs.append(max(-7, min(7, round(v * 7.5 - 0.5))) & 15)
     out = bytearray([0xC3])
     for i in range(0, 16, 2):
         out.append(nibs[i] << 4 | nibs[i + 1])
@@ -452,7 +457,7 @@ def dpcm_decode(data):
         part = raw[i:i + DPCM_STEP]
         v = sum(part) / len(part)
         dc += (v - dc) / 256
-        out.append(int(max(-32768, min(32767, (v - dc) * 300))))
+        out.append(int(max(-32768, min(32767, (v - dc) * DPCM_SCALE))))
     # The NES's output stays where it ends; this one stops at 0, which would click.
     fade = min(64, len(out))
     for i in range(fade):
@@ -463,6 +468,13 @@ def dpcm_decode(data):
 def build_spc(prg):
     survey = os.path.join(OUT, "survey", "snd.txt")
     samples = {}
+    # The game's own table of samples: $4011, $4012, $4013, the $C000 bank and $4010, five bytes each.
+    # A play-through does not hear them all.
+    for i in range(DPCM_TABLE_LEN):
+        dac, addr, length, bank, rate = prg[DPCM_TABLE + i * 5:DPCM_TABLE + i * 5 + 5]
+        if not 0x0C <= bank <= 0x0F or rate > 15:
+            sys.exit("the game's sample table is not at $%05X" % DPCM_TABLE)
+        samples[(bank, addr, length)] = 1
     for line in open(survey):
         f = line.split()
         if f[0] == "D":
@@ -516,7 +528,7 @@ def build_spc(prg):
         tables += "  .word %d\n" % min(int(1789773 / per * 4096 / 32000), 0x3FFF)
     text = open(os.path.join(REPO, "src", "sound.spc")).read() + tables
     code, sym = spcasm.assemble(text, SPC_CODE, {"src_duty": 0, "src_tri": 4, "src_short": 5, "src_band": 6, "dir_page": SPC_ORIGIN >> 8,
-                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 70, "dpcm_vol": 100})
+                                                 "pitch_hi": SPC_PITCH >> 8, "tri_vol": 46, "dpcm_vol": 81})
     print("sound driver: %d bytes" % len(code))
     if SPC_CODE + len(code) > SPC_PITCH:
         sys.exit("the sound driver is too big")

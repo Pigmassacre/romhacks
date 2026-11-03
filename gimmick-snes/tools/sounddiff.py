@@ -12,6 +12,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(REPO, "out", "ramdiff") + "/"
 FRAMES = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
 NAMES = ["pulse 1", "pulse 2", "triangle", "noise", "dpcm", "5B A", "5B B", "5B C"]
+PULSE_VOL = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 21, 23, 25, 27, 29]    # pulse_vol and noise_vol in src/sound.spc
 
 
 def record(snes):
@@ -81,7 +82,7 @@ def main():
                     else:
                         worst += 1
                 if ch < 2 or ch == 3:
-                    if (x[0] * (3 if ch < 2 else 2)) == y[0]:
+                    if PULSE_VOL[x[0]] == y[0]:
                         vol_ok += 1
                 else:
                     vol_ok += 1
