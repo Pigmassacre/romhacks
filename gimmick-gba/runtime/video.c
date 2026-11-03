@@ -383,7 +383,7 @@ void menu_draw(int open, int cursor, int opts) {
     for (int c = BAR_LEFT; c <= BAR_RIGHT; c++)
       map[r * 32 + c] = open ? MENU_TILE | BAR_PALETTE << 12 : CLEAR_TILE;
   if (!open) return;
-  menu_text(MENU_TOP + 1, BAR_LEFT + 2, "GIMMICK! 1.5 OPTIONS");
+  menu_text(MENU_TOP + 1, BAR_LEFT + (BAR_RIGHT - BAR_LEFT + 1 - 7) / 2, "OPTIONS");
   for (int i = 0; i < 5; i++) {
     int row = MENU_TOP + 3 + i;
     if (i == cursor) menu_text(row, BAR_LEFT + 1, ">");
