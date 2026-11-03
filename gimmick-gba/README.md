@@ -43,7 +43,7 @@ behind the stage, at half its speed, as in the SNES port.
 GBA's affine layer, then settles on the same picture as the original.
 
 **Gimmick! 1.5's features, as options.** Choose OPTIONS on the title screen, with Start or A,
-for star recall, skipping stones, tap to summon, coyote time and jump buffering. Up and down pick
+for star recall, water skipping, tap to summon, coyote time and jump buffering. Up and down pick
 one, A or left and right switch it, and Start, Select or B goes back. They start off, so the game plays as it always did, and
 the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 

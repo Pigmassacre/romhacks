@@ -242,6 +242,7 @@ static const struct { char c; char rows[7][8]; } font[] = {
   {'T', {".######", "...##..", "...##..", "...##..", "...##..", "...##..", "...##.."}},
   {'U', {"##...##", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."}},
   {'V', {"##...##", "##...##", "##...##", ".##.##.", ".##.##.", "..###..", "...#..."}},
+  {'W', {"##...##", "##...##", "##.#.##", "#######", "#######", "###.###", "##...##"}},
   {'Y', {"##...##", "##...##", ".##.##.", "..###..", "...##..", "...##..", "...##.."}},
 };
 #define FONT_SIZE (sizeof font / sizeof font[0])
@@ -376,7 +377,7 @@ void splash_draw(int show) {
 // the bar to ADVANCE, when it closes.
 #define MENU_TOP 4
 #define MENU_ROWS 9
-static const char *const option_names[5] = {"STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON",
+static const char *const option_names[5] = {"STAR RECALL", "WATER SKIPPING", "TAP TO SUMMON",
                                              "COYOTE TIME", "JUMP BUFFERING"};
 
 static void menu_text(int row, int col, const char *t) {

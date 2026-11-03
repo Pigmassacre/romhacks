@@ -681,7 +681,7 @@ TILE_LOGO = 96              # the logo's SUPER, then OPTIONS's letters
 # screen, black (#) on white (.). It ends at the k. tools/super_edit.py edits it.
 LOGO_BOX = (80, 33, 167, 53)
 LOGO_FILE = os.path.join(REPO, "src", "logo_super.txt")
-MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
+MENU_ITEMS = ["STAR RECALL", "WATER SKIPPING", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
 MENU_MAP, MENU_LEFT = 0x3C00, 5     # src/runtime.s has the first; the cursor's column
 MENU_ROWS = [11, 13, 15, 17, 19]
 TILE_ARROW = 94             # src/runtime.s has the same number

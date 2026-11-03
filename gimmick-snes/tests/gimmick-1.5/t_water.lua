@@ -1,4 +1,4 @@
--- Skipping stones: throw the star out over the lake in stage 2, from the last
+-- Water skipping: throw the star out over the lake in stage 2, from the last
 -- pillar before open water (column $1E), and ride it.
 -- Hack: it skips off the water several times, carrying Yumetaro, then sinks.
 -- Original: it sinks the first time it touches the water.

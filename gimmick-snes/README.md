@@ -11,7 +11,7 @@ And since it is on a SNES now, three things the original could not do:
 - **The world map in Mode 7.** The island spins in from far away when the map opens, then settles
   to the same picture as the original.
 - **Gimmick! 1.5's features, as options.** OPTIONS on the title screen, under CONTINUE, has star recall,
-  skipping stones, tap to summon, coyote time and jump buffering, each on or off. They start off, so
+  water skipping, tap to summon, coyote time and jump buffering, each on or off. They start off, so
   the game plays as it always did. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 
 You bring your own copy of the Japanese *Gimmick!*. The build makes the SNES ROM from it, and the
