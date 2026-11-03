@@ -82,23 +82,26 @@ static void take_shot(const char *name) {
       }
     }
 #define LAYERS(x, y) (w0 && (y) >= a0 && (y) < a1 ? win_in & 0xFF : w1 && (y) >= b0 && (y) < b1 ? win_in >> 8 : obj_win[y][x] ? win_out >> 8 : (w0 || w1 || (disp & 0x8000)) ? win_out & 0xFF : 0x1F)
-    if ((disp & 7) == 1 && (disp & 0x0400)) {
-      // Mode 1's affine third layer, 8-bit tiles, as the world map's arrival uses it.
-      u16 cnt = REG16(0x0400000C);
-      int size = 128 << (cnt >> 14);
-      short pa = REG16(0x04000020), pb = REG16(0x04000022), pc = REG16(0x04000024), pd = REG16(0x04000026);
-      int rx = REG32(0x04000028), ry = REG32(0x0400002C);
-      const u8 *map = sim_vram + ((cnt >> 8) & 31) * 0x800, *tiles = sim_vram + ((cnt >> 2) & 3) * 0x4000;
-      for (int y = 0; y < 160; y++)
-        for (int x = 0; x < 240; x++) {
-          int tx = (rx + pa * x + pb * y) >> 8, ty = (ry + pc * x + pd * y) >> 8;
-          if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
-          u8 c = tiles[map[(ty >> 3) * (size >> 3) + (tx >> 3)] * 64 + (ty & 7) * 8 + (tx & 7)];
-          if (c) fb[y][x] = ((u16 *)sim_pal)[c];
-        }
-    }
-    for (int prio = 3; prio >= 0 && (disp & 7) == 0; prio--) {
-      for (int bg = 3; bg >= 0; bg--) {
+    for (int prio = 3; prio >= 0; prio--) {
+      // Mode 1's affine third layer, 8-bit tiles, as the world map uses it.
+      if ((disp & 7) == 1 && (disp & 0x0400) && (REG16(0x0400000C) & 3) == prio) {
+        u16 cnt = REG16(0x0400000C);
+        int size = 128 << (cnt >> 14);
+        short pa = REG16(0x04000020), pb = REG16(0x04000022), pc = REG16(0x04000024), pd = REG16(0x04000026);
+        int rx = REG32(0x04000028), ry = REG32(0x0400002C);
+        const u8 *map = sim_vram + ((cnt >> 8) & 31) * 0x800, *tiles = sim_vram + ((cnt >> 2) & 3) * 0x4000;
+        for (int y = 0; y < 160; y++)
+          for (int x = 0; x < 240; x++) {
+            // With a table of lines, as the HBlank DMA gives them, each line starts afresh.
+            struct affine_line *l = affine_lines ? &affine_lines[y] : 0;
+            int tx = l ? (l->x + l->pa * x) >> 8 : (rx + pa * x + pb * y) >> 8;
+            int ty = l ? (l->y + l->pc * x) >> 8 : (ry + pc * x + pd * y) >> 8;
+            if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
+            u8 c = tiles[map[(ty >> 3) * (size >> 3) + (tx >> 3)] * 64 + (ty & 7) * 8 + (tx & 7)];
+            if (c) fb[y][x] = ((u16 *)sim_pal)[c];
+          }
+      }
+      for (int bg = 3; bg >= 0 && (disp & 7) == 0; bg--) {
         if (!(disp >> (8 + bg) & 1) || (REG16(0x04000008 + bg * 2) & 3) != prio) continue;
         for (int y = 0; y < 160; y++) {
           for (int x = 0; x < 240; x++) {

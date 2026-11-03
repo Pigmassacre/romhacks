@@ -400,6 +400,8 @@ static void draw_clouds(int stage) {
   for (int i = 0; i < 32 * 32; i++) map[i] = (CLOUD_TILE + cells[i]) | st[1] << 12;
 }
 
+static void plane_init(void);
+
 void video_init(void) {
   DISPCNT = 0x0080;
   for (int i = 0; i < LAYERS; i++) {
@@ -411,6 +413,7 @@ void video_init(void) {
   for (int n = 0; n < 128; n++) OAM[n * 4] = 0x0200;
   font_init();
   draw_notices();
+  plane_init();
   volatile u16 *to = (volatile u16 *)(VRAM + CLOUD_TILE * 32);
   for (int i = 0; i < 67 * 16; i++) to[i] = PAR_TILES[i * 2] | PAR_TILES[i * 2 + 1] << 8;
 }
@@ -429,22 +432,14 @@ static void load_bg_pages(int layer, const u8 *chr_set, u8 ctrl, int how) {
   }
 }
 
-// The world map arrives as the SNES port's does in Mode 7: the island spins in from far
-// away and settles on the picture the NES shows, and from there the usual drawing takes
-// over. The GBA's affine layer has one byte a cell and 8-bit tiles, so each tile and
-// palette the island uses becomes a tile, made from the nametable when the map opens.
+// The world map is a plane seen from above at a slant, as in Yoshi's Island: the island
+// on the GBA's affine layer, its far edge smaller, with each line's scale and place
+// set by an HBlank DMA from a table. When the map opens, the island grows in from far
+// away and settles on the plane. The affine layer has one byte a cell and 8-bit tiles,
+// so each tile and palette the island uses becomes a tile, made from the nametable
+// when the map opens. The sprites stand up on the plane, at their own size.
 #define MAP_FRAMES 72
 #define AFFINE_MAP 24
-static const u16 quarter_sin[65] = {0, 6, 13, 19, 25, 31, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92, 98, 104, 109,
-  115, 121, 126, 132, 137, 142, 147, 152, 157, 162, 167, 172, 177, 181, 185, 190, 194, 198, 202, 206, 209,
-  213, 216, 220, 223, 226, 229, 231, 234, 237, 239, 241, 243, 245, 247, 248, 250, 251, 252, 253, 254, 255,
-  255, 256, 256, 256};
-
-static int sin256(int a) {  // a in 1/256 turns, result 8.8
-  a &= 255;
-  return a <= 64 ? quarter_sin[a] : a <= 128 ? quarter_sin[128 - a] : a <= 192 ? -quarter_sin[a - 128] : -quarter_sin[256 - a];
-}
-
 static inline int on_world_map(void) {
   return (top_ctrl & 0x10) && top_chr[4] == 0x54 && top_chr[5] == 0x55;
 }
@@ -495,22 +490,155 @@ static int build_island(int top) {
   return 1;
 }
 
-// Frame k of the arrival: smaller and turned, settling on the NES's picture.
-static void place_island(int k, int top) {
+// The plane, in the NES picture's pixels: the camera looks down the picture from
+// PLANE_CZ below its top, and line y on screen sees the row PLANE_F * PLANE_H / (y -
+// PLANE_YH) up from there, at a scale of PLANE_H / (y - PLANE_YH) picture pixels a
+// screen pixel. The horizon is far above the screen, so the tilt is gentle: the bottom
+// line shows the picture at 1.25 times its size, and the island's far edge at about 0.7.
+#define PLANE_YH (-175)
+#define PLANE_H 267
+#define PLANE_F 267
+#define PLANE_CZ 414
+static short plane_pa[SCREEN_H] SLOW_RAM;  // the scale on each line, 8.8
+static int plane_v[SCREEN_H] SLOW_RAM;     // the picture's row there, 8.8
+static struct affine_line plane_lines[2][SCREEN_H + 1] SLOW_RAM;  // the HBlank's line after the last
+struct affine_line *volatile affine_lines;
+
+static void plane_init(void) {
+  for (int y = 0; y < SCREEN_H; y++) {
+    int d = y - PLANE_YH;
+    plane_pa[y] = (PLANE_H * 256 + d / 2) / d;
+    plane_v[y] = PLANE_CZ * 256 - (PLANE_F * PLANE_H * 256 + d / 2) / d;
+  }
+}
+
+#ifndef HOST
+// From the VBlank interrupt, and from drawing when the table changes in a VBlank.
+void affine_arm(void) {
+  DMA0CNT = 0;
+  struct affine_line *l = affine_lines;
+  if (!l) return;
+  REG32(0x04000020) = *(u32 *)&l->pa;
+  REG32(0x04000024) = *(u32 *)&l->pc;
+  REG32(0x04000028) = l->x;
+  REG32(0x0400002C) = l->y;
+  DMA0SAD = (u32)(l + 1);
+  DMA0DAD = 0x04000020;
+  DMA0CNT = 0xA6600000 | 4;  // at each HBlank, 4 words, repeating, back to BG2PA each time
+}
+#else
+void affine_arm(void) {}
+#endif
+
+static void plane_off(void) {
+  affine_lines = 0;
+  affine_arm();
+}
+
+// Frame k of the arrival, MAP_FRAMES and on the plane itself: the plane made smaller
+// about the island's middle, growing to its size. Each line maps to the picture as
+// (x, y) + x * (pa, pc).
+static void place_plane(int k) {
+  static int back;
+  struct affine_line *out = plane_lines[back];
+  int cx = 128 + top_x, cy = 120;  // the island's middle, in the picture
   int left = MAP_FRAMES - k;                                   // frames to go
   int ease = left * left * 256 / (MAP_FRAMES * MAP_FRAMES);    // 256 at the start, 0 at the end
   int zoom = 256 - ease * 7 / 8;                               // 8.8: the island's size
-  int turn = ease * 3 / 2;                                     // 1/256 turns
-  int c = sin256(turn + 64), s = sin256(turn);
-  int pa = c * 256 / zoom, pb = s * 256 / zoom, pc = -s * 256 / zoom, pd = c * 256 / zoom;
-  int cx = SCREEN_W / 2, cy = SCREEN_H / 2;
-  int mx = (cx + 8 + top_x) << 8, my = (cy + top) << 8;
-  REG16(0x04000020) = pa;
-  REG16(0x04000022) = pb;
-  REG16(0x04000024) = pc;
-  REG16(0x04000026) = pd;
-  REG32(0x04000028) = mx - (pa * cx + pb * cy);
-  REG32(0x0400002C) = my - (pc * cx + pd * cy);
+  int grow = 65536 / zoom;                                     // 8.8: picture pixels a plane pixel
+  for (int y = 0; y < SCREEN_H; y++) {
+    int pa = plane_pa[y];
+    int x0 = -(SCREEN_W / 2) * pa, y0 = plane_v[y] - (cy << 8);  // from the middle, 8.8
+    out[y].pa = grow * pa >> 8;
+    out[y].pc = 0;
+    out[y].pb = 0;
+    out[y].pd = 256;
+    out[y].x = (cx << 8) + (grow * x0 >> 8);
+    out[y].y = (cy << 8) + (grow * y0 >> 8);
+  }
+  out[SCREEN_H] = out[SCREEN_H - 1];
+  affine_lines = out;
+  back ^= 1;
+  if (VCOUNT >= SCREEN_H) affine_arm();
+}
+
+// The sprites on the plane. Those that touch are one thing, like an ohagi and its flag,
+// which stands on the plane where its bottom is, at its own size, with the nearer ones
+// in front.
+static u8 sprite_group[64] SLOW_RAM;
+
+static int group_of(int i) {
+  while (sprite_group[i] != i) i = sprite_group[i] = sprite_group[sprite_group[i]];
+  return i;
+}
+
+static void draw_plane_sprites(void) {
+  int h = top_ctrl & 0x20 ? 16 : 8;
+  int cx = 128 + top_x;
+  u8 list[64], order[64];
+  int count = 0, groups = 0;
+  int odd = (oam[8 * 4] < 0xEF) == (oam[63 * 4] < 0xEF) ? ram[0xED] & 1 : oam[63 * 4] < 0xEF;
+  for (int k = 0; k < 64; k++) {
+    int i = k < 8 || !odd ? k : 71 - k;
+    if (oam[i * 4] < 0xEF) list[count++] = i;
+  }
+  for (int a = 0; a < count; a++) {
+    const u8 *p = &oam[list[a] * 4];
+    sprite_group[a] = a;
+    for (int b = 0; b < a; b++) {
+      const u8 *q = &oam[list[b] * 4];
+      if (p[3] <= q[3] + 8 && q[3] <= p[3] + 8 && p[0] <= q[0] + h && q[0] <= p[0] + h) {
+        int ga = group_of(a), gb = group_of(b);
+        if (ga != gb) sprite_group[ga > gb ? ga : gb] = ga < gb ? ga : gb;
+      }
+    }
+  }
+  // Each group's foot: the middle of its bottom edge, in the picture.
+  static short left[64] SLOW_RAM, right[64] SLOW_RAM, bottom[64] SLOW_RAM;
+  for (int a = 0; a < count; a++) {
+    const u8 *p = &oam[list[a] * 4];
+    int g = group_of(a);
+    if (g == a) {
+      left[g] = p[3];
+      right[g] = p[3] + 8;
+      bottom[g] = p[0] + 1 + h;
+      // Nearest first, so in front.
+      int at = groups++;
+      while (at > 0 && bottom[order[at - 1]] < bottom[g]) { order[at] = order[at - 1]; at--; }
+      order[at] = g;
+    } else {
+      if (p[3] < left[g]) left[g] = p[3];
+      if (p[3] + 8 > right[g]) right[g] = p[3] + 8;
+      if (p[0] + 1 + h > bottom[g]) {
+        bottom[g] = p[0] + 1 + h;
+        int at = 0;
+        while (order[at] != g) at++;
+        while (at > 0 && bottom[order[at - 1]] < bottom[g]) { order[at] = order[at - 1]; at--; }
+        order[at] = g;
+      }
+    }
+  }
+  int n = 0;
+  for (int o = 0; o < groups; o++) {
+    int g = order[o];
+    int fu = (left[g] + right[g]) / 2 + top_x, fv = bottom[g];
+    int dz = PLANE_CZ - fv;
+    int fx = SCREEN_W / 2 + (fu - cx) * PLANE_F / dz;
+    int fy = PLANE_YH + (PLANE_H * PLANE_F + dz / 2) / dz;
+    for (int a = 0; a < count; a++) {
+      if (group_of(a) != g) continue;
+      const u8 *p = &oam[list[a] * 4];
+      int x = fx + p[3] + top_x - fu, y = fy + p[0] + 1 - fv;
+      if (x <= -8 || x >= SCREEN_W || y <= -h || y >= SCREEN_H) continue;
+      u32 tile = h == 16 ? ((p[1] & 1) << 8) | (p[1] & 0xFE) : ((top_ctrl & 8) << 5) | p[1];
+      OAM[n * 4] = (y & 0xFF) | (h == 16 ? 0x8000 : 0);
+      OAM[n * 4 + 1] = (x & 0x1FF) | ((p[2] & 0x40) ? 0x1000 : 0) | ((p[2] & 0x80) ? 0x2000 : 0);
+      OAM[n * 4 + 2] = tile | ((p[2] & 0x20) ? 2 : 1) << 10 | (p[2] & 3) << 12;
+      n++;
+    }
+  }
+  for (int i = n; i < last_sprites; i++) OAM[i * 4] = 0x0200;  // hidden
+  last_sprites = n;
 }
 
 // What a layer's map holds now, so it is only rebuilt when that changes.
@@ -556,13 +684,34 @@ void video_present(void) {
   int view_h = SCREEN_H - status_h;
   int title = on_title();
   int top = camera(status_line, view_h, status >= 0);
-  static int island = -1;  // the arrival's frame, or -1
-  if (!on_world_map() || !(ppu_mask & 0x18)) island = -1;
-  else if (island == -1 && !parts && status < 0) island = build_island(top) ? 0 : MAP_FRAMES;
-  if (island >= 0 && island < MAP_FRAMES) {
-    place_island(island++, top);
-    BG2CNT = 2 << 2 | 1 << 7 | AFFINE_MAP << 8 | 1 << 14;  // 8-bit tiles, 256x256
-    DISPCNT = 0x0001 | 0x0040 | 0x0400;                     // mode 1, the affine layer only
+  // The world map: its arrival's frame, then MAP_FRAMES + 1 once it is on the plane; -1
+  // off the map, and -2 on one whose island does not fit, drawn as usual.
+  static int island = -1;
+  static u16 island_t;
+  if (!on_world_map() || !(ppu_mask & 0x18)) {
+    if (island >= 0) plane_off();
+    island = -1;
+  } else if (island == -1 && !parts && status < 0) {
+    island = build_island(top) ? 0 : -2;
+    island_t = top_t;
+  } else if (island >= 0 && (nt_dirty || top_t != island_t)) {
+    island_t = top_t;
+    if (!build_island(top)) {
+      plane_off();
+      island = -2;
+    } else if (island > MAP_FRAMES) {
+      island = MAP_FRAMES;  // place it again
+    }
+  }
+  if (island >= 0) {
+    if (island <= MAP_FRAMES) place_plane(island++);
+    BG2CNT = 2 << 2 | 1 << 7 | AFFINE_MAP << 8 | 1 << 14 | 1;  // 8-bit tiles, 256x256
+    if (island > MAP_FRAMES) {
+      draw_plane_sprites();
+      DISPCNT = 0x1441;  // mode 1, the affine layer and the sprites
+    } else {
+      DISPCNT = 0x0441;  // the affine layer only
+    }
     nt_dirty = 0;
     return;
   }

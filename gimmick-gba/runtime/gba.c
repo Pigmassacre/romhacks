@@ -27,6 +27,7 @@ __attribute__((section(".iwram"), target("arm"))) static void on_vblank(void) {
   DMA1SAD = (u32)sound_buf[sound_read];
   DMA1CNT_H = 0xB640;  // repeat, 32-bit, in step with the FIFO
   vblank_count++;
+  affine_arm();
   BIOS_IF |= 1;
   IF = 1;
 }

@@ -34,8 +34,10 @@ The title screen says ADVANCE in the logo's bar, where the original has its name
 **Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
 behind the stage, at half its speed, as in the SNES port.
 
-**The world map in Mode 7.** The island spins in from far away when the map opens, on the
-GBA's affine layer, then settles on the same picture as the original.
+**The world map in Mode 7.** The map is a plane seen at a slant, as in Yoshi's Island: the
+island lies on the GBA's affine layer, its far edge smaller than its near one. It grows in from
+far away when the map opens and stays tilted while the map is up. The ohagis, flags, clouds and
+the ship stand up on it at their own size, where their feet are, the nearer ones in front.
 
 **Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
 skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
@@ -67,7 +69,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   the background go between the stage and the mask, where the NES shows them.
 - The world map's arrival builds the island's tiles from the NES's nametable when it opens: the
   affine layer has 8-bit tiles and one byte a cell, so each tile and palette pair becomes a tile.
-  It ends exactly on the NES's picture, and the usual drawing takes over there.
+  Each line's scale and place on the picture comes from a table that an HBlank DMA copies into
+  the affine registers, set up again at every VBlank. Sprites that touch are one thing, placed by
+  where its bottom edge lands on the plane.
 - Gimmick! 1.5's code goes in a bank after the game's, and its far calls in the fixed bank's dead
   block, as in 1.5 itself. Each of its five hooks, a JSR to a far call, is a switch at the start of
   the block there: with the options it answers to off, the game's own code runs, cycle for cycle.

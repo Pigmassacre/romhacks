@@ -36,6 +36,9 @@ extern u8 sim_io[0x400], sim_vram[0x18000], sim_pal[0x400], sim_oam[0x400];
 #define BG0VOFS REG16(0x04000012)
 #define BG1HOFS REG16(0x04000014)
 #define BG1VOFS REG16(0x04000016)
+#define DMA0SAD REG32(0x040000B0)
+#define DMA0DAD REG32(0x040000B4)
+#define DMA0CNT REG32(0x040000B8)
 #define DMA3SAD REG32(0x040000D4)
 #define DMA3DAD REG32(0x040000D8)
 #define DMA3CNT REG32(0x040000DC)
@@ -76,5 +79,10 @@ extern const u8 *chr4, *parallax;   // the CHR converted to GBA tiles
 void video_init(void);
 void video_present(void);
 int video_on_title(void);
+// The affine layer's registers for each line, BG2PA to BG2Y: a VBlank sets the first
+// line's and an HBlank DMA each next one. 0 when no picture needs them.
+struct affine_line { short pa, pb, pc, pd; int x, y; };
+extern struct affine_line *volatile affine_lines;
+FAR void affine_arm(void);
 void menu_draw(int open, int cursor, int opts);
 #endif
