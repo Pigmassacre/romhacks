@@ -75,4 +75,6 @@ extern u8 sim_io[0x400], sim_vram[0x18000], sim_pal[0x400], sim_oam[0x400];
 extern const u8 *chr4;   // the CHR converted to GBA tiles
 void video_init(void);
 void video_present(void);
+int video_on_title(void);
+void menu_draw(int open, int cursor, int opts);
 #endif

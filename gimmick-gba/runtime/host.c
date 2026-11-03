@@ -220,8 +220,14 @@ int main(int argc, char **argv) {
   FILE *f = fopen(argv[1], "rb");
   if (!f || !fread(rom, 1, sizeof rom, f)) return 1;
   fclose(f);
-  prg = rom + 16;
   chr = rom + 16 + 0x40000;
+  // The PRG with Gimmick! 1.5's bank, which tools/recomp.py writes.
+  static u8 prg15[0x42000];
+  f = fopen("out/gen/prg.bin", "rb");
+  if (!f || fread(prg15, 1, sizeof prg15, f) != sizeof prg15) return 1;
+  fclose(f);
+  prg = prg15;
+  if (getenv("OPTIONS")) options = strtol(getenv("OPTIONS"), 0, 0);
 
   char path[1024];
   snprintf(path, sizeof path, "%s/padreads.bin", argv[2]);

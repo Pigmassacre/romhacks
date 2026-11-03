@@ -11,7 +11,8 @@ This port is AI-assisted, using Claude.
 
 ## Build it
 
-Put `Gimmick! (Japan).nes` in this folder (either common dump), then:
+Put `Gimmick! (Japan).nes` in this folder (either common dump) and loopy's asm6 at `tools/asm6`,
+for Gimmick! 1.5's source in `src/gimmick-1.5/`, then:
 
 ```bash
 python3 tools/build_gba.py
@@ -29,6 +30,11 @@ The GBA's screen is 160 lines tall and the NES playfield is 192, so the camera f
 up and down, and the title and cutscenes show the part with something on it.
 
 The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
+
+**Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
+skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
+right switch it, and Select or B goes back. They start off, so the game plays as it always did, and
+the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 
 ## Known limits
 
@@ -49,6 +55,11 @@ The title screen says ADVANCE in the logo's bar, where the original has its name
   internal RAM as ARM code, as one function that jumps straight between them. The rest stay in ROM
   as Thumb, and anything never seen running goes through an interpreter. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
+- Gimmick! 1.5's code goes in a bank after the game's, and its far calls in the fixed bank's dead
+  block, as in 1.5 itself. Each of its five hooks, a JSR to a far call, is a switch at the start of
+  the block there: with the options it answers to off, the game's own code runs, cycle for cycle.
+  `src/gimmick-1.5/` is a copy of that hack's source without its title screen: a fix to one copy
+  has to be made in the other by hand.
 - `runtime/core.c` is the FME-7 mapper, the PPU's registers and the loop that runs blocks and takes
   interrupts. `runtime/apu.c` mixes the NES's five sound channels and the Sunsoft 5B's three.
   `runtime/video.c` draws each frame from the NES's nametables and sprites. A split low on the
@@ -73,12 +84,18 @@ python3 tools/record.py --tour
 python3 tools/record.py --boss 2600
 ```
 
+```bash
+python3 tools/record.py --15 6000
+```
+
 These play the NES game in [Mesen 2](https://www.mesen.ca/) (put the Linux build at `./Mesen`) and
 record RAM at every NMI, what code ran, and what the pads gave. `--tour` warps through every stage
 and checkpoint, sweeps across each stage's map, clears each stage, and goes through the world map,
 both endings and a game over (`tests/s_tour.lua`). `--boss` fights a crowd of ohagis in the first stage,
 the heaviest frames found so far (`tests/s_boss.lua`), and its code counts 20 times over when the
-translator picks what goes in fast RAM.
+translator picks what goes in fast RAM. `--15` plays the default run on a NES ROM with all of 1.5 on
+(`out/gen/gimmick-1.5.nes`), and the PC build replays it with `OPTIONS=31` set: every byte of RAM
+should match there too.
 
 ```bash
 tools/check_host.sh out/trace_tour

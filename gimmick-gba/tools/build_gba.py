@@ -85,7 +85,7 @@ def main():
     chr4 = os.path.join(GEN, "chr4.bin")
     open(chr4, "wb").write(chr_to_4bpp(rom[0x40000:0x60000]))
     prg_bin, chr_bin = os.path.join(GEN, "prg.bin"), os.path.join(GEN, "chr.bin")
-    open(prg_bin, "wb").write(rom[:0x40000])
+    # recomp.py has written prg.bin: the game's, with Gimmick! 1.5's bank after it.
     open(chr_bin, "wb").write(rom[0x40000:0x60000])
     data = ['.section .rodata', '.global rom_prg, rom_chr, chr4_data', '.balign 4',
             'rom_prg: .incbin "%s"' % prg_bin, 'rom_chr: .incbin "%s"' % chr_bin,
@@ -114,6 +114,10 @@ def main():
                  '.balign 4', 'nmi_sync_table: .incbin "%s"' % sync, 'nmi_sync_end:',
                  'power_on_ram: .incbin "%s"' % os.path.join(trace, "poweron.bin")]
         flags.append("-DREPLAY")
+        # A recording of the NES game with all of Gimmick! 1.5 on is replayed with all
+        # its options on.
+        if os.path.basename(trace.rstrip("/")) == "ref15":
+            flags.append("-DREPLAY_OPTIONS=OPT_ALL")
         if "--timing" in sys.argv:
             flags.append("-DTIMING_ONLY")
     data_s = os.path.join(GEN, "data.s")

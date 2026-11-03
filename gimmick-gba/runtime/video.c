@@ -150,23 +150,32 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
 
 // The title's own words, on the fourth layer: the notices, in the style of START and
 // CONTINUE, and ADVANCE in the logo's bar in place of its katakana. The font is the
-// menu's, a bold 7x7: the letters it has are copied, the others drawn to match.
-// Each letter has two tiles: grey with a black shadow down and right, for the sky, and
-// black on the bar's white. Their tiles sit after the second layer's, so they never
-// clash.
+// menu's, a bold 7x7: the letters it has are copied, the others drawn to match. The
+// options menu is on it too, over the logo.
+// Each letter has three tiles: grey with a black shadow down and right, for the sky,
+// black on the bar's white, and black on the menu's white. Their tiles sit after the
+// second layer's, so they never clash.
 #define TEXT_TILE 256
 #define NOTICE_PALETTE 15
 #define BAR_PALETTE 14
 static const struct { char c; char rows[7][8]; } font[] = {
   {' ', {".......", ".......", ".......", ".......", ".......", ".......", "......."}},
   {'-', {".......", ".......", ".......", ".#####.", ".......", ".......", "......."}},
+  {'!', {"..##...", "..##...", "..##...", "..##...", "..##...", ".......", "..##..."}},
+  {'.', {".......", ".......", ".......", ".......", ".......", "..##...", "..##..."}},
+  {'>', {".##....", "..##...", "...##..", "....##.", "...##..", "..##...", ".##...."}},
+  {'1', {"..##...", ".###...", "..##...", "..##...", "..##...", "..##...", ".####.."}},
+  {'5', {"######.", "##.....", "######.", ".....##", ".....##", "##...##", ".#####."}},
   {'A', {"..###..", ".##.##.", "##...##", "##...##", "#######", "##...##", "##...##"}},
   {'B', {"######.", "##...##", "##...##", "######.", "##...##", "##...##", "######."}},
   {'C', {"..####.", ".##..##", "##.....", "##.....", "##.....", ".##..##", "..####."}},
   {'D', {"#####..", "##..##.", "##...##", "##...##", "##...##", "##..##.", "#####.."}},
   {'E', {"#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"}},
+  {'F', {"#######", "##.....", "##.....", "######.", "##.....", "##.....", "##....."}},
   {'G', {"..####.", ".##....", "##.....", "##..###", "##...##", ".##..##", "..#####"}},
   {'I', {".######", "...##..", "...##..", "...##..", "...##..", "...##..", ".######"}},
+  {'J', {"....###", ".....##", ".....##", ".....##", "##...##", "##...##", ".#####."}},
+  {'K', {"##...##", "##..##.", "##.##..", "####...", "##.##..", "##..##.", "##...##"}},
   {'L', {"##.....", "##.....", "##.....", "##.....", "##.....", "##.....", "#######"}},
   {'M', {"##...##", "###.###", "#######", "##.#.##", "##...##", "##...##", "##...##"}},
   {'N', {"##...##", "###..##", "####.##", "#######", "##.####", "##..###", "##...##"}},
@@ -175,12 +184,14 @@ static const struct { char c; char rows[7][8]; } font[] = {
   {'R', {"######.", "##...##", "##...##", "##..###", "#####..", "##.###.", "##..###"}},
   {'S', {".####..", "##..##.", "##.....", ".#####.", ".....##", "##...##", ".#####."}},
   {'T', {".######", "...##..", "...##..", "...##..", "...##..", "...##..", "...##.."}},
+  {'U', {"##...##", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."}},
   {'V', {"##...##", "##...##", "##...##", ".##.##.", ".##.##.", "..###..", "...#..."}},
   {'Y', {"##...##", "##...##", ".##.##.", "..###..", "...##..", "...##..", "...##.."}},
 };
 #define FONT_SIZE (sizeof font / sizeof font[0])
 #define BAR_TILE (TEXT_TILE + FONT_SIZE)      // then the bar's: its letters, then its ends
-#define CLEAR_TILE (BAR_TILE + FONT_SIZE + 2)
+#define MENU_TILE (BAR_TILE + FONT_SIZE + 2)
+#define CLEAR_TILE (MENU_TILE + FONT_SIZE)
 // Rows of the map, which sits 5 lines up so that the bar's white inside, lines 99 to
 // 105, starts a row. The notices go on the sky above the logo, as Gimmick! 1.5's do.
 #define TEXT_SCROLL 5
@@ -215,6 +226,8 @@ static void font_init(void) {
       for (int x = 0; x < 8; x++)
         px[y][x] = y == 7 ? 0 : is_ink(g, x, y) ? 1 : 3;
     put_tile(BAR_TILE + g, px);
+    px[7][0] = px[7][1] = px[7][2] = px[7][3] = px[7][4] = px[7][5] = px[7][6] = px[7][7] = 3;
+    put_tile(MENU_TILE + g, px);
   }
   for (int end = 0; end < 2; end++) {
     for (int y = 0; y < 8; y++)
@@ -258,10 +271,38 @@ static void draw_notices(void) {
   REG16(0x0400001E) = TEXT_SCROLL;
 }
 
+// Gimmick! 1.5's features as options: a white box over the logo, from Select on the
+// title. The rows it covers go back to clear when it closes.
+#define MENU_TOP 4
+#define MENU_ROWS 9
+static const char *const option_names[5] = {"STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON",
+                                             "COYOTE TIME", "JUMP BUFFERING"};
+
+static void menu_text(int row, int col, const char *t) {
+  volatile u16 *map = MAP(MAP_TEXT);
+  for (; *t; t++, col++) map[row * 32 + col] = (MENU_TILE + glyph(*t)) | BAR_PALETTE << 12;
+}
+
+void menu_draw(int open, int cursor, int opts) {
+  volatile u16 *map = MAP(MAP_TEXT);
+  for (int r = MENU_TOP; r < MENU_TOP + MENU_ROWS; r++)
+    for (int c = BAR_LEFT; c <= BAR_RIGHT; c++)
+      map[r * 32 + c] = open ? MENU_TILE | BAR_PALETTE << 12 : CLEAR_TILE;
+  if (!open) return;
+  menu_text(MENU_TOP + 1, BAR_LEFT + 2, "GIMMICK! 1.5 OPTIONS");
+  for (int i = 0; i < 5; i++) {
+    int row = MENU_TOP + 3 + i;
+    if (i == cursor) menu_text(row, BAR_LEFT + 1, ">");
+    menu_text(row, BAR_LEFT + 2, option_names[i]);
+    menu_text(row, BAR_RIGHT - 3, opts >> i & 1 ? " ON" : "OFF");
+  }
+}
+
 // The title loads its logo into these background pages, and nothing else does.
 static inline int on_title(void) {
   return top_chr[5] == 0x65 && top_chr[6] == 0x66 && top_chr[7] == 0x67;
 }
+int video_on_title(void) { return on_title(); }
 #define TITLE_TOP 6    // the sky above the logo, for the notices, down to CONTINUE
 #define STATUS_FROM 184  // a mid-frame change this low is the status bar
 

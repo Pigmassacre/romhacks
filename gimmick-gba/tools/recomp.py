@@ -14,6 +14,7 @@ The output holds the original game's code, so it stays in out/, out of git.
 """
 import os
 import re
+import subprocess
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +30,20 @@ HOT_BYTES = int(os.environ.get("HOT_BYTES", 44000))
 ARM_BYTES_PER_INSTR = 36     # rough size of a translated instruction as ARM code
 # $F319 reads an inline jump table after its JSR, so nothing returns there.
 NO_RETURN = {0xF319}
+
+# Gimmick! 1.5's features, as options (src/gimmick-1.5/). Its code goes in a new bank,
+# its far calls in the fixed bank's dead block, and each of its hooks, a JSR to a far
+# call, becomes a switch at the start of the block there: the bits of `options` it
+# answers to, and what runtime/core.c's opt_prep does first.
+HACK_BANK = 0x20
+OPT = {"recall": 1, "skip": 2, "tap": 4, "coyote": 8, "buffer": 16}
+HOOKS = {(0x1E, 0x8199): (OPT["tap"] | OPT["coyote"] | OPT["buffer"], 0),
+         (0x1E, 0x81C3): (OPT["recall"], 1),
+         (0x1E, 0x81DA): (OPT["tap"], 2),
+         (0x1D, 0x8469): (OPT["recall"] | OPT["skip"], 3),
+         (0x1D, 0x8151): (OPT["skip"], 4)}
+SRC_15 = os.path.join(REPO, "src", "gimmick-1.5")
+SEG_RE = re.compile(r"^\s*;@\s*seg\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s*(.*)$")
 
 # opcode: (mnemonic, mode, cycles). Page-cross and taken-branch cycles are added
 # in the generated code.
@@ -448,7 +463,7 @@ def emit_block(bank, start, out, hot):
             return
 
 
-def emit_bank(bank, out, hot):
+def emit_bank(bank, out, hot, after_hook):
     names = {}
     pcs = [pc for pc in sorted(bank.leaders & set(bank.instrs)) if (bank.num, pc) not in hot]
     out.append('#include "cpu.h"\n')
@@ -458,10 +473,38 @@ def emit_bank(bank, out, hot):
     out.append("")
     for pc in pcs:
         out.append("static u32 %s(void) {" % names[pc])
+        hook = HOOKS.get((bank.num, pc))
+        if hook:
+            # 1.5's JSR to its far call, when an option it answers to is on.
+            target = after_hook[(bank.num, pc)].far
+            ret = pc + 2
+            out.append("  if (options & %d) { opt_prep(%d); CYC(6); PUSH(0x%02X); PUSH(0x%02X); return 0x%04X; }"
+                       % (hook[0], hook[1], ret >> 8, ret & 0xFF, target))
         emit_block(bank, pc, out, None)
         out.append("}\n")
+    # 1.5's code after each hook's far call. Where the game has an instruction at the
+    # same place, the hook's options choose between them: the game can be there too,
+    # stepping through the interpreter or back from an interrupt.
+    for (num, start), patched in sorted(after_hook.items()):
+        if num != bank.num:
+            continue
+        mask = HOOKS[(num, start)][0]
+        for pc in sorted(p for p in patched.leaders if start + 3 <= p < patched.end):
+            name = "b%02X_%04X_15" % (num, pc)
+            out.append("static u32 %s(void) {" % name)
+            emit_block(patched, pc, out, None)
+            out.append("}\n")
+            if pc in bank.instrs:
+                if pc not in names:
+                    names[pc] = "b%02X_%04X" % (num, pc)
+                    out.append("static u32 %s(void) {" % names[pc])
+                    emit_block(bank, pc, out, None)
+                    out.append("}\n")
+                out.append("static u32 %s_sw(void) { return (options & %d) ? %s() : %s(); }\n" % (name, mask, name, names[pc]))
+                name += "_sw"
+            names[pc] = name
     out.append("const block_t tbl_%02X[0x2000] = {" % bank.num)
-    for pc in pcs:
+    for pc in sorted(names):
         out.append("  [0x%04X] = %s," % (pc - bank.window, names[pc]))
     out.append("};")
 
@@ -477,7 +520,7 @@ def emit_hot(banks, hot, out):
             if n == num:
                 out.append("  [0x%04X] = %d," % (pc - banks[n].window, index[n, pc]))
         out.append("};")
-    out.append("const u16 *hot_maps[32] = {")
+    out.append("const u16 *hot_maps[64] = {")
     for num in sorted({k[0] for k in hot}):
         out.append("  [0x%02X] = hot_map_%02X," % (num, num))
     out.append("};\n")
@@ -499,25 +542,39 @@ def emit_hot(banks, hot, out):
     out.append("}")
 
 
-def emit_interpreter(out):
-    """One 6502 instruction at a time, for code the recordings never reached."""
-    ea = {"zp": "rd(pc + 1)", "zpx": "(u8)(rd(pc + 1) + X)", "zpy": "(u8)(rd(pc + 1) + Y)",
+def emit_interpreter(out, hooks):
+    """One 6502 instruction at a time, for code the recordings never reached. It reads
+    the code itself through op(), which shows 1.5's hooks where their options are on."""
+    ea = {"zp": "op(pc + 1)", "zpx": "(u8)(op(pc + 1) + X)", "zpy": "(u8)(op(pc + 1) + Y)",
           "abs": "W", "abx": "(u16)(W + X)", "aby": "(u16)(W + Y)",
-          "inx": "IND(rd(pc + 1) + X)", "iny": "(u16)(IND(rd(pc + 1)) + Y)"}
+          "inx": "IND(op(pc + 1) + X)", "iny": "(u16)(IND(op(pc + 1)) + Y)"}
     out.append('#include "cpu.h"\n')
-    out.append("#define W (rd(pc + 1) | rd(pc + 2) << 8)")
+    out.append("static const struct { u8 bank, mask, prep, len; u16 start; u8 code[16]; } hooks[] = {")
+    for (num, start), code in sorted(hooks.items()):
+        mask, prep = HOOKS[(num, start)]
+        out.append("  {0x%02X, %d, %d, %d, 0x%04X, {%s}}," % (num, mask, prep, len(code), start, ", ".join("0x%02X" % b for b in code)))
+    out.append("};")
+    out.append("static u8 op(u32 a) {")
+    out.append("  for (u32 i = 0; i < sizeof hooks / sizeof hooks[0]; i++)")
+    out.append("    if ((options & hooks[i].mask) && a - hooks[i].start < hooks[i].len && prg_map[(a - 0x8000) >> 13] == hooks[i].bank)")
+    out.append("      return hooks[i].code[a - hooks[i].start];")
+    out.append("  return rd(a);")
+    out.append("}")
+    out.append("#define W (op(pc + 1) | op(pc + 2) << 8)")
     out.append("u32 interp_step(u32 pc) {")
-    out.append("  u32 next, ea = 0;\n  switch (rd(pc)) {")
+    out.append("  for (u32 i = 0; i < sizeof hooks / sizeof hooks[0]; i++)")
+    out.append("    if ((options & hooks[i].mask) && pc == hooks[i].start && prg_map[0] == hooks[i].bank) opt_prep(hooks[i].prep);")
+    out.append("  u32 next, ea = 0;\n  switch (op(pc)) {")
     for code, (m, mode, c) in sorted(OPS.items()):
         size = SIZE[mode]
         line = "  case 0x%02X: next = pc + %d; CYC(%d); " % (code, size, c)
         if mode in ea:
             line += "ea = %s; " % ea[mode]
             if m in PAGE_READS:
-                base = {"abx": ("W", "X"), "aby": ("W", "Y"), "iny": ("IND(rd(pc + 1))", "Y")}.get(mode)
+                base = {"abx": ("W", "X"), "aby": ("W", "Y"), "iny": ("IND(op(pc + 1))", "Y")}.get(mode)
                 if base:
                     line += "PAGE(%s, %s); " % base
-        val = "rd(pc + 1)" if mode == "imm" else "rd(ea)"
+        val = "op(pc + 1)" if mode == "imm" else "rd(ea)"
         if m in ("lda", "ldx", "ldy"):
             line += "%s = %s; N = Z = %s;" % (m[2].upper(), val, m[2].upper())
         elif m in ("sta", "stx", "sty"):
@@ -537,7 +594,7 @@ def emit_interpreter(out):
         elif m in ("inc", "dec"):
             line += "{ u8 t = rd(ea) %s 1; N = Z = t; wr(ea, t); }" % ("+" if m == "inc" else "-")
         elif m in BRANCH:
-            line += ("{ int o = (signed char)rd(pc + 1); if (%s) { u32 t = (next + o) & 0xFFFF; "
+            line += ("{ int o = (signed char)op(pc + 1); if (%s) { u32 t = (next + o) & 0xFFFF; "
                      "CYC(((t ^ next) & 0xFF00) ? 2 : 1); next = t; } }" % BRANCH[m])
         elif m == "jmp":
             line += ("next = W;" if mode == "abs" else
@@ -559,9 +616,98 @@ def emit_interpreter(out):
     out.append("  }\n  return next & 0xFFFF;\n}")
 
 
+def assemble_15():
+    """1.5's source is split by `;@ seg <bank> <start> <end>` lines into pieces for each
+    place in the ROM. They are assembled in one run of asm6, so that labels resolve
+    across them, with a table of their lengths after them that says where each ends."""
+    work = os.path.join(GEN, "gimmick-1.5")
+    os.makedirs(work, exist_ok=True)
+    prologue, segs, cur = [], [], None
+    for line in open(os.path.join(SRC_15, "main.asm")):
+        m = SEG_RE.match(line)
+        if m:
+            cur = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16), m.group(4).strip(), [])
+            segs.append(cur)
+        else:
+            (cur[4] if cur else prologue).append(line)
+    gen = os.path.join(work, "build.asm")
+    with open(gen, "w") as f:
+        f.writelines(prologue)
+        for i, (bank, start, end, name, lines) in enumerate(segs):
+            f.write("\n.base $%04X\n" % start)
+            f.writelines(lines)
+            f.write("\n__seg%d_end:\n.if __seg%d_end > $%04X\n.error \"%s is too long\"\n.endif\n" % (i, i, end, name))
+        for i, (bank, start, end, name, lines) in enumerate(segs):
+            f.write(".dw __seg%d_end - $%04X\n" % (i, start))
+    binary = os.path.join(work, "build.bin")
+    asm6 = os.path.join(REPO, "tools", "asm6")
+    if not os.path.exists(asm6):
+        sys.exit("asm6 is missing: put it at tools/asm6 (https://www.romhacking.net/utilities/674/)")
+    # asm6 reads arguments that start with "/" as options, so the paths are relative.
+    r = subprocess.run([asm6, "-q", os.path.relpath(gen, SRC_15), os.path.relpath(binary, SRC_15)],
+                       cwd=SRC_15, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("asm6 failed: " + r.stdout + r.stderr)
+    blob = open(binary, "rb").read()
+    table = len(blob) - 2 * len(segs)
+    out, pos = [], 0
+    for i, (bank, start, end, name, lines) in enumerate(segs):
+        n = blob[table + 2 * i] | blob[table + 2 * i + 1] << 8
+        out.append((bank, start, blob[pos:pos + n]))
+        pos += n
+    return out
+
+
+def apply_15(prg):
+    """The PRG with bank $20 and the far calls in, the hooks' code, and where the
+    decoder starts in the fixed bank and in bank $20."""
+    out = bytearray(prg) + bytes(BANK_SIZE)
+    hooks, fixed_seeds, hack_seeds = {}, set(), set()
+    for bank, start, code in assemble_15():
+        num = FIXED_BANK if bank == 0x3F else bank
+        if (num, start) in HOOKS:
+            if code[0] != 0x20:
+                sys.exit("1.5's hook at %02X:%04X is not a JSR" % (num, start))
+            hooks[(num, start)] = code
+            fixed_seeds.add(code[1] | code[2] << 8)
+            continue
+        if num not in (FIXED_BANK, HACK_BANK):
+            sys.exit("a part of Gimmick! 1.5 at %02X:%04X that this build does not know" % (num, start))
+        at = num * BANK_SIZE + (start & 0x1FFF)
+        out[at:at + len(code)] = code
+        if num == HACK_BANK:
+            # HackEntry, then its table of routines (each less 1, for an RTS).
+            hack_seeds.add(start)
+            at = code.find(bytes([0x60])) + 1
+            for i in range(5):
+                hack_seeds.add((code[at + i * 2] | code[at + i * 2 + 1] << 8) + 1)
+    if set(hooks) != set(HOOKS):
+        sys.exit("1.5's hooks are not the ones this build knows")
+    return bytes(out), hooks, fixed_seeds, hack_seeds
+
+
+def write_nes_15(nes, prg, hooks):
+    """The NES game with all of 1.5's features on, laid out as 1.5's own ROM is (the fixed
+    bank last, at $3F), for Mesen to record what the options should do."""
+    out = bytearray(0x80000)
+    out[:len(prg)] = prg
+    out[0x7E000:] = prg[FIXED_BANK * BANK_SIZE:(FIXED_BANK + 1) * BANK_SIZE]
+    for (num, start), code in hooks.items():
+        at = num * BANK_SIZE + (start & 0x1FFF)
+        out[at:at + len(code)] = code
+    header = bytearray(nes[:16])
+    header[4] = 0x80000 // 0x4000
+    with open(os.path.join(GEN, "gimmick-1.5.nes"), "wb") as f:
+        f.write(bytes(header) + bytes(out) + nes[16 + 0x40000:16 + 0x60000])
+
+
 def main():
     rom = open(ROM, "rb").read()[16:]
-    prg = rom[:0x40000]
+    prg, hooks_15, fixed_seeds, hack_seeds = apply_15(rom[:0x40000])
+    os.makedirs(GEN, exist_ok=True)
+    with open(os.path.join(GEN, "prg.bin"), "wb") as f:
+        f.write(prg)
+    write_nes_15(open(ROM, "rb").read(), prg, hooks_15)
     seen = {}
     counts = {}
     for line in open(os.path.join(DATA, "coverage.txt")):
@@ -581,6 +727,10 @@ def main():
     by_window = {}
     fixed = banks[FIXED_BANK]
     by_window[0xE000] = fixed
+    fixed.seeds |= fixed_seeds
+    hack = Bank(HACK_BANK, 0xA000, prg[HACK_BANK * BANK_SIZE:(HACK_BANK + 1) * BANK_SIZE])
+    hack.seeds = hack_seeds
+    banks[HACK_BANK] = hack
     # Vectors
     for at in (0xFFFA, 0xFFFC, 0xFFFE):
         fixed.seeds.add(fixed.byte(at) | fixed.byte(at + 1) << 8)
@@ -590,13 +740,27 @@ def main():
     for b in banks.values():
         decode(b, by_window)
         add_entry_points(b, entries)
-
-    os.makedirs(GEN, exist_ok=True)
+    # Each hook starts a block of its own, which stays out of fast RAM, and where its far
+    # call returns to, in the middle of the original's instructions, 1.5's own code goes
+    # on: those blocks are decoded from a copy of the bank with the hook in.
+    after_hook = {}
+    for (num, start), code in hooks_15.items():
+        b = banks[num]
+        b.leaders.add(start)
+        patched = Bank(num, b.window, bytearray(b.data))
+        patched.data[start - b.window:start - b.window + len(code)] = code
+        patched.seeds = {start + 3}
+        patched.leaders = {start + 3, start + len(code)}
+        patched.far = code[1] | code[2] << 8
+        patched.end = start + len(code)
+        decode(patched, {})
+        after_hook[(num, start)] = patched
     hot = pick_hot(banks, counts)
+    hot -= set(hooks_15)
     total = 0
     for b in banks.values():
         out = []
-        emit_bank(b, out, hot)
+        emit_bank(b, out, hot, after_hook)
         with open(os.path.join(GEN, "bank_%02X.c" % b.num), "w") as f:
             f.write("\n".join(out) + "\n")
         total += len(b.instrs)
@@ -606,14 +770,14 @@ def main():
     with open(os.path.join(GEN, "hot.c"), "w") as f:
         f.write("\n".join(out) + "\n")
     out = []
-    emit_interpreter(out)
+    emit_interpreter(out, hooks_15)
     with open(os.path.join(GEN, "interp.c"), "w") as f:
         f.write("\n".join(out) + "\n")
     with open(os.path.join(GEN, "tables.c"), "w") as f:
         f.write('#include "cpu.h"\n')
         for n in banks:
             f.write("extern const block_t tbl_%02X[0x2000];\n" % n)
-        f.write("const block_t *const code_banks[32] = {\n")
+        f.write("const block_t *const code_banks[64] = {\n")
         for n in banks:
             f.write("  [0x%02X] = tbl_%02X,\n" % (n, n))
         f.write("};\n")
