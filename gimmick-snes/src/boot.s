@@ -208,6 +208,16 @@ fast:
         sta CGDATA
         lda #$7F
         sta CGDATA
+        ; Palette 3, the plate: white, the grey of CONTINUE, black. Palette 4, SUPER: black, red
+        ; and a light yellow.
+        lda #45
+        sta CGADD
+        ldx #0
+:       lda f:notice_cg,x
+        sta CGDATA
+        inx
+        cpx #14
+        bne :-
 
         ; The picture: Mode 0. BG1 is the NES's background, with nothing in front of it but
         ; sprites and BG2, the notices. With parallax, BG3 has what is black in BG1, on the same
@@ -332,10 +342,14 @@ native_unused:
         rti
 
 zero:   .byte 0
+notice_cg:
+        .word $7FFF, $56B5, $0000           ; palette 3, from colour 1
+        .word $0000                         ; palette 4's colour 0, which is never seen
+        .word $0000, $00BB, $477F
 
 .segment "HEADER"
         ;       123456789012345678901
-        .byte "GIMMICK SNES PORT    "
+        .byte "SUPER GIMMICK!       "
         .byte $31           ; HiROM, fast
         .byte $01           ; ROM and RAM
         .byte $0C           ; 4 MB

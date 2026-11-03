@@ -21,6 +21,7 @@ OBJ2_HI    = $40            ; a second pair of sprite tables, for below a split
 BGSET_HI   = $20            ; the first tile set of three: see set_hi
 CLOUD_PAGE = 1              ; the CHR page of clouds, for parallax
 MAP_HI     = $70            ; nametable A at $7000, B at $7400
+NOTICE_DOWN = 6             ; tools/build.py has the same number
 MASK_HI    = $60            ; BG3's tiles: what is black in the first tile set, for parallax
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
@@ -1375,17 +1376,23 @@ bg2_now:
         bne @off
         lda #1
         sta is_title
+        stz BG2HOFS
+        stz BG2HOFS
         lda menu_open
         beq :+
         lda #$3C
+        sta BG2SC
+        stz BG2VOFS
+        stz BG2VOFS
         bra :++
 :       lda #$6C
-:       sta BG2SC
-        stz BG2HOFS
-        stz BG2HOFS
+        sta BG2SC
+        ; The notices sit lower than a whole row, so that their line is as far under CONTINUE as
+        ; that is under START.
+        lda #<(-NOTICE_DOWN)
+        sta BG2VOFS
         stz BG2VOFS
-        stz BG2VOFS
-        ldx #2
+:       ldx #2
         bra @done2
 @not_title:
         cmp #1
