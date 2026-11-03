@@ -8,7 +8,7 @@
 
 #define FRAME_CYCLES 280896u
 
-extern const u8 rom_prg[], rom_chr[], chr4_data[];
+extern const u8 rom_prg[], rom_chr[], chr4_data[], parallax_data[];
 
 static inline u32 now(void) { return TM2CNT_L | (u32)TM3CNT_L << 16; }
 
@@ -131,11 +131,72 @@ void plat_nmi(void) {
 static u8 pad_bits;
 static int pad_pos;
 void plat_nmi(void) {}
+
+// The title's entries and its options menu (video.c draws them). The game has START
+// and CONTINUE, and swaps between them on Select; OPTIONS is a third, after them.
+// Select, up and down move between all three, and the game gets a Select of its own
+// when its choice has to change. On OPTIONS, Start or A opens the menu. While it is
+// open, and until the buttons that closed it are let go, the game sees no buttons.
+// The options are kept in the cartridge's SRAM.
+static int menu_open, menu_cursor, menu_hold;
+static u16 last_keys, title_mask, game_keys;
+#define SRAM ((volatile u8 *)0x0E000000)
+__attribute__((used)) static const char save_type[] = "SRAM_V113";  // for emulators and flash carts
+
+static void options_load(void) {
+  if (SRAM[0] == 'G' && SRAM[1] == '1' && SRAM[2] == '5') options = SRAM[3] & OPT_ALL;
+}
+
+static void options_save(void) {
+  SRAM[0] = 'G'; SRAM[1] = '1'; SRAM[2] = '5'; SRAM[3] = options;
+}
+
+static void menu_tick(void) {
+  u16 k = ~KEYINPUT & 0x3FF, pressed = k & ~last_keys;
+  last_keys = k;
+  game_keys = title_mask = 0;
+  if (menu_hold && !k) menu_hold = 0;
+  if (!video_on_title()) {
+    if (menu_open) { menu_open = 0; menu_draw(0, 0, 0); }
+    title_cursor = 0;
+    return;
+  }
+  if (!menu_open) {
+    // The game's choice, but not the frame after a Select it may not have seen yet:
+    // that frame has none, so that the next is a new press.
+    static int selected;
+    if (title_cursor < 2 && !selected) title_cursor = ram[5] & 1;
+    int to = title_cursor;
+    if (pressed & (4 | 128)) to = (to + 1) % 3;
+    if (pressed & 64) to = (to + 2) % 3;
+    selected = !selected && to < 2 && to != (ram[5] & 1);
+    if (selected) game_keys = 4;
+    title_cursor = to;
+    title_mask = 4 | 64 | 128 | (to == 2 ? 1 | 8 : 0);
+    if (to == 2 && pressed & (1 | 8)) { menu_open = menu_hold = 1; menu_draw(1, menu_cursor, options); }
+    return;
+  }
+  if (pressed & (8 | 4 | 2)) {  // Start, Select or B: back to the title
+    menu_open = 0;
+    menu_hold = 1;
+    menu_draw(0, 0, 0);
+    options_save();
+    return;
+  }
+  if (pressed & 64) menu_cursor = (menu_cursor + 4) % 5;
+  if (pressed & 128) menu_cursor = (menu_cursor + 1) % 5;
+  if (pressed & (1 | 16 | 32)) {
+    options ^= 1 << menu_cursor;
+    if (!(options & OPT_TAP)) ram[0x48B] = 0;  // 1.5's Tap_Mode: back to holding B
+  }
+  if (pressed & (1 | 16 | 32 | 64 | 128)) menu_draw(1, menu_cursor, options);
+}
+
 u8 plat_pad_read(u16 a) {
   if (a == 0x4017) return 0x40;
   // The game strobes, then takes 8 reads; start over after the 8th.
   if (pad_pos == 0) {
-    u16 k = ~KEYINPUT;
+    u16 k = menu_open || menu_hold ? 0 : (~KEYINPUT & ~title_mask) | game_keys;
     pad_bits = (k & 1) | (k >> 1 & 1) << 1 | (k >> 2 & 1) << 2 | (k >> 3 & 1) << 3
              | (k >> 6 & 1) << 4 | (k >> 7 & 1) << 5 | (k >> 5 & 1) << 6 | (k >> 4 & 1) << 7;
   }
@@ -191,6 +252,9 @@ void plat_vblank(void) {
     nes_frames = vblank_count + 1;
   }
   skipped = 0;
+#ifndef REPLAY
+  menu_tick();
+#endif
   wait_vblank();
 #ifdef REPLAY
   // How long the screen went without a new picture, which is what a player sees.
@@ -223,12 +287,19 @@ int main(void) {
   TM3CNT_H = 0x84;   // cascade
   TM2CNT_H = 0x80;
   chr4 = chr4_data;
+  parallax = parallax_data;
   video_init();
   prg = rom_prg;
   chr = rom_chr;
   sound_init();
+#ifndef REPLAY
+  options_load();
+#endif
 #ifdef REPLAY
   result.magic = 0x47494D4B;
+#ifdef REPLAY_OPTIONS
+  options = REPLAY_OPTIONS;
+#endif
   cpu_power_on(power_on_ram);
 #ifndef TIMING_ONLY
   nmi_sync = nmi_sync_table;

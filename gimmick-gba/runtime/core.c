@@ -11,6 +11,18 @@ static u8 no_ram[0x2000] SLOW_RAM;
 
 const u8 *prg, *chr;
 u8 prg_map[3];
+u8 options;
+
+// Coyote time, jump buffering and Select's switch to tapping B are one routine of 1.5's,
+// JumpCheck. With some of them off, it is kept from seeing what they need: an old
+// stamp for when Yumetaro was last on the floor, no memory of the press, no Select.
+// ($0487 and $048A are 1.5's Floor_F and JumpBuf_On.)
+void opt_prep(int hook) {
+  if (hook != 0) return;
+  if (!(options & OPT_TAP)) ram[0xF5] &= ~0x20;
+  if (!(options & OPT_COYOTE)) ram[0x487] = ram[0xED] - 8;
+  if (!(options & OPT_BUFFER)) ram[0x48A] = 0;
+}
 u8 chr_map[8];
 static u8 fme_cmd;
 static u8 irq_ctl;
@@ -393,7 +405,7 @@ HOT void cpu_run(void) {
 #endif
     }
     const block_t *t = pc >= 0xE000 ? code_banks[0x1F]
-                     : pc >= 0x8000 ? code_banks[prg_map[(pc - 0x8000) >> 13] & 31] : 0;
+                     : pc >= 0x8000 ? code_banks[prg_map[(pc - 0x8000) >> 13] & 63] : 0;
     block_t fn = t ? t[pc & 0x1FFF] : 0;
 #ifdef INTERP_ONLY
     fn = 0;

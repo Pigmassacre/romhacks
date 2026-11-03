@@ -5,3 +5,4 @@ Mesen
 out/
 __pycache__/
 *.pyc
+tools/asm6

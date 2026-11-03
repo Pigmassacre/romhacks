@@ -299,15 +299,20 @@ HOT static void mix_pulse(short *buf, int n, struct pulse *p, u32 duty) {
   else p->phase += p->inc * n;
 }
 
-HOT static void mix_tri(short *buf, int n) {
+// A stopped triangle holds its level, as a silent DPCM does. Those are steady, and
+// each returns its level for mix_span to add along with the output instead.
+#define TRI_LEVEL(x) (((x) ^ (((x) >> 4) - 1)) & 15) * 15 >> 2  // 15 down to 0, then up
+HOT static int mix_tri(short *buf, int n) {
   u32 phase = tri.phase;
-  u32 inc = tri.enabled && tri.length && tri.linear ? tri.inc : 0;
+  if (!(tri.enabled && tri.length && tri.linear && tri.inc)) return TRI_LEVEL(phase >> 27);
+  u32 inc = tri.inc;
   for (int i = 0; i < n; i++) {
     phase += inc;
     u32 x = phase >> 27;
-    buf[i] += (x < 16 ? 15 - x : x - 16) * 15 >> 2;
+    buf[i] += TRI_LEVEL(x);
   }
   tri.phase = phase;
+  return 0;
 }
 
 HOT static void mix_noise(short *buf, int n) {
@@ -327,35 +332,45 @@ HOT static void mix_noise(short *buf, int n) {
   noise.lfsr = lfsr;
 }
 
-HOT static void mix_dmc(short *buf, int n) {
+HOT static int mix_dmc(short *buf, int n) {
   u32 accum = dmc.accum, inc = dmc.inc;
   int level = dmc.level;
+  if (!dmc.bits && !dmc.left) {
+    dmc.silent = 1;
+    dmc.accum = (accum + inc * n) & 0xFFFF;
+    return (level * 15) >> 4;
+  }
+  u32 shift = dmc.shift, bits = dmc.bits, silent = dmc.silent;
   for (int i = 0; i < n; i++) {
     accum += inc;
     while (accum >= 0x10000) {
       accum -= 0x10000;
-      if (!dmc.bits) {
+      if (!bits) {
         if (dmc.left) {
-          dmc.shift = rd(dmc.addr);
+          shift = rd(dmc.addr);
           dmc.addr = dmc.addr == 0xFFFF ? 0x8000 : dmc.addr + 1;
-          dmc.bits = 8;
-          dmc.silent = 0;
+          bits = 8;
+          silent = 0;
           if (!--dmc.left && dmc.loop) { dmc.addr = dmc.start_addr; dmc.left = dmc.start_len; }
         } else {
-          dmc.silent = 1;
+          silent = 1;
         }
       }
-      if (!dmc.silent && dmc.bits) {
-        if (dmc.shift & 1) { if (level <= 125) level += 2; }
+      if (!silent && bits) {
+        if (shift & 1) { if (level <= 125) level += 2; }
         else if (level >= 2) level -= 2;
-        dmc.shift >>= 1;
-        dmc.bits--;
+        shift >>= 1;
+        bits--;
       }
     }
     buf[i] += (level * 15) >> 4;
   }
   dmc.accum = accum;
   dmc.level = level;
+  dmc.shift = shift;
+  dmc.bits = bits;
+  dmc.silent = silent;
+  return 0;
 }
 
 HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
@@ -378,7 +393,12 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
     }
     fb.phase[c] = phase;
   }
-  int noisy = !((tones >> 3) & (tones >> 4) & (tones >> 5) & 1);
+  // Noise only matters on a channel that is not silent.
+  int noisy = 0;
+  for (int c = 0; c < 3; c++) {
+    u32 r = fb.regs[8 + c];
+    if (!(tones >> (c + 3) & 1) && ((r & 16) || levels[r & 15])) noisy = 1;
+  }
   if (!any_env && !noisy) return;
   // The envelope and the noise are rare, and only these need sample-by-sample work.
   for (int i = 0; i < n; i++) {
@@ -420,8 +440,10 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
 #define ONLY(bit) do { static short keep[MAX_SPAN]; \
     for (int i = 0; i < n; i++) { keep[i] = (apu_only & (bit)) ? buf[i] : 0; buf[i] = 0; } \
     for (int i = 0; i < n; i++) total[i] += keep[i]; } while (0)
+#define STEADY(bit, level) ((apu_only & (bit)) ? (level) : 0)
 #else
 #define ONLY(bit)
+#define STEADY(bit, level) (level)
 #endif
 
 HOT static void mix_span(s8 *out, int n) {
@@ -437,11 +459,11 @@ HOT static void mix_span(s8 *out, int n) {
   ONLY(1);
   mix_pulse(buf, n, &pulses[1], duties[pulses[1].duty]);
   ONLY(2);
-  mix_tri(buf, n);
+  int steady = STEADY(4, mix_tri(buf, n));
   ONLY(4);
   mix_noise(buf, n);
   ONLY(8);
-  mix_dmc(buf, n);
+  steady += STEADY(16, mix_dmc(buf, n));
   ONLY(16);
   mix_fiveb(buf, n, levels);
   ONLY(32);
@@ -453,7 +475,7 @@ HOT static void mix_span(s8 *out, int n) {
   static int dc;
   int level = dc;
   for (int i = 0; i < n; i++) {
-    int in = buf[i] << 8;
+    int in = (buf[i] + steady) << 8;
     level += (in - level) >> 5;
     int s = ((in - level) >> 8) * OUTPUT_GAIN >> 8;
     out[i] = s > 127 ? 127 : s < -128 ? -128 : s;

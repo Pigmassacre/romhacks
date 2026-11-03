@@ -39,7 +39,7 @@ static const char *shot_dir;
 // (A blank screen is black here too: its layers are all off and colour 0 is black.)
 static u16 bg_pixel(int bg, int x, int y, int *solid) {
   u16 cnt = REG16(0x04000008 + bg * 2);
-  int hofs = bg < 3 ? REG16(0x04000010 + bg * 4) & 511 : 0, vofs = bg < 3 ? REG16(0x04000012 + bg * 4) & 511 : 0;
+  int hofs = REG16(0x04000010 + bg * 4) & 511, vofs = REG16(0x04000012 + bg * 4) & 511;
   int px = (x + hofs) & 255, py = (y + vofs) & 255;
   u16 *map = (u16 *)(sim_vram + ((cnt >> 8) & 31) * 0x800);
   u16 e = map[(py >> 3) * 32 + (px >> 3)];
@@ -64,14 +64,46 @@ static void take_shot(const char *name) {
     int a0 = REG16(0x04000044) >> 8, a1 = REG16(0x04000044) & 255;
     int b0 = REG16(0x04000046) >> 8, b1 = REG16(0x04000046) & 255;
     u16 win_in = REG16(0x04000048), win_out = REG16(0x0400004A);
-#define LAYERS(y) (w0 && (y) >= a0 && (y) < a1 ? win_in & 0xFF : w1 && (y) >= b0 && (y) < b1 ? win_in >> 8 : (w0 || w1) ? win_out : 0x1F)
-    for (int prio = 3; prio >= 0; prio--) {
+    static u8 obj_win[160][240];
+    memset(obj_win, 0, sizeof obj_win);
+    for (int i = 0; i < 128 && (disp & 0x8000); i++) {
+      u16 *o = (u16 *)sim_oam + i * 4;
+      if ((o[0] & 0xF00) != 0x800) continue;
+      int h = o[0] & 0x8000 ? 16 : 8, ox = o[1] & 511, oy = o[0] & 255;
+      if (ox >= 256) ox -= 512;
+      if (oy >= 160) oy -= 256;
+      for (int sy = 0; sy < h; sy++) {
+        int ty = (o[1] & 0x2000) ? h - 1 - sy : sy, y = oy + sy;
+        const u8 *tile = sim_vram + 0x10000 + ((o[2] & 1023) + (ty >> 3)) * 32;
+        for (int sx = 0; sx < 8; sx++) {
+          int x = ox + sx, tx = (o[1] & 0x1000) ? 7 - sx : sx;
+          if (x >= 0 && x < 240 && y >= 0 && y < 160 && ((tile[(ty & 7) * 4 + (tx >> 1)] >> ((tx & 1) * 4)) & 15)) obj_win[y][x] = 1;
+        }
+      }
+    }
+#define LAYERS(x, y) (w0 && (y) >= a0 && (y) < a1 ? win_in & 0xFF : w1 && (y) >= b0 && (y) < b1 ? win_in >> 8 : obj_win[y][x] ? win_out >> 8 : (w0 || w1 || (disp & 0x8000)) ? win_out & 0xFF : 0x1F)
+    if ((disp & 7) == 1 && (disp & 0x0400)) {
+      // Mode 1's affine third layer, 8-bit tiles, as the world map's arrival uses it.
+      u16 cnt = REG16(0x0400000C);
+      int size = 128 << (cnt >> 14);
+      short pa = REG16(0x04000020), pb = REG16(0x04000022), pc = REG16(0x04000024), pd = REG16(0x04000026);
+      int rx = REG32(0x04000028), ry = REG32(0x0400002C);
+      const u8 *map = sim_vram + ((cnt >> 8) & 31) * 0x800, *tiles = sim_vram + ((cnt >> 2) & 3) * 0x4000;
+      for (int y = 0; y < 160; y++)
+        for (int x = 0; x < 240; x++) {
+          int tx = (rx + pa * x + pb * y) >> 8, ty = (ry + pc * x + pd * y) >> 8;
+          if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
+          u8 c = tiles[map[(ty >> 3) * (size >> 3) + (tx >> 3)] * 64 + (ty & 7) * 8 + (tx & 7)];
+          if (c) fb[y][x] = ((u16 *)sim_pal)[c];
+        }
+    }
+    for (int prio = 3; prio >= 0 && (disp & 7) == 0; prio--) {
       for (int bg = 3; bg >= 0; bg--) {
         if (!(disp >> (8 + bg) & 1) || (REG16(0x04000008 + bg * 2) & 3) != prio) continue;
         for (int y = 0; y < 160; y++) {
-          if (!(LAYERS(y) >> bg & 1)) continue;
           for (int x = 0; x < 240; x++) {
             int solid;
+            if (!(LAYERS(x, y) >> bg & 1)) continue;
             u16 c = bg_pixel(bg, x, y, &solid);
             if (solid) fb[y][x] = c;
           }
@@ -80,19 +112,19 @@ static void take_shot(const char *name) {
       if (!(disp & 0x1000)) continue;
       for (int i = 127; i >= 0; i--) {
         u16 *o = (u16 *)sim_oam + i * 4;
-        if ((o[0] & 0x300) == 0x200 || ((o[2] >> 10) & 3) != prio) continue;
+        if ((o[0] & 0x300) == 0x200 || (o[0] & 0xC00) == 0x800 || ((o[2] >> 10) & 3) != prio) continue;
         int tall = o[0] & 0x8000, h = tall ? 16 : 8;
         int ox = o[1] & 511, oy = o[0] & 255;
         if (ox >= 256) ox -= 512;
         if (oy >= 160) oy -= 256;
         for (int sy = 0; sy < h; sy++) {
           int y = oy + sy;
-          if (y < 0 || y >= 160 || !(LAYERS(y) >> 4 & 1)) continue;
+          if (y < 0 || y >= 160) continue;
           int ty = (o[1] & 0x2000) ? h - 1 - sy : sy;
           const u8 *tile = sim_vram + 0x10000 + ((o[2] & 1023) + (ty >> 3)) * 32;
           for (int sx = 0; sx < 8; sx++) {
             int x = ox + sx;
-            if (x < 0 || x >= 240) continue;
+            if (x < 0 || x >= 240 || !(LAYERS(x, y) >> 4 & 1)) continue;
             int tx = (o[1] & 0x1000) ? 7 - sx : sx;
             int c = (tile[(ty & 7) * 4 + (tx >> 1)] >> ((tx & 1) * 4)) & 15;
             if (c) fb[y][x] = ((u16 *)sim_pal)[256 + (o[2] >> 12) * 16 + c];
@@ -114,17 +146,17 @@ static void take_shot(const char *name) {
   fclose(f);
 }
 
+// The tiles and the parallax clouds' data, which tools/recomp.py writes.
 static void video_host_init(void) {
-  static u8 tiles[0x40000];
-  for (int t = 0; t < 8192; t++) {
-    for (int y = 0; y < 8; y++) {
-      u8 lo = chr[t * 16 + y], hi = chr[t * 16 + 8 + y];
-      u32 row = 0;
-      for (int x = 0; x < 8; x++) row |= (u32)((lo >> (7 - x) & 1) | (hi >> (7 - x) & 1) << 1) << (x * 4);
-      memcpy(tiles + t * 32 + y * 4, &row, 4);
-    }
-  }
+  static u8 tiles[0x100000], par[0x2000];
+  FILE *f = fopen("out/gen/chr4.bin", "rb");
+  if (!f || !fread(tiles, 1, sizeof tiles, f)) exit(1);
+  fclose(f);
+  f = fopen("out/gen/parallax.bin", "rb");
+  if (!f || !fread(par, 1, sizeof par, f)) exit(1);
+  fclose(f);
   chr4 = tiles;
+  parallax = par;
   video_init();
 }
 
@@ -203,8 +235,14 @@ int main(int argc, char **argv) {
   FILE *f = fopen(argv[1], "rb");
   if (!f || !fread(rom, 1, sizeof rom, f)) return 1;
   fclose(f);
-  prg = rom + 16;
   chr = rom + 16 + 0x40000;
+  // The PRG with Gimmick! 1.5's bank, which tools/recomp.py writes.
+  static u8 prg15[0x42000];
+  f = fopen("out/gen/prg.bin", "rb");
+  if (!f || fread(prg15, 1, sizeof prg15, f) != sizeof prg15) return 1;
+  fclose(f);
+  prg = prg15;
+  if (getenv("OPTIONS")) options = strtol(getenv("OPTIONS"), 0, 0);
 
   char path[1024];
   snprintf(path, sizeof path, "%s/padreads.bin", argv[2]);

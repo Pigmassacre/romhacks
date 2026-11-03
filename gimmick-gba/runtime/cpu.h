@@ -48,7 +48,7 @@ register u32 cyc asm("r6");
 #define w6000w (cs->w6000w)
 #define fixed (cs->fixed)
 #define window (cs->window)
-extern const block_t *const code_banks[32];
+extern const block_t *const code_banks[64];
 
 #ifdef __arm__
 #define HOT __attribute__((section(".iwram"), target("arm")))
@@ -65,11 +65,21 @@ extern const block_t *const code_banks[32];
 #endif
 
 FAR u8 rd(u16 a);
+// Gimmick! 1.5's features that are on (tools/recomp.py's OPT), and what a hook does
+// before its far call when only some of those it answers to are.
+#define OPT_RECALL 1
+#define OPT_SKIP 2
+#define OPT_TAP 4
+#define OPT_COYOTE 8
+#define OPT_BUFFER 16
+#define OPT_ALL 31
+extern u8 options;
+FAR void opt_prep(int hook);
 FAR void wr(u16 a, u8 v);
 FAR u32 trap(u32 pc);
 FAR u32 interp_step(u32 pc);
 FAR u32 hot_run(u32 index);
-extern const u16 *hot_maps[32];
+extern const u16 *hot_maps[64];
 extern u8 prg_map[3];
 
 FAR void ppu_data_write(u8 v);
@@ -87,7 +97,7 @@ FAR void ppu_data_write(u8 v);
 
 // Which fast-RAM block starts at this PC, or 0.
 static inline __attribute__((always_inline)) u32 hot_lookup(u32 pc) {
-  const u16 *m = hot_maps[pc >= 0xE000 ? 0x1F : prg_map[(pc - 0x8000) >> 13] & 31];
+  const u16 *m = hot_maps[pc >= 0xE000 ? 0x1F : prg_map[(pc - 0x8000) >> 13] & 63];
   return m ? m[pc & 0x1FFF] : 0;
 }
 
