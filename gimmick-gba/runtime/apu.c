@@ -10,7 +10,7 @@
 #ifdef HOST
 int apu_only = 0xFF;  // the PC build can render one channel at a time
 #endif
-#define MAX_SPAN 128  // samples between frame counter ticks, at most
+#define MAX_SPAN 80   // samples between frame counter ticks, at most: 304 a frame, in 4
 
 static const u8 duty_steps[4] = {0x40, 0x60, 0x78, 0x9F};  // one bit per step
 static const u8 length_table[32] = {10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30};
@@ -261,19 +261,23 @@ static inline u32 fiveb_env_level(void) {
 // A square wave's edges land between samples. Sampling it plainly turns that into
 // harsh aliasing, so a sample an edge falls in gets the share of its time spent high.
 // The wave has 8 steps, one bit each in shape. Almost every sample is between edges, so
-// it works out how many there are until the next step and adds those in one go.
-// inverse is 2^16 / (inc >> 16).
-HOT static u32 add_square(short *buf, int n, u32 phase, u32 inc, u32 inverse, int vol, u32 shape) {
-  int i = 0;
+// it works out how many there are until the next step and takes those in one go.
+// The squares go into a buffer of changes, not of levels: each square writes only where
+// its level changes, and one pass at the end (squares_done) adds them all up. That makes
+// a square cost by its edges, not its samples. inverse is 2^16 / (inc >> 16).
+#define SET(at, v) do { int v_ = (v); if (v_ != cur) { delta[at] += v_ - cur; cur = v_; } } while (0)
+HOT static u32 add_square(short *delta, int n, u32 phase, u32 inc, u32 inverse, int vol, u32 shape) {
+  int i = 0, cur = 0;
   while (i < n) {
-    u32 left = 0x20000000 - (phase & 0x1FFFFFFF);
+    // To the next step where the wave changes level, not just the next step: the 5B's
+    // squares change twice a wave, and at high notes the steps come every sample or two.
+    u32 step = phase >> 29, level = (shape >> step) & 1, same = 1;
+    while (same < 7 && ((shape >> ((step + same) & 7)) & 1) == level) same++;
+    u32 left = same * 0x20000000 - (phase & 0x1FFFFFFF);
     int run = ((left >> 16) * inverse) >> 16;
     if (run > n - i) run = n - i;
     if (run) {
-      if ((shape >> (phase >> 29)) & 1) {
-        short *to = buf + i;
-        for (int j = run; j; j--) *to++ += vol;
-      }
+      SET(i, (shape >> (phase >> 29)) & 1 ? vol : 0);
       i += run;
       phase += inc * run;
       if (i >= n) break;
@@ -282,20 +286,33 @@ HOT static u32 add_square(short *buf, int n, u32 phase, u32 inc, u32 inverse, in
     phase += inc;
     u32 high = (shape >> (phase >> 29)) & 1;
     if (was_high == high) {
-      if (high) buf[i] += vol;
+      SET(i, high ? vol : 0);
     } else {
       u32 since = (((phase & 0x1FFFFFFF) >> 16) * inverse) >> 16;
       if (since > 65535) since = 65535;
-      buf[i] += (vol * (high ? since : 65535 - since)) >> 16;
+      SET(i, (vol * (high ? since : 65535 - since)) >> 16);
     }
     i++;
   }
+  SET(n, 0);  // delta has n + 1 entries: the square ends with the span
   return phase;
 }
+#undef SET
 
-HOT static void mix_pulse(short *buf, int n, struct pulse *p, u32 duty) {
+// The squares' changes, added up into the buffer, and cleared for the next ones.
+HOT static void squares_done(short *buf, short *delta, int n) {
+  int level = 0;
+  for (int i = 0; i < n; i++) {
+    level += delta[i];
+    delta[i] = 0;
+    buf[i] += level;
+  }
+  delta[n] = 0;
+}
+
+HOT static void mix_pulse(short *delta, int n, struct pulse *p, u32 duty) {
   int vol = pulse_level(p) * 2;
-  if (vol && p->inverse) p->phase = add_square(buf, n, p->phase, p->inc, p->inverse, vol, duty);
+  if (vol && p->inverse) p->phase = add_square(delta, n, p->phase, p->inc, p->inverse, vol, duty);
   else p->phase += p->inc * n;
 }
 
@@ -373,7 +390,7 @@ HOT static int mix_dmc(short *buf, int n) {
   return 0;
 }
 
-HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
+HOT static void mix_fiveb(short *buf, short *delta, int n, const u8 *levels) {
   u32 tones = fb.regs[7];
   int any_env = 0;
   for (int c = 0; c < 3; c++) {
@@ -384,7 +401,7 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
     u32 phase = fb.phase[c], inc = fb.inc[c];
     if (vol && !noise_on) {
       if (tone_on && fb.inverse[c]) {
-        phase = add_square(buf, n, phase, inc, fb.inverse[c], vol, 0xF0);
+        phase = add_square(delta, n, phase, inc, fb.inverse[c], vol, 0xF0);
       } else if (!tone_on) {
         for (int i = 0; i < n; i++) buf[i] += vol;
       }
@@ -401,14 +418,34 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
   }
   if (!any_env && !noisy) return;
   // The envelope and the noise are rare, and only these need sample-by-sample work.
+  // What each channel does is the same all span, so it is worked out once, and the
+  // state is kept in locals: in the loop, writes to buf could otherwise be the 5B's
+  // bytes for all the compiler knows, and it would read them again every sample.
+  int count = 0, chan[3], level[3];
+  u32 env_mask = 0, tone_mask = 0, noise_mask = 0;
+  for (int c = 0; c < 3; c++) {
+    u32 r = fb.regs[8 + c];
+    int tone_off = tones >> c & 1, noise_off = tones >> (c + 3) & 1;
+    if (!(r & 16) && noise_off) continue;
+    if (r & 16) env_mask |= 1 << count;
+    if (!tone_off) tone_mask |= 1 << count;
+    if (!noise_off) noise_mask |= 1 << count;
+    level[count] = levels[r & 15];
+    chan[count++] = c;
+  }
+  u32 phase[3], inc[3];
+  for (int k = 0; k < count; k++) { phase[k] = fb.phase[chan[k]]; inc[k] = fb.inc[chan[k]]; }
+  u32 noise_accum = fb.noise_accum, noise_inc = fb.noise_inc, lfsr = fb.noise_lfsr;
+  u32 env_phase = fb.env_phase, env_inc = fb.env_inc;
+  int env = levels[fiveb_env_level() >> 1];  // changes only when the envelope steps
   for (int i = 0; i < n; i++) {
-    fb.noise_accum += fb.noise_inc;
-    if (fb.noise_accum < fb.noise_inc) {
-      u32 bit = (fb.noise_lfsr ^ (fb.noise_lfsr >> 3)) & 1;
-      fb.noise_lfsr = fb.noise_lfsr >> 1 | bit << 16;
+    noise_accum += noise_inc;
+    if (noise_accum < noise_inc) {
+      u32 bit = (lfsr ^ (lfsr >> 3)) & 1;
+      lfsr = lfsr >> 1 | bit << 16;
     }
-    fb.env_phase += fb.env_inc;
-    if (fb.env_phase < fb.env_inc && !fb.env_held) {
+    env_phase += env_inc;
+    if (env_phase < env_inc && !fb.env_held) {
       if (++fb.env_step >= 32) {
         u8 shape = fb.regs[13];
         if (!(shape & 8) || (shape & 1)) {
@@ -422,17 +459,21 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
           if (shape & 2) fb.regs[13] ^= 4;
         }
       }
+      env = levels[fiveb_env_level() >> 1];
     }
-    int env = levels[fiveb_env_level() >> 1];
-    for (int c = 0; c < 3; c++) {
-      u32 r = fb.regs[8 + c];
-      int tone_off = tones >> c & 1, noise_off = tones >> (c + 3) & 1;
-      if (!(r & 16) && noise_off) continue;
-      if (r & 16) fb.phase[c] += fb.inc[c];
-      if ((tone_off || (fb.phase[c] >> 31)) && (noise_off || (fb.noise_lfsr & 1)))
-        buf[i] += (r & 16) ? env : levels[r & 15];
+    int out = 0;
+    for (int k = 0; k < count; k++) {
+      int bit = 1 << k;
+      if (env_mask & bit) phase[k] += inc[k];
+      if ((!(tone_mask & bit) || (phase[k] >> 31)) && (!(noise_mask & bit) || (lfsr & 1)))
+        out += (env_mask & bit) ? env : level[k];
     }
+    buf[i] += out;
   }
+  for (int k = 0; k < count; k++) fb.phase[chan[k]] = phase[k];
+  fb.noise_accum = noise_accum;
+  fb.noise_lfsr = lfsr;
+  fb.env_phase = env_phase;
 }
 
 // What is in the buffer so far is one channel: keep it only if it is wanted.
@@ -441,31 +482,35 @@ HOT static void mix_fiveb(short *buf, int n, const u8 *levels) {
     for (int i = 0; i < n; i++) { keep[i] = (apu_only & (bit)) ? buf[i] : 0; buf[i] = 0; } \
     for (int i = 0; i < n; i++) total[i] += keep[i]; } while (0)
 #define STEADY(bit, level) ((apu_only & (bit)) ? (level) : 0)
+#define SQUARES(bit) do { squares_done(buf, delta, n); ONLY(bit); } while (0)
 #else
 #define ONLY(bit)
 #define STEADY(bit, level) (level)
+#define SQUARES(bit)  // added up once, with the 5B's
 #endif
 
-HOT static void mix_span(s8 *out, int n) {
+HOT __attribute__((noinline)) static void mix_span(s8 *out, int n) {  // kept in fast RAM, not inlined into apu_mix
 #ifdef HOST
   short total[MAX_SPAN] = {0};
 #endif
-  short buf[MAX_SPAN];
+  short buf[MAX_SPAN], delta[MAX_SPAN + 1];
   u8 levels[16], duties[4];
   for (int i = 0; i < 16; i++) levels[i] = fiveb_levels[i];
   for (int i = 0; i < 4; i++) duties[i] = duty_steps[i];
   for (int i = 0; i < n; i++) buf[i] = 0;
-  mix_pulse(buf, n, &pulses[0], duties[pulses[0].duty]);
-  ONLY(1);
-  mix_pulse(buf, n, &pulses[1], duties[pulses[1].duty]);
-  ONLY(2);
+  for (int i = 0; i <= n; i++) delta[i] = 0;
+  mix_pulse(delta, n, &pulses[0], duties[pulses[0].duty]);
+  SQUARES(1);
+  mix_pulse(delta, n, &pulses[1], duties[pulses[1].duty]);
+  SQUARES(2);
   int steady = STEADY(4, mix_tri(buf, n));
   ONLY(4);
   mix_noise(buf, n);
   ONLY(8);
   steady += STEADY(16, mix_dmc(buf, n));
   ONLY(16);
-  mix_fiveb(buf, n, levels);
+  mix_fiveb(buf, delta, n, levels);
+  squares_done(buf, delta, n);
   ONLY(32);
   // The NES's output stage blocks DC, so the DPCM level drifting does not push the
   // whole mix up and down. This is the same idea: a high-pass filter, at about 90 Hz.

@@ -74,7 +74,25 @@ static void log_text(const char *a, u32 v) {
   REG16(0x04FFF700) = 0x100 | 3;  // level: info
 }
 
+// How much of fast RAM the stack never reached. It grows down from 0x03007F00 towards
+// the end of the program's data, which is __iheap_start (the initialised data goes after
+// the zeroed), and running into it breaks the game: main fills the space between with a
+// mark, and this finds the lowest word the stack wrote over.
+extern u32 __iheap_start[];
+#define STACK_MARK 0x57ACC0DEu
+static void stack_mark(void) {
+  u32 *p = __iheap_start, *sp;
+  __asm__ volatile("mov %0, sp" : "=r"(sp));
+  while (p < sp - 16) *p++ = STACK_MARK;
+}
+static u32 stack_left(void) {
+  u32 *p = __iheap_start;
+  while (*p == STACK_MARK) p++;
+  return (u32)p - (u32)__iheap_start;
+}
+
 static void report(void) {
+  log_text("stack_left=", stack_left());
   log_text("frames=", result.frames);
   log_text("cycles_sum=", result.cycles_sum);
   log_text("cycles_max=", result.cycles_max);
@@ -122,6 +140,7 @@ void plat_nmi(void) {
     log_text("draw_500=", window_draw / 500);
     window_mix = window_draw = 0;
     log_text("first_bad=", result.first_bad);
+    log_text("stack_left=", stack_left());
     window_over = result.over_budget;
     window_sum = window_max = 0;
   }
@@ -232,7 +251,7 @@ void plat_vblank(void) {
     apu_mix(sound_buf[next], SAMPLES_PER_FRAME);
     sound_write = next;
   } else {
-    static s8 dropped[SAMPLES_PER_FRAME];  // keep the chips ticking
+    static s8 dropped[SAMPLES_PER_FRAME] SLOW_RAM;  // keep the chips ticking
     apu_mix(dropped, SAMPLES_PER_FRAME);
   }
 #ifdef REPLAY
@@ -309,6 +328,9 @@ static void splash(void) {
 #endif
 
 int main(void) {
+#ifdef REPLAY
+  stack_mark();
+#endif
   WAITCNT = 0x4317;  // 3/1 ROM waits with prefetch
   TM2CNT_L = 0; TM3CNT_L = 0;
   TM3CNT_H = 0x84;   // cascade

@@ -79,7 +79,7 @@ FAR void wr(u16 a, u8 v);
 FAR u32 trap(u32 pc);
 FAR u32 interp_step(u32 pc);
 FAR u32 hot_run(u32 index);
-extern const u16 *hot_maps[64];
+extern const u16 *const hot_maps[64];  // in ROM: fast RAM is kept for code and the stack
 extern u8 prg_map[3];
 
 FAR void ppu_data_write(u8 v);

@@ -146,7 +146,8 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
   for (int i = 8; i < 64; i++) blanks += BLANK(&oam[i * 4]);
   band_from = band_to = 0;
   if (blanks >= 8) {
-    u8 count[256] = {0};
+    static u8 count[256] SLOW_RAM;  // not on the stack: there is little room in fast RAM
+    for (int l = 0; l < 256; l++) count[l] = 0;
     int lo = 256, hi = 0;
     for (int i = 8; i < 64; i++) {
       const u8 *s = &oam[i * 4];

@@ -522,7 +522,7 @@ def emit_hot(banks, hot, out):
             if n == num:
                 out.append("  [0x%04X] = %d," % (pc - banks[n].window, index[n, pc]))
         out.append("};")
-    out.append("const u16 *hot_maps[64] = {")
+    out.append("const u16 *const hot_maps[64] = {")
     for num in sorted({k[0] for k in hot}):
         out.append("  [0x%02X] = hot_map_%02X," % (num, num))
     out.append("};\n")

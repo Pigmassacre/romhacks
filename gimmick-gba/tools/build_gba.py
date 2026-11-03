@@ -61,11 +61,27 @@ def expected_table(path, trace):
             f.write(struct.pack("<I", fnv(r[:0x100] + r[0x200:])))
 
 
+# What the stack needs at least, in fast RAM. A replay of the boss fight reached about
+# 800 bytes deep; past the end, the stack overwrites the program's data and the game
+# breaks. How much fast RAM the hot code takes is only estimated when it is picked, so
+# the build shrinks it until this much is left.
+STACK_ROOM = 1536
+
+
 def main():
     replay = "--replay" in sys.argv
-    env = dict(os.environ)
-    if replay and "--timing" not in sys.argv:
-        env["HOT_BYTES"] = "30000"
+    hot = 30000 if replay and "--timing" not in sys.argv else int(os.environ.get("HOT_BYTES", 44000))
+    while True:
+        free = build(replay, hot)
+        if free >= STACK_ROOM:
+            break
+        # About 2.5 bytes of the estimate make one real byte, so this leaves some over.
+        hot -= (STACK_ROOM - free) * 3 + 200
+        print("too little left for the stack: hot code down to %d (estimated) bytes" % hot)
+
+
+def build(replay, hot):
+    env = dict(os.environ, HOT_BYTES=str(hot))
     subprocess.run([sys.executable, os.path.join(REPO, "tools", "recomp.py")], check=True, stdout=subprocess.DEVNULL, env=env)
     rom = open(ROM, "rb").read()[16:]
     chr4, par = os.path.join(GEN, "chr4.bin"), os.path.join(GEN, "parallax.bin")  # from recomp.py
@@ -120,10 +136,13 @@ def main():
     subprocess.run([GBAFIX, gba, "-tGIMMICK ADV"], check=True, stdout=subprocess.DEVNULL)
     print("%s: %d KB" % (gba, os.path.getsize(gba) // 1024))
     nm = subprocess.run([os.path.join(BIN, "arm-none-eabi-nm"), elf], capture_output=True, text=True).stdout
+    # Fast RAM's data ends at __iheap_start: the initialised data goes after the zeroed,
+    # so __bss_end__ is not the end. The stack grows down to it from 0x03007F00.
     for line in nm.splitlines():
-        if line.endswith(" __bss_end__"):
+        if line.endswith(" __iheap_start"):
             free = 0x03007F00 - int(line.split()[0], 16)
-            print("fast RAM left above the stack's top: %d bytes" % free)
+            print("fast RAM left for the stack: %d bytes" % free)
+            return free
 
 
 if __name__ == "__main__":

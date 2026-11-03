@@ -71,6 +71,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   internal RAM as ARM code, as one function that jumps straight between them. The rest stay in ROM
   as Thumb, and anything never seen running goes through an interpreter. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
+  Fast RAM is shared with the stack, and how much the hot code takes is only estimated when it
+  is picked: `tools/build_gba.py` shrinks it until 1.5 KB is left for the stack. Test builds mark
+  that space at start-up, and `tools/run_gba.py` reports how much of it the stack never reached.
 - `tools/parallax.py` makes the game's tiles into the GBA's, with versions of the cloud stages'
   pages whose sky and clouds are blank, and a mask of each page: the sky's colour where the NES
   shows its colour 0 outside the sky, on a layer between the stage and the clouds. Sprites behind
