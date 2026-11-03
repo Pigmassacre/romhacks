@@ -370,14 +370,24 @@ def has_mapper_write(bank, start):
     return False
 
 
-def emit_block(bank, start, out, hot):
-    """One basic block. In fast RAM, blocks are labels in one function and jump
-    straight to each other; in ROM, each is a function that returns the next PC."""
-    is_hot = hot is not None
-    moved = is_hot and has_mapper_write(bank, start)
+FIXED_CHAIN = set()  # the fixed bank's blocks any bank's ROM blocks may go on to
 
-    def jump(t):
+
+def emit_block(bank, start, out, hot, chain=()):
+    """One basic block. In fast RAM, blocks are labels in one function and jump
+    straight to each other; in ROM, each is a function that returns the next PC, or
+    names the next block when it is in chain, one of this bank's own in ROM, for the
+    dispatcher to call straight away: that saves the rest of a trip through it. (Thumb
+    code has no tail calls, so a block cannot just call the next itself.)"""
+    is_hot = hot is not None
+    moved = has_mapper_write(bank, start)
+
+    def jump(t, fall=False):
         if not is_hot:
+            if t in chain and not moved:
+                return "chain_next = b%02X_%04X; return 0x%04X;" % (bank.num, t, t)
+            if bank.num != FIXED_BANK and t >= 0xE000 and t in FIXED_CHAIN:
+                return "chain_next = b%02X_%04X; return 0x%04X;" % (FIXED_BANK, t, t)
             return "return 0x%04X;" % t
         target = None
         if bank.has(t) and not moved and (bank.num, t) in hot:
@@ -386,8 +396,9 @@ def emit_block(bank, start, out, hot):
             target = FIXED_BANK
         if target is None:
             return "pc = 0x%04X; goto dyn;" % t
-        if t > cur:
-            # A loop has to jump backwards or return, so going forwards can wait.
+        if t > cur or fall:
+            # A loop has to jump backwards or return, so going forwards can wait. Falling
+            # through into the next block goes forwards too (cur is already that block).
             return "FORWARD(L%02X_%04X, 0x%04X);" % (target, t, t)
         return "if (cyc < block_limit) goto L%02X_%04X; return 0x%04X;" % (target, t, t)
 
@@ -461,20 +472,40 @@ def emit_block(bank, start, out, hot):
                     out.append("  " + extra)
         cur = nxt
         if cur in bank.leaders:
-            out.append("  CYC(%d); %s" % (cyc, jump(cur)))
+            out.append("  CYC(%d); %s" % (cyc, jump(cur, fall=True)))
             return
+
+
+def rom_blocks(bank, hot):
+    return [pc for pc in sorted(bank.leaders & set(bank.instrs)) if (bank.num, pc) not in hot]
+
+
+def chain_set(bank, hot, after_hook):
+    """The blocks a ROM block may go on to straight away: its bank's own in ROM, but
+    not a hook's, nor one that 1.5's code can stand in for, nor the wait loops, which
+    the dispatcher skips."""
+    swapped = {p for (num, start), patched in after_hook.items() if num == bank.num
+               for p in patched.leaders if start + 3 <= p < patched.end}
+    return {pc for pc in rom_blocks(bank, hot) if (bank.num, pc) not in HOOKS and pc not in swapped
+            and not (bank.num == FIXED_BANK and WAIT_LOOP[0] <= pc <= WAIT_LOOP[1])}
 
 
 def emit_bank(bank, out, hot, after_hook):
     names = {}
-    pcs = [pc for pc in sorted(bank.leaders & set(bank.instrs)) if (bank.num, pc) not in hot]
+    pcs = rom_blocks(bank, hot)
+    chain = chain_set(bank, hot, after_hook)
     out.append('#include "cpu.h"\n')
+    # The fixed bank's that others go on to are not private to its file.
+    shared = FIXED_CHAIN if bank.num == FIXED_BANK else set()
+    if bank.num != FIXED_BANK:
+        for pc in sorted(FIXED_CHAIN):
+            out.append("u32 b%02X_%04X(void);" % (FIXED_BANK, pc))
     for pc in pcs:
         names[pc] = "b%02X_%04X" % (bank.num, pc)
-        out.append("static u32 %s(void);" % names[pc])
+        out.append("%su32 %s(void);" % ("" if pc in shared else "static ", names[pc]))
     out.append("")
     for pc in pcs:
-        out.append("static u32 %s(void) {" % names[pc])
+        out.append("%su32 %s(void) {" % ("" if pc in shared else "static ", names[pc]))
         hook = HOOKS.get((bank.num, pc))
         if hook:
             # 1.5's JSR to its far call, when an option it answers to is on.
@@ -482,7 +513,7 @@ def emit_bank(bank, out, hot, after_hook):
             ret = pc + 2
             out.append("  if (options & %d) { opt_prep(%d); CYC(6); PUSH(0x%02X); PUSH(0x%02X); return 0x%04X; }"
                        % (hook[0], hook[1], ret >> 8, ret & 0xFF, target))
-        emit_block(bank, pc, out, None)
+        emit_block(bank, pc, out, None, chain)
         out.append("}\n")
     # 1.5's code after each hook's far call. Where the game has an instruction at the
     # same place, the hook's options choose between them: the game can be there too,
@@ -768,6 +799,7 @@ def main():
     hot = pick_hot(banks, counts)
     hot -= set(hooks_15)
     total = 0
+    FIXED_CHAIN.update(chain_set(banks[FIXED_BANK], hot, after_hook))
     for b in banks.values():
         out = []
         emit_bank(b, out, hot, after_hook)

@@ -439,6 +439,15 @@ HOT void cpu_run(void) {
 #ifdef INTERP_ONLY
     fn = 0;
 #endif
-    if (!fn) pc = interp_step(pc); else pc = fn();
+    if (!fn) { pc = interp_step(pc); continue; }
+    pc = fn();
+    // A ROM block that goes on to another of its bank's names it, and that one runs
+    // straight away, up to whatever is due next.
+    while (chain_next) {
+      fn = chain_next;
+      chain_next = 0;
+      if (cyc >= block_limit) break;
+      pc = fn();
+    }
   }
 }

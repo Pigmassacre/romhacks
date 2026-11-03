@@ -16,6 +16,7 @@ the real build does not have, so that the recording's buttons play the same game
 --no-slowdown leaves it out, for a recording where nothing is pressed (--crowd).
 """
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -139,7 +140,14 @@ def build(replay, hot):
     elf = os.path.join(OUT, name + ".elf")
     gba = os.path.join(OUT, name + ".gba")
     env = dict(os.environ, PATH=BIN + os.pathsep + os.environ["PATH"])
-    subprocess.run([GCC] + flags + sources + [data_s, "-o", elf], check=True, env=env)
+    link = subprocess.run([GCC] + flags + sources + [data_s, "-o", elf], env=env, capture_output=True, text=True)
+    # Too much for fast RAM at all: as if the stack had that much less than nothing.
+    over = [int(m, 16) for m in re.findall(r"address (0x[0-9a-f]+) of \S+ section \S+ is not within region `iwram'", link.stderr)]
+    if over:
+        print("fast RAM overflowed by %d bytes" % (max(over) - 0x03008000))
+        return 0x03007F00 - max(over)
+    if link.returncode:
+        sys.exit(link.stdout + link.stderr)
     subprocess.run([os.path.join(BIN, "arm-none-eabi-objcopy"), "-O", "binary", elf, gba], check=True)
     subprocess.run([GBAFIX, gba, "-tGIMMICK ADV"], check=True, stdout=subprocess.DEVNULL)
     print("%s: %d KB" % (gba, os.path.getsize(gba) // 1024))

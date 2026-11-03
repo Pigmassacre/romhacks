@@ -21,6 +21,7 @@ struct cpu_state {
   u8 *w6000w;            // where writes go: the RAM, or nowhere when it is not mapped
   const u8 *fixed;       // the bank at $E000
   const u8 *window[3];   // the banks at $8000, $A000, $C000
+  block_t chain_next;    // the ROM block a ROM block goes on to, for the dispatcher to call
   u8 ram[0x800];
 };
 extern struct cpu_state cpu_state_store;
@@ -48,6 +49,7 @@ register u32 cyc asm("r6");
 #define w6000w (cs->w6000w)
 #define fixed (cs->fixed)
 #define window (cs->window)
+#define chain_next (cs->chain_next)
 extern const block_t *const code_banks[64];
 
 #ifdef __arm__

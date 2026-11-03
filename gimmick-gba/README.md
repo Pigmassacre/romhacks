@@ -71,7 +71,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 
 - `tools/recomp.py` turns each basic block into C. The blocks that run most go in the GBA's fast
   internal RAM as ARM code, as one function that jumps straight between them. The rest stay in ROM
-  as Thumb, and anything never seen running goes through an interpreter. `data/` says where code
+  as Thumb, and anything never seen running goes through an interpreter. A block in ROM that
+  goes on to another of its bank's, or the fixed bank's, names it, and the dispatcher calls that
+  one straight away instead of looking it up. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
   Fast RAM is shared with the stack, and how much the hot code takes is only estimated when it
   is picked: `tools/build_gba.py` shrinks it until 1.5 KB is left for the stack. Test builds mark
