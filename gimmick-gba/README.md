@@ -67,10 +67,16 @@ python3 tools/record.py --idle 4000
 python3 tools/record.py --tour
 ```
 
+```bash
+python3 tools/record.py --boss 2600
+```
+
 These play the NES game in [Mesen 2](https://www.mesen.ca/) (put the Linux build at `./Mesen`) and
 record RAM at every NMI, what code ran, and what the pads gave. `--tour` warps through every stage
 and checkpoint, sweeps across each stage's map, clears each stage, and goes through the world map,
-both endings and a game over (`tests/s_tour.lua`).
+both endings and a game over (`tests/s_tour.lua`). `--boss` fights a crowd of ohagis in the first stage,
+the heaviest frames found so far (`tests/s_boss.lua`), and its code counts 20 times over when the
+translator picks what goes in fast RAM.
 
 ```bash
 tools/check_host.sh out/trace_tour
