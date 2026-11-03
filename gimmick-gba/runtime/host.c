@@ -131,17 +131,17 @@ static void take_shot(const char *name) {
   fclose(f);
 }
 
+// The tiles and the parallax clouds' data, which tools/recomp.py writes.
 static void video_host_init(void) {
-  static u8 tiles[0x40000];
-  for (int t = 0; t < 8192; t++) {
-    for (int y = 0; y < 8; y++) {
-      u8 lo = chr[t * 16 + y], hi = chr[t * 16 + 8 + y];
-      u32 row = 0;
-      for (int x = 0; x < 8; x++) row |= (u32)((lo >> (7 - x) & 1) | (hi >> (7 - x) & 1) << 1) << (x * 4);
-      memcpy(tiles + t * 32 + y * 4, &row, 4);
-    }
-  }
+  static u8 tiles[0x100000], par[0x2000];
+  FILE *f = fopen("out/gen/chr4.bin", "rb");
+  if (!f || !fread(tiles, 1, sizeof tiles, f)) exit(1);
+  fclose(f);
+  f = fopen("out/gen/parallax.bin", "rb");
+  if (!f || !fread(par, 1, sizeof par, f)) exit(1);
+  fclose(f);
   chr4 = tiles;
+  parallax = par;
   video_init();
 }
 

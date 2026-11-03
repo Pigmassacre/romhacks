@@ -17,6 +17,8 @@ import re
 import subprocess
 import sys
 
+import parallax
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROM = os.path.join(REPO, "Gimmick! (Japan).nes")
 DATA = os.path.join(REPO, "data")
@@ -708,6 +710,9 @@ def main():
     with open(os.path.join(GEN, "prg.bin"), "wb") as f:
         f.write(prg)
     write_nes_15(open(ROM, "rb").read(), prg, hooks_15)
+    chr4, par = parallax.build(rom[0x40000:0x60000])
+    open(os.path.join(GEN, "chr4.bin"), "wb").write(chr4)
+    open(os.path.join(GEN, "parallax.bin"), "wb").write(par)
     seen = {}
     counts = {}
     for line in open(os.path.join(DATA, "coverage.txt")):

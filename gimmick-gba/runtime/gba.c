@@ -8,7 +8,7 @@
 
 #define FRAME_CYCLES 280896u
 
-extern const u8 rom_prg[], rom_chr[], chr4_data[];
+extern const u8 rom_prg[], rom_chr[], chr4_data[], parallax_data[];
 
 static inline u32 now(void) { return TM2CNT_L | (u32)TM3CNT_L << 16; }
 
@@ -271,6 +271,7 @@ int main(void) {
   TM3CNT_H = 0x84;   // cascade
   TM2CNT_H = 0x80;
   chr4 = chr4_data;
+  parallax = parallax_data;
   video_init();
   prg = rom_prg;
   chr = rom_chr;

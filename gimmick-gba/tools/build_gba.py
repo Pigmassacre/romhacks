@@ -28,20 +28,6 @@ GBAFIX = os.path.join(DKP, "tools", "bin", "gbafix")
 SIZE = 0x2800
 
 
-def chr_to_4bpp(chr2):
-    """NES tiles are 16 bytes, 2 bits a pixel. GBA tiles are 32, 4 bits a pixel."""
-    out = bytearray(len(chr2) * 2)
-    for t in range(len(chr2) // 16):
-        for y in range(8):
-            lo, hi = chr2[t * 16 + y], chr2[t * 16 + 8 + y]
-            row = 0
-            for x in range(8):
-                p = (lo >> (7 - x) & 1) | (hi >> (7 - x) & 1) << 1
-                row |= p << (x * 4)
-            out[t * 32 + y * 4:t * 32 + y * 4 + 4] = struct.pack("<I", row)
-    return bytes(out)
-
-
 def fnv(b):
     h = 2166136261
     for v in b:
@@ -82,14 +68,13 @@ def main():
         env["HOT_BYTES"] = "30000"
     subprocess.run([sys.executable, os.path.join(REPO, "tools", "recomp.py")], check=True, stdout=subprocess.DEVNULL, env=env)
     rom = open(ROM, "rb").read()[16:]
-    chr4 = os.path.join(GEN, "chr4.bin")
-    open(chr4, "wb").write(chr_to_4bpp(rom[0x40000:0x60000]))
+    chr4, par = os.path.join(GEN, "chr4.bin"), os.path.join(GEN, "parallax.bin")  # from recomp.py
     prg_bin, chr_bin = os.path.join(GEN, "prg.bin"), os.path.join(GEN, "chr.bin")
     # recomp.py has written prg.bin: the game's, with Gimmick! 1.5's bank after it.
     open(chr_bin, "wb").write(rom[0x40000:0x60000])
-    data = ['.section .rodata', '.global rom_prg, rom_chr, chr4_data', '.balign 4',
+    data = ['.section .rodata', '.global rom_prg, rom_chr, chr4_data, parallax_data', '.balign 4',
             'rom_prg: .incbin "%s"' % prg_bin, 'rom_chr: .incbin "%s"' % chr_bin,
-            '.balign 4', 'chr4_data: .incbin "%s"' % chr4]
+            '.balign 4', 'chr4_data: .incbin "%s"' % chr4, '.balign 4', 'parallax_data: .incbin "%s"' % par]
     flags = ["-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork", "-O2", "-w", "-ffixed-r7", "-ffixed-r6", "-fomit-frame-pointer", "-specs=gba.specs",
              "-I" + os.path.join(REPO, "runtime")]
     name = "gimmick"

@@ -20,10 +20,11 @@ static const u16 nes_colors[64] = {
 // own tiles and map.
 #define LAYERS 3
 static const u8 layer_map[LAYERS] = {28, 30, 26};
-static u8 loaded_bg[LAYERS][4], loaded_obj[8], loaded_obj_lower[8];
+static u16 loaded_bg[LAYERS][4];
+static u8 loaded_obj[8], loaded_obj_lower[8];
 static int cam_y;
 
-static void copy_chr(volatile u8 *dst, u8 page) {
+static void copy_chr(volatile u8 *dst, u32 page) {
 #ifdef HOST
   const u8 *from = chr4 + page * 0x800;
   for (int i = 0; i < 0x800; i++) dst[i] = from[i];
@@ -370,6 +371,35 @@ static int camera(int play_h, int view_h, int has_status) {
   return cam_y;
 }
 
+// Parallax clouds, from tools/parallax.py's data: which version of each page the stage
+// has, then per stage the clouds' map, palette and top line, then their tiles and maps.
+// The clouds' tiles go after the stage's own, and their map in a block of its own.
+#define CLOUD_PAGE 0x01
+#define CLOUD_TILE 256
+#define CLOUD_MAP 29
+#define PAR_ALIAS(p) parallax[p]
+#define PAR_MASK_BASE parallax[128]
+#define PAR_STAGE(s) (parallax + 132 + (s) * 4)
+#define PAR_TILES (parallax + 256)
+#define PAR_MAPS (parallax + 256 + 67 * 32)
+const u8 *parallax;
+
+// The stages with clouds behind them, in play, with the clouds' page in.
+static int parallax_stage(int parts, int status) {
+  if (parts || status < 0 || on_title() || ram[0x4A] != 1 || !ram[0x90] || ram[0x1B] >= 8) return -1;
+  if (top_chr[5] != CLOUD_PAGE && top_chr[6] != CLOUD_PAGE) return -1;
+  return PAR_STAGE(ram[0x1B])[0] ? ram[0x1B] : -1;
+}
+
+static void draw_clouds(int stage) {
+  static int drawn = -1;
+  if (stage == drawn) return;
+  drawn = stage;
+  const u8 *st = PAR_STAGE(stage), *cells = PAR_MAPS + (st[0] - 1) * 1024;
+  volatile u16 *map = MAP(CLOUD_MAP);
+  for (int i = 0; i < 32 * 32; i++) map[i] = (CLOUD_TILE + cells[i]) | st[1] << 12;
+}
+
 void video_init(void) {
   DISPCNT = 0x0080;
   for (int i = 0; i < LAYERS; i++) {
@@ -381,14 +411,20 @@ void video_init(void) {
   for (int n = 0; n < 128; n++) OAM[n * 4] = 0x0200;
   font_init();
   draw_notices();
+  volatile u16 *to = (volatile u16 *)(VRAM + CLOUD_TILE * 32);
+  for (int i = 0; i < 67 * 16; i++) to[i] = PAR_TILES[i * 2] | PAR_TILES[i * 2 + 1] << 8;
 }
 
-static void load_bg_pages(int layer, const u8 *chr_set, u8 ctrl) {
+// how: 0 the pages as they are, 1 the stage's version for parallax, 2 their masks.
+static void load_bg_pages(int layer, const u8 *chr_set, u8 ctrl, int how) {
   int from = (ctrl & 0x10) ? 4 : 0;
   for (int i = 0; i < 4; i++) {
-    if (loaded_bg[layer][i] != chr_set[i + from]) {
-      loaded_bg[layer][i] = chr_set[i + from];
-      copy_chr(VRAM + layer * 0x4000 + i * 0x800, chr_set[i + from]);
+    u32 page = chr_set[i + from];
+    if (how == 1 && PAR_ALIAS(page) != 0xFF) page = PAR_ALIAS(page);
+    if (how == 2) page += PAR_MASK_BASE;
+    if (loaded_bg[layer][i] != page) {
+      loaded_bg[layer][i] = page;
+      copy_chr(VRAM + layer * 0x4000 + i * 0x800, page);
     }
   }
 }
@@ -404,7 +440,6 @@ static int layer_map_up_to_date(int layer, int t, int row) {
 }
 
 void video_present(void) {
-  load_bg_pages(0, top_chr, top_ctrl);
   for (int i = 0; i < 8; i++) {
     if (loaded_obj[i] != top_chr[i]) {
       loaded_obj[i] = top_chr[i];
@@ -414,6 +449,7 @@ void video_present(void) {
   if (palette_dirty) {
     palette_dirty = 0;
     for (int i = 0; i < 16; i++) BG_PAL[(i >> 2) * 16 + (i & 3)] = nes_colors[palette[i & 3 ? i : 0] & 63];
+    for (int i = 0; i < 4; i++) BG_PAL[i * 16 + 15] = nes_colors[palette[0] & 63];  // the masks' sky
     for (int i = 0; i < 16; i++) OBJ_PAL[(i >> 2) * 16 + (i & 3)] = nes_colors[palette[16 + i] & 63];
   }
 
@@ -436,15 +472,34 @@ void video_present(void) {
   int view_h = SCREEN_H - status_h;
   int title = on_title();
   int top = camera(status_line, view_h, status >= 0);
+  int cloud_stage = parallax_stage(parts, status);
+  load_bg_pages(0, top_chr, top_ctrl, cloud_stage >= 0);
 
   int picture_y = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7) + top;
   if (!layer_map_up_to_date(0, top_t & 0x0C1F, picture_y >> 3)) draw_bg(MAP(layer_map[0]), top_t, top, 22);
   BG0VOFS = picture_y & 7;
   BG0HOFS = top_x;
+  if (cloud_stage >= 0) {
+    // The mask on the third layer, with the picture's map and scroll, and the clouds on
+    // the fourth, at half the camera's speed, both behind the sprites behind the picture.
+    load_bg_pages(2, top_chr, top_ctrl, 2);
+    BG2CNT = 2 << 2 | layer_map[0] << 8 | 3;
+    REG16(0x04000018) = top_x;
+    REG16(0x0400001A) = picture_y & 7;
+    draw_clouds(cloud_stage);
+    BG3CNT = 0 << 2 | CLOUD_MAP << 8 | 3;
+    int x = ((top_t >> 10) & 1) * 256 + (top_t & 31) * 8 + top_x;
+    REG16(0x0400001C) = x >> 1;
+    REG16(0x0400001E) = (short)(PAR_STAGE(cloud_stage)[2] | PAR_STAGE(cloud_stage)[3] << 8) + top;
+  } else {
+    BG3CNT = CHARBLOCK_TEXT << 2 | MAP_TEXT << 8;
+    REG16(0x0400001C) = 0;
+    REG16(0x0400001E) = TEXT_SCROLL;
+  }
 
   // Windows: inside window 0 is the bottom layer, inside window 1 the next one up,
   // and outside them both the top of the frame.
-  u16 enable = 0x0100 | (title ? 0x0800 : 0);
+  u16 enable = 0x0100 | (title ? 0x0800 : 0) | (cloud_stage >= 0 ? 0x0C00 : 0);
   u16 window_on = 0;
   u16 win_in = 0;
   int layer = 1;
@@ -453,7 +508,7 @@ void video_present(void) {
     REG16(0x04000008 + layer * 2) = layer << 2 | layer_map[layer] << 8 | 1;
     int t = (r->t & 0x041F) | (r->own_row ? r->t & ~0x041F : top_t & ~0x041F);
     int y = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + (r->own_row ? top - ((r->line + 7) & ~7) + ((r->line + 7) & ~7) : top);
-    load_bg_pages(layer, r->chr, r->ctrl);
+    load_bg_pages(layer, r->chr, r->ctrl, 0);
     if (!layer_map_up_to_date(layer, t, y >> 3)) draw_bg(MAP(layer_map[layer]), t, top, 22);
     REG16(0x04000010 + layer * 4) = r->x;
     REG16(0x04000012 + layer * 4) = y & 7;
@@ -471,7 +526,7 @@ void video_present(void) {
   }
   if (status >= 0) {
     struct region *r = &regions[status];
-    load_bg_pages(layer, r->chr, r->ctrl);
+    load_bg_pages(layer, r->chr, r->ctrl, 0);
     int key = r->t | r->own_row << 16;
     int fine = ((r->own_row ? 0 : status_line) + ((r->t >> 5) & 31) * 8 + ((r->t >> 12) & 7)) & 7;
     if (!layer_map_up_to_date(layer, key, status_line))
@@ -488,8 +543,9 @@ void video_present(void) {
   }
   WIN0H = SCREEN_W;
   WIN1H = SCREEN_W;
-  // The top of the frame, sprites and the notices. Inside the sprite window, no sprites.
-  WINOUT = 0x0919;
+  // The top of the frame, sprites and the notices or the clouds and their mask. Inside
+  // the sprite window, no sprites.
+  WINOUT = cloud_stage >= 0 ? 0x091D : 0x0919;
   nt_dirty = 0;
   int lower_from = -1;
   if (parts || status >= 0) {
@@ -511,7 +567,7 @@ void video_present(void) {
   if (band_from < band_to && !(window_on & 0x4000)) {
     // The portal's lines: everything but the sprites.
     WIN1V = band_from << 8 | band_to;
-    win_in |= 0x09 << 8;  // the top of the frame and the notices, as outside
+    win_in |= (cloud_stage >= 0 ? 0x0D : 0x09) << 8;  // the top of the frame and the notices, as outside
     window_on |= 0x4000;
   }
   WININ = win_in;

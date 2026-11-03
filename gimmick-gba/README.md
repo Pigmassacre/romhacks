@@ -31,6 +31,9 @@ up and down, and the title and cutscenes show the part with something on it.
 
 The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
 
+**Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
+behind the stage, at half its speed, as in the SNES port.
+
 **Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
 skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
 right switch it, and Select or B goes back. They start off, so the game plays as it always did, and
@@ -55,6 +58,10 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   internal RAM as ARM code, as one function that jumps straight between them. The rest stay in ROM
   as Thumb, and anything never seen running goes through an interpreter. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
+- `tools/parallax.py` makes the game's tiles into the GBA's, with versions of the cloud stages'
+  pages whose sky and clouds are blank, and a mask of each page: the sky's colour where the NES
+  shows its colour 0 outside the sky, on a layer between the stage and the clouds. Sprites behind
+  the background go between the stage and the mask, where the NES shows them.
 - Gimmick! 1.5's code goes in a bank after the game's, and its far calls in the fixed bank's dead
   block, as in 1.5 itself. Each of its five hooks, a JSR to a far call, is a switch at the start of
   the block there: with the options it answers to off, the game's own code runs, cycle for cycle.
