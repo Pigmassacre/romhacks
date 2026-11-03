@@ -34,7 +34,10 @@ takes far longer than a store. Anything late is lost, or worse, so the slow part
   converted there, and with the picture off, CHR pages are loaded there. The main thread may be
   part way through writing a map at other times, and a DMA would move the VRAM address under it.
 - `vram_flush` and `chr_all` replace the game's `$F3D3` and `$F06B`, which write its VRAM buffer and
-  CHR banks.
+  CHR banks. `vram_flush` sends long runs by DMA: as a stage starts or Yumetaro comes back, the game
+  draws the whole screen this way with the picture off.
+- `clear_nt` replaces `$F32E`, which fills a nametable and its colours as a screen starts: through
+  the stubs that took 4 frames longer than on the NES, and two DMAs do it with the picture off.
 - `scroll_now` sets the scroll at the very start of vblank from what the game has decided at `$FC-$FF`,
   because the game's own writes come after vblank on a busy frame.
 - Attribute bytes change the palette of 16 map entries each, so they queue up (`attr_work`).
@@ -102,6 +105,10 @@ the background, BG3, BG4. BG2 is above them all, for the title's notices and men
 background shows through colour 0 and is hidden by the rest, so with sky behind everything colour 0 has to be black over
 the sky and yet behind that sprite: only a layer of its own can do that.
 
+- **BG2** has the title's additions: SUPER over the logo, a line under CONTINUE in the menu's own font and
+  colours, and the notices on a white plate like the logo's. That font is the options menu's too, white on black
+  in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title (`NOTICE_DOWN`), so the
+  line is as far under CONTINUE as that is under START.
 - **BG1** is the NES's background, 2 bits a pixel as it is on the NES, in 4 palettes of 4.
 - **BG3** uses BG1's map, with its own tiles: colour 1, always the backdrop's colour, where the NES has colour 0.
 - **BG4** is sky and clouds, at half the camera's speed (`bg2_now`). The bank of cloud is the title screen's rows, which meet at their ends and so loop: the tables are near the top of `tools/build.py`.

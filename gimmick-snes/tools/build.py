@@ -41,7 +41,7 @@ ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
 # Other places that call the runtime, with how many bytes of the game's they take: (bank, pc).
 CALLS = {(0x1B, 0x8116): ("cloud_x", 8)}
 # Routines of the game's that do many PPU writes in vblank, done directly instead.
-REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip"}
+REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt"}
 
 # 2C02 colours.
 NES_RGB = [tuple(bytes.fromhex(c)) for c in """
@@ -669,15 +669,65 @@ def mode7_frames():
 
 # ---- The notices on the title screen ------------------------------------------------
 
-NOTICES = ["PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY", "SELECT - OPTIONS"]
+# On a white plate like the logo's, at these rows, and a line under CONTINUE that looks like the
+# menu's own. The rows are BG2's, which scrolls down NOTICE_DOWN pixels on the title (src/runtime.s).
+NOTICES = {23: "PORT BY PIGMASSACRE", 25: "AI SLOP - DO NOT PLAY"}
+PLATE_ROWS, PLATE_COLS = (22, 27), (4, 28)
+MENU_LINE, MENU_LINE_ROW = "SELECT - OPTIONS", 19
+SUPER_AT = (1, 4)           # the row and column of SUPER, over the logo's plate
+NOTICE_DOWN = 6             # src/runtime.s has the same number
+TILE_SUPER, TILE_LINE = 96, 106
 MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
 MENU_MAP, MENU_LEFT = 0x3C00, 5     # src/runtime.s has the first; the cursor's column
 MENU_ROWS = [11, 13, 15, 17, 19]
 TILE_ARROW = 94             # src/runtime.s has the same number
 TILE_SKY = 95
-FONT_PAGE = 0x40            # the intro's letters: tile 1 is A
 OVERLAY_HALF = 30           # where they go: src/boot.s has the same number, as $DE
 TILE_BLANK, TILE_DASH, TILE_NONE = 0, 27, 127
+
+# The title menu's letters, START and CONTINUE, in its style for the rest of the alphabet: 7 by 7,
+# with a shadow below and to the right. Tile 1 is A.
+MENU_FONT = {
+    "A": ["..###..", ".##.##.", "##...##", "##...##", "#######", "##...##", "##...##"],
+    "B": ["######.", "##...##", "##...##", "######.", "##...##", "##...##", "######."],
+    "C": ["..####.", ".##..##", "##.....", "##.....", "##.....", ".##..##", "..####."],
+    "D": ["#####..", "##..##.", "##...##", "##...##", "##...##", "##..##.", "#####.."],
+    "E": ["#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"],
+    "F": ["#######", "##.....", "##.....", "######.", "##.....", "##.....", "##....."],
+    "G": ["..####.", ".##....", "##.....", "##..###", "##...##", ".##..##", "..#####"],
+    "H": ["##...##", "##...##", "##...##", "#######", "##...##", "##...##", "##...##"],
+    "I": ["######.", "..##...", "..##...", "..##...", "..##...", "..##...", "######."],
+    "J": ["....##.", "....##.", "....##.", "....##.", "##..##.", "##..##.", ".####.."],
+    "K": ["##..##.", "##.##..", "####...", "###....", "####...", "##.##..", "##..##."],
+    "L": ["##.....", "##.....", "##.....", "##.....", "##.....", "##.....", "#######"],
+    "M": ["##...##", "###.###", "#######", "#######", "##.#.##", "##...##", "##...##"],
+    "N": ["##...##", "###..##", "####.##", "#######", "##.####", "##..###", "##...##"],
+    "O": [".#####.", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."],
+    "P": ["######.", "##...##", "##...##", "##...##", "######.", "##.....", "##....."],
+    "Q": [".#####.", "##...##", "##...##", "##...##", "##.####", "##..##.", ".###.##"],
+    "R": ["######.", "##...##", "##...##", "##..###", "#####..", "##.###.", "##..###"],
+    "S": [".####..", "##..##.", "##.....", ".#####.", ".....##", "##...##", ".#####."],
+    "T": ["######.", "..##...", "..##...", "..##...", "..##...", "..##...", "..##..."],
+    "U": ["##...##", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."],
+    "V": ["##...##", "##...##", "##...##", "##...##", ".##.##.", "..###..", "...#..."],
+    "W": ["##...##", "##...##", "##.#.##", "#######", "#######", "###.###", "##...##"],
+    "X": ["##...##", ".##.##.", "..###..", "..###..", "..###..", ".##.##.", "##...##"],
+    "Y": ["##..##.", "##..##.", "##..##.", ".####..", "..##...", "..##...", "..##..."],
+    "Z": ["#######", "....##.", "...##..", "..##...", ".##....", "##.....", "#######"],
+    "-": [".......", ".......", ".......", "######.", ".......", ".......", "......."],
+}
+# SUPER, 8 by 16 a letter: what is filled, inside a black outline.
+SUPER = {
+    "S": [".####.", "######", "##..##", "##....", "###...", ".####.", "..####", "....##", "....##", "....##",
+          "##..##", "##..##", "######", ".####."],
+    "U": ["##..##"] * 12 + ["######", ".####."],
+    "P": ["#####.", "######", "##..##", "##..##", "##..##", "##..##", "######", "#####.", "##....", "##....",
+          "##....", "##....", "##....", "##...."],
+    "E": ["######", "######", "##....", "##....", "##....", "##....", "#####.", "#####.", "##....", "##....",
+          "##....", "##....", "######", "######"],
+    "R": ["#####.", "######", "##..##", "##..##", "##..##", "##..##", "######", "#####.", "##.##.", "##.##.",
+          "##..##", "##..##", "##..##", "##..##"],
+}
 
 # Clouds for parallax, on BG2: the game's own page of them, arranged as it does in stage 1
 # and in stages 2 and 4. An entry is a tile of that page; S is sky, L and W its fill tiles.
@@ -748,29 +798,48 @@ def bg_tables():
 def build_overlay(chr_rom):
     """Tiles and maps for BG2, the notices, which show only on the title, and BG4, the clouds. The
     first 4 KB are for VRAM word $6800, the next 4 KB for $7800 and the last 2 KB for $3C00."""
-    def recolour(tile):
-        # A box, not see-through: 0 black, shading grey, the letter white.
+    def planar(pixels):
         out = bytearray(16)
-        for y in range(8):
-            lo, hi = tile[y], tile[8 + y]
-            a = b = 0
-            for x in range(8):
-                v = (lo >> (7 - x) & 1) | (hi >> (7 - x) & 1) << 1
-                c = {0: 1, 1: 2, 2: 2, 3: 3}[v]
-                a |= (c & 1) << (7 - x)
-                b |= (c >> 1) << (7 - x)
-            out[y * 2], out[y * 2 + 1] = a, b
+        for y, row in enumerate(pixels):
+            for x, c in enumerate(row):
+                out[y * 2] |= (c & 1) << (7 - x)
+                out[y * 2 + 1] |= (c >> 1) << (7 - x)
         return bytes(out)
 
+    def letter(ch, back, fill, shade):
+        # The menu's style: the shadow is where the letter is not, below or right of where it is.
+        g = MENU_FONT[ch]
+        on = lambda x, y: 0 <= x < 7 and 0 <= y < 7 and g[y][x] == "#"
+        return planar([[fill if on(x, y) else shade if on(x - 1, y) or on(x, y - 1) else back
+                        for x in range(8)] for y in range(8)])
+
     tiles = bytearray(16 * 128)
-    base = FONT_PAGE * 0x400
-    tiles[0:16] = recolour(bytes(16))
+    # Palette 2 is black, grey and white: white letters on black, for the options menu. Palette 3
+    # swaps black and white for the plate, where the same tiles are black letters on white.
+    tiles[0:16] = planar([[1] * 8] * 8)
     for i in range(26):
-        tiles[(i + 1) * 16:(i + 2) * 16] = recolour(chr_rom[base + (i + 1) * 16:base + (i + 2) * 16])
-    dash = bytearray(16)
-    dash[3], dash[4] = 0x7E, 0x7E
-    dash[8 + 3], dash[8 + 4] = 0x7E, 0x7E
-    tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = recolour(bytes(dash))
+        tiles[(i + 1) * 16:(i + 2) * 16] = letter(chr(65 + i), 1, 3, 2)
+    tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = letter("-", 1, 3, 2)
+    # The line under CONTINUE, with nothing behind it: grey letters, as CONTINUE's, in palette 3.
+    line_tiles = {}
+    for ch in MENU_LINE.replace(" ", ""):
+        if ch not in line_tiles:
+            n = TILE_LINE + len(line_tiles)
+            line_tiles[ch] = n
+            tiles[n * 16:(n + 1) * 16] = letter(ch, 0, 2, 3)
+    if TILE_LINE + len(line_tiles) > TILE_NONE:
+        sys.exit("too many tiles for the title's notices")
+    # SUPER, palette 4: a black outline, red, and a light edge along the top of each stroke.
+    for i, ch in enumerate("SUPER"):
+        g = SUPER[ch]
+        on = lambda x, y: 1 <= x <= 6 and 1 <= y <= 14 and g[y - 1][x - 1] == "#"
+        px = [[(3 if not on(x, y - 1) else 2) if on(x, y) else
+               1 if any(on(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)) else 0
+               for x in range(8)] for y in range(16)]
+        n = TILE_SUPER + i * 2
+        tiles[n * 16:(n + 1) * 16] = planar(px[:8])
+        tiles[(n + 1) * 16:(n + 2) * 16] = planar(px[8:])
+
     def solid(tile):
         # BG4 is the back: what would be see-through is sky, colour 1.
         out = bytearray(tile_2bpp(tile))
@@ -809,21 +878,28 @@ def build_overlay(chr_rom):
     arrow = bytearray(16)
     for y, v in enumerate((0x60, 0x70, 0x78, 0x7C, 0x78, 0x70, 0x60, 0x00)):
         arrow[y], arrow[8 + y] = v, v
-    tiles[TILE_ARROW * 16:(TILE_ARROW + 1) * 16] = recolour(bytes(arrow))
+    tiles[TILE_ARROW * 16:(TILE_ARROW + 1) * 16] = planar(
+        [[3 if arrow[y] >> (7 - x) & 1 else 1 for x in range(8)] for y in range(8)])
 
-    word = lambda t, front=True: bytes([t, 0x01 | 0x08 | (0x20 if front else 0)])  # tile 256 + t, palette 2
+    # Tile 256 + t, in a palette, in front of everything
+    word = lambda t, front=True, pal=2: bytes([t, 0x01 | pal << 2 | (0x20 if front else 0)])
     screen = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
-    top = 22
-    width = max(len(t) for t in NOTICES) + 2
-    left = (32 - width) // 2
-    for r in range(top - 1, top + 2 * len(NOTICES)):
-        for c in range(left, left + width):
-            screen[r][c] = word(TILE_BLANK)
-    for n, text in enumerate(NOTICES):
+    for r in range(*PLATE_ROWS):
+        for c in range(*PLATE_COLS):
+            screen[r][c] = word(TILE_BLANK, pal=3)
+    for r, text in NOTICES.items():
         c = (32 - len(text)) // 2
         for i, ch in enumerate(text):
             t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
-            screen[top + n * 2][c + i] = word(t)
+            screen[r][c + i] = word(t, pal=3)
+    c = (32 - len(MENU_LINE)) // 2
+    for i, ch in enumerate(MENU_LINE):
+        if ch != " ":
+            screen[MENU_LINE_ROW][c + i] = word(line_tiles[ch], pal=3)
+    r, c = SUPER_AT
+    for i in range(5):
+        screen[r][c + i] = word(TILE_SUPER + i * 2, pal=4)
+        screen[r + 1][c + i] = word(TILE_SUPER + i * 2 + 1, pal=4)
     menu = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
     for r in range(7, 24):
         for c in range(3, 29):

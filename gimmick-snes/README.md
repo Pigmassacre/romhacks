@@ -1,4 +1,4 @@
-# Gimmick! for SNES
+# Super Gimmick!
 
 A port of Sunsoft's *Gimmick!* (Famicom, 1992) to the Super Nintendo. It is a native port: the
 game's own 6502 code runs directly on the SNES's 65816, and only what touches NES hardware is
