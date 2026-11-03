@@ -678,7 +678,8 @@ OPTIONS_AT = (19, 12)       # under START and CONTINUE, which are sprites at x 9
 NOTICE_DOWN = 6             # src/runtime.s has the same number
 TILE_LOGO = 96              # the logo's SUPER, then OPTIONS's letters
 # SUPER in the logo, over its three lines of small print: src/logo_super.txt is this box of the
-# screen, black (#) on white (.). It ends at the k. tools/super_edit.py edits it.
+# screen in the logo's colours: black (#), dark grey (D), light grey (L) and white (.). It ends at
+# the k. tools/super_edit.py edits it. A tile has one grey: palette 4 has the dark, 6 the light.
 LOGO_BOX = (80, 33, 167, 53)
 LOGO_FILE = os.path.join(REPO, "src", "logo_super.txt")
 MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
@@ -826,7 +827,7 @@ def build_overlay(chr_rom):
             tiles[n * 16:(n + 1) * 16] = data
         return known[data]
 
-    # SUPER, palette 4: black on white.
+    # SUPER: black, grey and white, in palette 4 or 6 by the grey.
     logo = {}
     x0, y0, x1, y1 = LOGO_BOX
     rows = open(LOGO_FILE).read().split()
@@ -834,14 +835,21 @@ def build_overlay(chr_rom):
         sys.exit("src/logo_super.txt has to be %d lines of %d" % (y1 - y0, x1 - x0))
     for y, row in enumerate(rows):
         for x, v in enumerate(row):
-            logo[x0 + x, y0 + y] = 1 if v == "#" else 3
+            if v not in "#DL.":
+                sys.exit("src/logo_super.txt has %r: it takes # D L and ." % v)
+            logo[x0 + x, y0 + y] = v
     logo_cells = {}
     for (x, y) in logo:
         logo_cells.setdefault(((y - NOTICE_DOWN + 1) // 8, x // 8), None)
     for (r, c) in logo_cells:
         top = r * 8 + NOTICE_DOWN - 1
-        logo_cells[r, c] = tile_for(planar([[logo.get((c * 8 + x, top + y), 0) for x in range(8)]
-                                            for y in range(8)]))
+        px = [[logo.get((c * 8 + x, top + y)) for x in range(8)] for y in range(8)]
+        greys = {v for row in px for v in row if v in ("D", "L")}
+        if len(greys) > 1:
+            sys.exit("src/logo_super.txt has both greys in the tile at x %d, y %d" % (c * 8, top))
+        colour = {None: 0, "#": 1, "D": 2, "L": 2, ".": 3}
+        logo_cells[r, c] = (tile_for(planar([[colour[v] for v in row] for row in px])),
+                            6 if "L" in greys else 4)
     options = [tile_for(letter(ch, 0, 2, 3)) for ch in "OPTIONS"]
     def solid(tile):
         # BG4 is the back: what would be see-through is sky, colour 1.
@@ -898,8 +906,8 @@ def build_overlay(chr_rom):
     r, c = OPTIONS_AT
     for i, t in enumerate(options):
         screen[r][c + i] = word(t, pal=5)
-    for (r, c), t in logo_cells.items():
-        screen[r][c] = word(t, pal=4)
+    for (r, c), (t, pal) in logo_cells.items():
+        screen[r][c] = word(t, pal=pal)
     menu = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
     for r in range(7, 24):
         for c in range(3, 29):
@@ -915,8 +923,8 @@ def build_overlay(chr_rom):
         text(row, MENU_LEFT + 2, item)
         text(row, MENU_LEFT + 18, "OFF")
     text(22, 12, "B - BACK")
-    for (r, c), t in logo_cells.items():
-        menu[r][c] = word(t, pal=4)
+    for (r, c), (t, pal) in logo_cells.items():
+        menu[r][c] = word(t, pal=pal)
     return bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)
 
 

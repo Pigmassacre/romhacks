@@ -35,17 +35,23 @@
   figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
   #status { min-height: 1.4em; color: var(--muted); }
   #status.ok { color: var(--good); } #status.bad { color: var(--bad); }
+  .swatch { width: 30px; height: 30px; padding: 0; border: 2px solid var(--line); vertical-align: middle; }
+  .swatch.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  #swatches { display: inline-flex; gap: 6px; margin-right: 8px; }
   kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 </head>
 <body>
 <main>
   <h1>SUPER in the title logo</h1>
-  <p class="lead">Left button draws black, right button draws white. Blue lines are BG2's tile edges: every
-    different 8×8 square costs a tile, and SUPER has a fixed number of them. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</p>
+  <p class="lead">Pick a colour of the logo's and draw with the left button; the right button draws white. Blue lines
+    are BG2's tile edges: every different 8×8 square costs a tile, SUPER has a fixed number of them, and a square
+    can have only one of the two greys (red marks one with both). <kbd>1</kbd>–<kbd>4</kbd> pick a colour,
+    <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</p>
 
   <div class="panel">
     <div class="bar">
+      <span id="swatches"></span>
       <button id="undo">Undo</button>
       <button data-shift="-1,0">◀</button><button data-shift="1,0">▶</button>
       <button data-shift="0,-1">▲</button><button data-shift="0,1">▼</button>
@@ -67,6 +73,9 @@
 </main>
 <script>
 const ZOOM = 12;
+// The logo's colours, as the SNES shows them, and their letters in src/logo_super.txt.
+const COLOURS = {"#": "#000000", "D": "#636363", "L": "#adadad", ".": "#ffffff"};
+let pen = "#";
 let S, rows, saved, title = null;
 const undo = [];
 const $ = id => document.getElementById(id);
@@ -76,25 +85,30 @@ function w() { return S.box[2] - S.box[0]; }
 function h() { return S.box[3] - S.box[1]; }
 
 function tiles() {
-  // The 8x8 squares of BG2 that the box touches, as SUPER's tiles: 0 outside the box.
-  const [x0, y0, x1, y1] = S.box, seen = new Set();
+  // The 8x8 squares of BG2 that the box touches, as SUPER's tiles: 0 outside the box, and either grey
+  // is colour 2, as the palette decides which. Squares with both greys are clashes, in box pixels.
+  const [x0, y0, x1, y1] = S.box, seen = new Set(), clashes = [];
   const top = r => r * 8 + S.rowTop;
   for (let r = Math.floor((y0 - S.rowTop) / 8); top(r) < y1; r++)
     for (let c = Math.floor(x0 / 8); c * 8 < x1; c++) {
-      let key = "";
+      let key = "", greys = new Set();
       for (let y = top(r); y < top(r) + 8; y++)
-        for (let x = c * 8; x < c * 8 + 8; x++)
-          key += (x < x0 || x >= x1 || y < y0 || y >= y1) ? "0" : rows[y - y0][x - x0] === "#" ? "1" : "3";
+        for (let x = c * 8; x < c * 8 + 8; x++) {
+          const v = (x < x0 || x >= x1 || y < y0 || y >= y1) ? null : rows[y - y0][x - x0];
+          key += {null: "0", "#": "1", "D": "2", "L": "2", ".": "3"}[v];
+          if (v === "D" || v === "L") greys.add(v);
+        }
       seen.add(key);
+      if (greys.size > 1) clashes.push([c * 8 - x0, top(r) - y0]);
     }
-  return seen.size;
+  return {count: seen.size, clashes};
 }
 
 function drawGrid() {
   grid.width = w() * ZOOM; grid.height = h() * ZOOM;
   for (let y = 0; y < h(); y++)
     for (let x = 0; x < w(); x++) {
-      g.fillStyle = rows[y][x] === "#" ? "#000" : "#fff";
+      g.fillStyle = COLOURS[rows[y][x]];
       g.fillRect(x * ZOOM, y * ZOOM, ZOOM, ZOOM);
     }
   g.fillStyle = "rgba(0,0,0,0.08)";
@@ -113,18 +127,37 @@ function drawPreview(canvas, scale) {
   else { c.fillStyle = "#63adff"; c.fillRect(0, 0, canvas.width, canvas.height); }
   for (let y = 0; y < h(); y++)
     for (let x = 0; x < w(); x++) {
-      c.fillStyle = rows[y][x] === "#" ? "#000" : "#fff";
+      c.fillStyle = COLOURS[rows[y][x]];
       c.fillRect((S.box[0] + x) * scale, (S.box[1] + y) * scale, scale, scale);
     }
 }
 
 function refresh() {
   drawGrid(); drawPreview($("big"), 2); drawPreview($("small"), 1);
-  const n = tiles(), m = $("meter");
-  m.textContent = `Tiles: ${n} of ${S.budget}`;
-  m.classList.toggle("over", n > S.budget);
-  $("save").disabled = n > S.budget || rows.join() === saved.join();
+  const {count, clashes} = tiles(), m = $("meter");
+  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--bad");
+  g.lineWidth = 3;
+  for (const [x, y] of clashes) g.strokeRect(x * ZOOM + 2, y * ZOOM + 2, 8 * ZOOM - 4, 8 * ZOOM - 4);
+  m.textContent = `Tiles: ${count} of ${S.budget}` + (clashes.length ? ` · ${clashes.length} with both greys` : "");
+  const bad = count > S.budget || clashes.length > 0;
+  m.classList.toggle("over", bad);
+  $("save").disabled = bad || rows.join() === saved.join();
 }
+
+const keys = Object.keys(COLOURS);
+keys.forEach((k, i) => {
+  const b = document.createElement("button");
+  b.className = "swatch"; b.style.background = COLOURS[k];
+  b.title = ["Black", "Dark grey", "Light grey", "White"][i] + " (" + (i + 1) + ")";
+  b.onclick = () => pick(k);
+  b.dataset.pen = k;
+  $("swatches").appendChild(b);
+});
+function pick(k) {
+  pen = k;
+  document.querySelectorAll(".swatch").forEach(b => b.classList.toggle("on", b.dataset.pen === k));
+}
+pick("#");
 
 function remember() { undo.push(rows.slice()); if (undo.length > 200) undo.shift(); }
 function set(x, y, v) {
@@ -144,7 +177,7 @@ function line([ax, ay], [bx, by], v) {
 grid.addEventListener("contextmenu", e => e.preventDefault());
 grid.addEventListener("pointerdown", e => {
   remember();
-  painting = e.button === 2 ? "." : "#";
+  painting = e.button === 2 ? "." : pen;
   last = cell(e); set(...last, painting); refresh();
   grid.setPointerCapture(e.pointerId);
 });
@@ -157,6 +190,7 @@ grid.addEventListener("pointerup", () => { painting = null; });
 $("undo").onclick = () => { if (undo.length) { rows = undo.pop(); refresh(); } };
 document.addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); $("undo").click(); }
+  else if ("1234".includes(e.key) && !e.ctrlKey && !e.metaKey) pick(keys[Number(e.key) - 1]);
 });
 $("clear").onclick = () => { remember(); rows = rows.map(r => ".".repeat(r.length)); refresh(); };
 $("revert").onclick = () => { remember(); rows = saved.slice(); refresh(); };

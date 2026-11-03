@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Edit SUPER in the title screen's logo, in a browser, over a picture of the title.
 
-    python3 tools/super_edit.py         # then open http://localhost:8765
+    python3 tools/super_edit.py         # opens http://localhost:8765 (--port for another)
 
 It edits src/logo_super.txt, and saving builds the ROM. The picture is the title screen of
 out/gimmick.sfc, taken with Mesen; the page draws the box being edited over it.
@@ -91,7 +91,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         rows = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["rows"]
         x0, y0, x1, y1 = build.LOGO_BOX
-        if len(rows) != y1 - y0 or any(len(r) != x1 - x0 or set(r) - set("#.") for r in rows):
+        if len(rows) != y1 - y0 or any(len(r) != x1 - x0 or set(r) - set("#DL.") for r in rows):
             self.reply(json.dumps({"ok": False, "log": ["the drawing is not the box's size"]}).encode())
             return
         with open(build.LOGO_FILE, "w") as f:
@@ -104,6 +104,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if "--port" in sys.argv:
+        PORT = int(sys.argv[sys.argv.index("--port") + 1])
     url = "http://localhost:%d" % PORT
     print("SUPER editor at %s (Ctrl+C to stop)" % url)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)

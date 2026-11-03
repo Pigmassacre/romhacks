@@ -43,7 +43,8 @@ In the options menu, A, Y, Left or Right switches an option and B goes back.
 
 ### Drawing SUPER
 
-SUPER in the title's logo is `src/logo_super.txt`, black (`#`) on white (`.`). To draw it over a
+SUPER in the title's logo is `src/logo_super.txt`, in the logo's four colours: black (`#`), dark grey
+(`D`), light grey (`L`) and white (`.`). An 8×8 tile can have only one of the greys. To draw it over a
 picture of the title, with a count of the tiles it may use:
 
 ```bash
