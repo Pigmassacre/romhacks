@@ -745,6 +745,11 @@ def main():
     for b in banks.values():
         decode(b, by_window)
         add_entry_points(b, entries)
+    # 1.5's far calls and its routines are entered from outside their banks, by the
+    # hooks and by FarCall's JSR, so no jump the decoder follows marks them: without a
+    # block of their own, each of those calls ran in the interpreter.
+    fixed.leaders |= fixed_seeds & set(fixed.instrs)
+    hack.leaders |= hack_seeds & set(hack.instrs)
     # Each hook starts a block of its own, which stays out of fast RAM, and where its far
     # call returns to, in the middle of the original's instructions, 1.5's own code goes
     # on: those blocks are decoded from a copy of the bank with the hook in.

@@ -410,6 +410,11 @@ static inline int on_title(void) {
 }
 int video_on_title(void) { return on_title(); }
 #define STATUS_FROM 184  // a mid-frame change this low is the status bar
+// The row a mid-frame change starts, for a game that times its changes for a row
+// boundary: the nearest one, as the count here can be a few lines off either way. On
+// the GBA an interrupt can be taken a little late in a heavy frame, and rounding up
+// then put the status bar a whole row lower for that frame.
+#define SPLIT_ROW(line) (((line) + 4) & ~7)
 
 // Which lines of a screen without a status bar have something on them: everything
 // that differs from the screen's top-left tile, and the sprites.
@@ -781,10 +786,10 @@ void video_present(void) {
   // A region low on the screen is the status bar, which stays on screen whatever the
   // camera does, and nothing after it matters. One higher up is part of one picture,
   // like the title's logo over its scrolling ground, and keeps its place in it. The
-  // game times these for a row boundary, and the count here can be a line short.
+  // game times these for a row boundary: see SPLIT_ROW.
   int parts = 0, status = -1, part_line[LAYERS - 1], status_line = 240;
   for (int i = 0; i < region_count && parts + (status >= 0) < LAYERS - 1 && status < 0; i++) {
-    int line = (regions[i].line + 7) & ~7;
+    int line = SPLIT_ROW(regions[i].line);
     if (line >= STATUS_FROM && line < 240) {
       status = i;
       status_line = line;
@@ -873,12 +878,12 @@ void video_present(void) {
     struct region *r = &regions[part_line[p]];
     REG16(0x04000008 + layer * 2) = layer << 2 | layer_map[layer] << 8 | 1;
     int t = (r->t & 0x041F) | (r->own_row ? r->t & ~0x041F : top_t & ~0x041F);
-    int y = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + (r->own_row ? top - ((r->line + 7) & ~7) + ((r->line + 7) & ~7) : top);
+    int y = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + (r->own_row ? top - SPLIT_ROW(r->line) + SPLIT_ROW(r->line) : top);
     load_bg_pages(layer, r->chr, r->ctrl, 0);
     if (!layer_map_up_to_date(layer, t, y >> 3)) draw_bg(MAP(layer_map[layer]), t, top, 22);
     REG16(0x04000010 + layer * 4) = r->x;
     REG16(0x04000012 + layer * 4) = y & 7;
-    int from = ((r->line + 7) & ~7) - top;
+    int from = SPLIT_ROW(r->line) - top;
     if (from < 0) from = 0;
     if (from > view_h) from = view_h;
     u16 v = from << 8 | (status >= 0 ? view_h : SCREEN_H);
@@ -920,7 +925,7 @@ void video_present(void) {
     int differ = parts;
     for (int i = 0; i < 8; i++) differ |= r->chr[i] != top_chr[i];
     if (differ) {
-      lower_from = parts ? (r->line + 7) & ~7 : status_line;
+      lower_from = parts ? SPLIT_ROW(r->line) : status_line;
       for (int i = 0; i < 8; i++) {
         if (loaded_obj_lower[i] != r->chr[i]) {
           loaded_obj_lower[i] = r->chr[i];

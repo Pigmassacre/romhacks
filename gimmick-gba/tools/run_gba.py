@@ -27,8 +27,9 @@ try:
                    timeout=seconds, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 except subprocess.TimeoutExpired:
     pass
-# Ending the launcher leaves mGBA running inside its sandbox.
-subprocess.run(["flatpak", "kill", "io.mgba.mGBA"], stderr=subprocess.DEVNULL)
+# Ending the launcher leaves mGBA running inside its sandbox. Stop this one only, by its log
+# file: other mGBAs, from other checkouts, may be running too.
+subprocess.run(["pkill", "-f", "^mgba-qt .*logFile=" + log], stderr=subprocess.DEVNULL)
 values = re.findall(r"GBA Debug: (\w+)=(\d+)", open(log, errors="replace").read())
 windows, final, current = [], None, {}
 for key, value in values:
