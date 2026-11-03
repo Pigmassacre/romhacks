@@ -3,6 +3,7 @@
 
     python3 tools/build_gba.py           # out/gimmick.gba, plays from the buttons
     python3 tools/build_gba.py --replay [trace-dir]  # out/gimmick_replay.gba
+    python3 tools/build_gba.py --replay [trace-dir] --timing [--no-slowdown]
 
 The replay build plays a recording (out/trace unless named) and compares RAM with
 the PC build's RAM in out/host_ram.bin, which tools/compare.py has checked against
@@ -10,7 +11,9 @@ the NES. So run tools/check_host.sh on that recording first. Needs devkitARM.
 
 --timing also leaves out everything that is only there for the check, so the timing it
 reports is the real build's. It has no exact timing, so its RAM can drift from the
-recording on a heavy frame, and it does not check RAM.
+recording on a heavy frame, and it does not check RAM. It keeps the NES's slowdown, which
+the real build does not have, so that the recording's buttons play the same game;
+--no-slowdown leaves it out, for a recording where nothing is pressed (--crowd).
 """
 import os
 import struct
@@ -96,7 +99,7 @@ def build(replay, hot):
     name = "gimmick"
     if replay:
         name = "gimmick_replay"
-        after = [a for a in sys.argv[sys.argv.index("--replay") + 1:] if a != "--timing"]
+        after = [a for a in sys.argv[sys.argv.index("--replay") + 1:] if not a.startswith("--")]
         trace = os.path.abspath(after[0]) if after else os.path.join(OUT, "trace")
         table = os.path.join(GEN, "expected.bin")
         expected_table(table, trace)
@@ -124,6 +127,11 @@ def build(replay, hot):
             flags.append("-DREPLAY_OPTIONS=OPT_ALL")
         if "--timing" in sys.argv:
             flags.append("-DTIMING_ONLY")
+            # The build you play has no slowdown, but a recording's buttons only replay
+            # the same game with the NES's frames: tests/s_crowd.lua presses nothing,
+            # for timing without it.
+            if "--no-slowdown" not in sys.argv:
+                flags.append("-DKEEP_SLOWDOWN")
     data_s = os.path.join(GEN, "data.s")
     open(data_s, "w").write("\n".join(data) + "\n")
     sources = [os.path.join(REPO, "runtime", s) for s in ("gba.c", "core.c", "apu.c", "video.c")]

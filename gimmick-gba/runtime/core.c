@@ -65,6 +65,20 @@ static u8 dmc_loop;
 
 const nmi_sync_t *nmi_sync;
 int nmi_sync_count;
+// No slowdown. On the NES, a frame whose work runs past vblank lags: the NMI comes while
+// the game is still busy, and its next frame waits for the NMI after. Here vblank waits
+// for the game instead, up to a frame longer, and the NES's frame grows by what it took.
+// The game is waiting when its wait routine has put $AC in $F0 and spins until the NMI
+// clears it. A hold happens once a pass of the game's loop: long loads still get their
+// NMIs, for the music. Builds that check against a recording keep the NES's timing, and
+// so do timing builds (KEEP_SLOWDOWN) unless asked: a recording's buttons only replay
+// the same game with the NES's frames.
+#if !defined(EXACT_TIMING) && !defined(KEEP_SLOWDOWN)
+#define NO_SLOWDOWN 1
+#define HOLD_MAX 29781u  // cycles: a frame
+static int hold_on, hold_used;
+#endif
+
 #ifdef EXACT_TIMING
 #define SYNC_WINDOW 8000   // how far from the due time an NMI may be moved to its place
 static int sync_done, sync_pending;
@@ -148,6 +162,15 @@ HOT static void sync_vbl(void) {
   }
 #endif
   while (cyc >= vbl_half / 2) {
+#ifdef NO_SLOWDOWN
+    if (!ram[0xF0] && (ppu_ctrl & 0x80) && !hold_used) {
+      u32 limit = (hold_on ? 0 : vbl_half / 2 + HOLD_MAX);
+      if (!hold_on) { hold_on = 1; vbl_half = 2 * limit; }  // checked again then, at the latest
+      if (cyc < vbl_half / 2) break;
+      hold_used = 1;  // it never got there: this frame lags, as on the NES
+    }
+    hold_on = 0;
+#endif
     ppu_status |= 0x80;
     ppu_status &= ~0x40;
     vbl_end = vbl_half / 2 + VBL_LENGTH;
@@ -374,6 +397,12 @@ HOT void cpu_run(void) {
 #endif
 #ifndef NO_WAIT_SKIP
     // The game's two wait loops (lda $F0 / bne): nothing changes until an interrupt.
+#ifdef NO_SLOWDOWN
+    if ((pc == 0xF29A || pc == 0xF2A3) && ram[0xF0]) {
+      hold_used = 0;
+      if (hold_on) { vbl_half = 2 * cyc; sync_vbl(); continue; }  // done: vblank now
+    }
+#endif
     if ((pc == 0xF29A || pc == 0xF2A3) && ram[0xF0] && cyc < block_limit) cyc = block_limit;
 #endif
 #ifdef EXACT_TIMING

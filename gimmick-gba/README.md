@@ -57,9 +57,11 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 - Normal play takes about 70% of the GBA's time for a frame, and the busiest about 85%. With all
   of Gimmick! 1.5's options on it takes about 80%, as their code is not in fast RAM. Some single
   frames take more, up to about 140%, mostly where the NES itself runs long.
-- A heavy frame can run over the GBA's time for a frame. Then that frame is not drawn and the next
-  starts straight away. The next is always drawn, so under a sustained load the game slows, as it
-  does on the NES, and the sound repeats. Loading a room can take a few frames.
+- It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
+  vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
+  But a heavy frame can still run over the GBA's own time for a frame. Then that frame is not
+  drawn and the next starts straight away. The next is always drawn, so under a sustained load
+  the game slows and the sound repeats. Loading a room can take a few frames.
 - The sound runs on the NES's frame clock, so changes land at most a frame apart from the NES.
 - A few things are simplified: a sprite that crosses a mid-frame graphics change uses the upper
   set of graphics, and a picture is only ever split in two.
@@ -113,6 +115,10 @@ python3 tools/record.py --boss 2600
 ```
 
 ```bash
+python3 tools/record.py --crowd 3000
+```
+
+```bash
 python3 tools/record.py --15 6000
 ```
 
@@ -121,7 +127,9 @@ record RAM at every NMI, what code ran, and what the pads gave. `--tour` warps t
 and checkpoint, sweeps across each stage's map, clears each stage, and goes through the world map,
 both endings and a game over (`tests/s_tour.lua`). `--boss` fights a crowd of ohagis in the first stage,
 the heaviest frames found so far (`tests/s_boss.lua`), and its code counts 20 times over when the
-translator picks what goes in fast RAM. `--15` plays the default run on a NES ROM with all of 1.5 on
+translator picks what goes in fast RAM. `--crowd` stands still in the boss's room while it
+throws (`tests/s_crowd.lua`): with nothing pressed, the game plays the same without the NES's
+slowdown, so `--timing --no-slowdown` can time the build you play there. `--15` plays the default run on a NES ROM with all of 1.5 on
 (`out/gen/gimmick-1.5.nes`), and the PC build replays it with `OPTIONS=31` set: every byte of RAM
 should match there too.
 
@@ -136,7 +144,7 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 | Tool | What it checks |
 |---|---|
 | `tools/build_gba.py --replay out/trace_tour`, then `tools/run_gba.py 1600` | The same replay on the GBA in mGBA, with RAM checked every frame |
-| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play |
+| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play, with the NES's slowdown kept so that the recording plays the same; and how much of the stack's room was never used |
 | `tools/compare_screens.py` | Every marked moment of the tour as the GBA would show it, beside Mesen's screenshot of that frame, on contact sheets in `out/screens/` |
 | `tools/compare_sound.py` | The sound chips' state in Mesen against `runtime/apu.c`'s, frame by frame |
 | `tools/record.py --audio 2600`, then `tools/compare_audio.py` | The sound itself: what each of Mesen's channels outputs, through Mesen's mixer formulas, against this port's, for loudness and spectrum |
