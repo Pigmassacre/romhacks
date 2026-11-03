@@ -39,7 +39,7 @@ SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 # the SNES has no limit of 8 sprites on a line for the reversal to spread out. (bank, the immediate)
 ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
 # Other places that call the runtime, with how many bytes of the game's they take: (bank, pc).
-CALLS = {(0x1B, 0x8116): ("cloud_x", 8)}
+CALLS = {(0x1B, 0x8116): ("cloud_x", 8), (0x1B, 0x813C): ("title_menu", 64)}
 # Routines of the game's that do many PPU writes in vblank, done directly instead.
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt"}
 
@@ -669,14 +669,18 @@ def mode7_frames():
 
 # ---- The notices on the title screen ------------------------------------------------
 
-# On a white plate like the logo's, at these rows, and a line under CONTINUE that looks like the
-# menu's own. The rows are BG2's, which scrolls down NOTICE_DOWN pixels on the title (src/runtime.s).
+# On a white plate like the logo's, at these rows, and OPTIONS under CONTINUE as the menu's third
+# entry. The rows are BG2's, which scrolls down NOTICE_DOWN pixels on the title (src/runtime.s), so
+# that row r starts at line r * 8 + NOTICE_DOWN - 1.
 NOTICES = {23: "PORT BY PIGMASSACRE", 25: "AI SLOP - DO NOT PLAY"}
 PLATE_ROWS, PLATE_COLS = (22, 27), (4, 28)
-MENU_LINE, MENU_LINE_ROW = "SELECT - OPTIONS", 19
-SUPER_AT = (1, 4)           # the row and column of SUPER, over the logo's plate
+OPTIONS_AT = (19, 12)       # under START and CONTINUE, which are sprites at x 96
 NOTICE_DOWN = 6             # src/runtime.s has the same number
-TILE_SUPER, TILE_LINE = 96, 106
+TILE_LOGO = 96              # the logo's SUPER, then OPTIONS's letters
+# SUPER in the logo, over its three lines of small print: src/logo_super.txt is this box of the
+# screen, black (#) on white (.). It ends at the k. tools/super_edit.py edits it.
+LOGO_BOX = (80, 33, 167, 53)
+LOGO_FILE = os.path.join(REPO, "src", "logo_super.txt")
 MENU_ITEMS = ["STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON", "COYOTE TIME", "JUMP BUFFERING"]
 MENU_MAP, MENU_LEFT = 0x3C00, 5     # src/runtime.s has the first; the cursor's column
 MENU_ROWS = [11, 13, 15, 17, 19]
@@ -716,19 +720,6 @@ MENU_FONT = {
     "Z": ["#######", "....##.", "...##..", "..##...", ".##....", "##.....", "#######"],
     "-": [".......", ".......", ".......", "######.", ".......", ".......", "......."],
 }
-# SUPER, 8 by 16 a letter: what is filled, inside a black outline.
-SUPER = {
-    "S": [".####.", "######", "##..##", "##....", "###...", ".####.", "..####", "....##", "....##", "....##",
-          "##..##", "##..##", "######", ".####."],
-    "U": ["##..##"] * 12 + ["######", ".####."],
-    "P": ["#####.", "######", "##..##", "##..##", "##..##", "##..##", "######", "#####.", "##....", "##....",
-          "##....", "##....", "##....", "##...."],
-    "E": ["######", "######", "##....", "##....", "##....", "##....", "#####.", "#####.", "##....", "##....",
-          "##....", "##....", "######", "######"],
-    "R": ["#####.", "######", "##..##", "##..##", "##..##", "##..##", "######", "#####.", "##.##.", "##.##.",
-          "##..##", "##..##", "##..##", "##..##"],
-}
-
 # Clouds for parallax, on BG2: the game's own page of them, arranged as it does in stage 1
 # and in stages 2 and 4. An entry is a tile of that page; S is sky, L and W its fill tiles.
 TILE_CLOUDS, FILL_PAGE = 28, 0x00
@@ -820,26 +811,38 @@ def build_overlay(chr_rom):
     for i in range(26):
         tiles[(i + 1) * 16:(i + 2) * 16] = letter(chr(65 + i), 1, 3, 2)
     tiles[TILE_DASH * 16:(TILE_DASH + 1) * 16] = letter("-", 1, 3, 2)
-    # The line under CONTINUE, with nothing behind it: grey letters, as CONTINUE's, in palette 3.
-    line_tiles = {}
-    for ch in MENU_LINE.replace(" ", ""):
-        if ch not in line_tiles:
-            n = TILE_LINE + len(line_tiles)
-            line_tiles[ch] = n
-            tiles[n * 16:(n + 1) * 16] = letter(ch, 0, 2, 3)
-    if TILE_LINE + len(line_tiles) > TILE_NONE:
-        sys.exit("too many tiles for the title's notices")
-    # SUPER, palette 4: a black outline, red, and a light edge along the top of each stroke.
-    for i, ch in enumerate("SUPER"):
-        g = SUPER[ch]
-        on = lambda x, y: 1 <= x <= 6 and 1 <= y <= 14 and g[y - 1][x - 1] == "#"
-        px = [[(3 if not on(x, y - 1) else 2) if on(x, y) else
-               1 if any(on(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)) else 0
-               for x in range(8)] for y in range(16)]
-        n = TILE_SUPER + i * 2
-        tiles[n * 16:(n + 1) * 16] = planar(px[:8])
-        tiles[(n + 1) * 16:(n + 2) * 16] = planar(px[8:])
+    # OPTIONS, with nothing behind it: grey letters as CONTINUE's, in palette 5, whose grey turns
+    # white when it is chosen, as START's and CONTINUE's do (src/runtime.s).
+    free = [TILE_LOGO]
+    known = {}
 
+    def tile_for(data):
+        if data not in known:
+            n = free[0]
+            if n >= TILE_NONE:
+                sys.exit("too many tiles for the title's additions")
+            free[0] += 1
+            known[data] = n
+            tiles[n * 16:(n + 1) * 16] = data
+        return known[data]
+
+    # SUPER, palette 4: black on white.
+    logo = {}
+    x0, y0, x1, y1 = LOGO_BOX
+    rows = open(LOGO_FILE).read().split()
+    if len(rows) != y1 - y0 or any(len(r) != x1 - x0 for r in rows):
+        sys.exit("src/logo_super.txt has to be %d lines of %d" % (y1 - y0, x1 - x0))
+    for y, row in enumerate(rows):
+        for x, v in enumerate(row):
+            logo[x0 + x, y0 + y] = 1 if v == "#" else 3
+    logo_cells = {}
+    for (x, y) in logo:
+        logo_cells.setdefault(((y - NOTICE_DOWN + 1) // 8, x // 8), None)
+    for (r, c) in logo_cells:
+        top = r * 8 + NOTICE_DOWN - 1
+        logo_cells[r, c] = tile_for(planar([[logo.get((c * 8 + x, top + y), 0) for x in range(8)]
+                                            for y in range(8)]))
+    options = [tile_for(letter(ch, 0, 2, 3)) for ch in "OPTIONS"]
     def solid(tile):
         # BG4 is the back: what would be see-through is sky, colour 1.
         out = bytearray(tile_2bpp(tile))
@@ -892,14 +895,11 @@ def build_overlay(chr_rom):
         for i, ch in enumerate(text):
             t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
             screen[r][c + i] = word(t, pal=3)
-    c = (32 - len(MENU_LINE)) // 2
-    for i, ch in enumerate(MENU_LINE):
-        if ch != " ":
-            screen[MENU_LINE_ROW][c + i] = word(line_tiles[ch], pal=3)
-    r, c = SUPER_AT
-    for i in range(5):
-        screen[r][c + i] = word(TILE_SUPER + i * 2, pal=4)
-        screen[r + 1][c + i] = word(TILE_SUPER + i * 2 + 1, pal=4)
+    r, c = OPTIONS_AT
+    for i, t in enumerate(options):
+        screen[r][c + i] = word(t, pal=5)
+    for (r, c), t in logo_cells.items():
+        screen[r][c] = word(t, pal=4)
     menu = [[word(TILE_NONE, False)] * 32 for _ in range(32)]
     for r in range(7, 24):
         for c in range(3, 29):
@@ -914,7 +914,9 @@ def build_overlay(chr_rom):
     for row, item in zip(MENU_ROWS, MENU_ITEMS):
         text(row, MENU_LEFT + 2, item)
         text(row, MENU_LEFT + 18, "OFF")
-    text(22, 9, "SELECT - BACK")
+    text(22, 12, "B - BACK")
+    for (r, c), t in logo_cells.items():
+        menu[r][c] = word(t, pal=4)
     return bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)
 
 

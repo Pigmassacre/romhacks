@@ -10,7 +10,7 @@ And since it is on a SNES now, three things the original could not do:
   stage, at half its speed.
 - **The world map in Mode 7.** The island spins in from far away when the map opens, then settles
   to the same picture as the original.
-- **Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
+- **Gimmick! 1.5's features, as options.** OPTIONS on the title screen, under CONTINUE, has star recall,
   skipping stones, tap to summon, coyote time and jump buffering, each on or off. They start off, so
   the game plays as it always did. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 
@@ -39,6 +39,18 @@ map a 4 MB ROM with cartridge RAM (HiROM). It has run in Mesen 2 and bsnes; it h
 on real hardware.
 
 On the pad, B is the NES's A (jump) and Y is the NES's B (star): the same places on the controller.
+In the options menu, A, Y, Left or Right switches an option and B goes back.
+
+### Drawing SUPER
+
+SUPER in the title's logo is `src/logo_super.txt`, black (`#`) on white (`.`). To draw it over a
+picture of the title, with a count of the tiles it may use:
+
+```bash
+python3 tools/super_edit.py
+```
+
+It opens http://localhost:8765 in a browser. Saving writes the file and builds the ROM.
 
 ## How it is checked
 

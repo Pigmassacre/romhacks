@@ -59,8 +59,14 @@ irq_next:    .res 1         ; and the next one's: it becomes irq_line when it st
 opt_flags:   .res 1         ; Gimmick! 1.5's features: bit 0 up, in the menu's order
 raw_pad:     .res 1         ; the pad, in the same order as the game's $F5
 pad_prev:    .res 1
+pad_a:       .res 1         ; the SNES's A button, which the game does not read
+pad_a_prev:  .res 1
+pad_a_new:   .res 1
 menu_open:   .res 1
 menu_at:     .res 1
+menu_req:    .res 1         ; Start on OPTIONS: menu_tick opens the menu in the next vblank
+pad_hold:    .res 1         ; the menu has closed: the game sees nothing until the pad is let go
+title_lit:   .res 1         ; the title's entry that shows white this frame, or $FF
 is_title:    .res 1
 scroll_done: .res 1
 map7:        .res 1         ; the world map is showing, in Mode 7
@@ -983,7 +989,7 @@ band_now:
         sta HDMAEN
         rts
 
-; The options menu, from the title screen. It sits on BG2 in place of the notices.
+; The options menu, from OPTIONS on the title screen. It sits on BG2 in place of the notices.
 MENU_ITEMS = 5
 .import MenuRowLo, MenuRowHi
 menu_tick:
@@ -993,23 +999,51 @@ menu_tick:
         sty pad_prev
         and raw_pad
         sta itmp            ; newly pressed
+        lda pad_a
+        tay
+        eor pad_a_prev
+        sty pad_a_prev
+        and pad_a
+        sta pad_a_new       ; and A
         lda is_title
         bne @title
         stz menu_open
+        stz menu_req
+        stz pad_hold
         rts
-@title: lda menu_open
+@title: ; OPTIONS: palette 5's grey, or white when title_menu lights it.
+        lda #54
+        sta CGADD
+        ldx #$B5
+        ldy #$56
+        lda title_lit
+        cmp #2
+        bne :+
+        ldx #$FF
+        ldy #$7F
+:       stx CGDATA
+        sty CGDATA
+        lda pad_hold
+        beq :+
+        lda raw_pad
+        bne @out
+        stz pad_hold
+:       lda menu_open
         bne @open
-        lda itmp
-        and #$20            ; Select
+        lda menu_req
         beq @out
+        stz menu_req
         inc menu_open
         stz menu_at
         jmp menu_draw
 @open:  lda itmp
+        ora pad_a_new
         beq @out
-        and #$20
+        lda itmp
+        and #$B0            ; B (the NES's A), Start or Select: back to the title
         beq :+
         stz menu_open
+        inc pad_hold
         rts
 :       lda itmp
         and #$08            ; Up
@@ -1029,7 +1063,8 @@ menu_tick:
         stz menu_at
         bra @moved
 :       lda itmp
-        and #$D3            ; A, B, Start, Left, Right: switch it
+        and #$43            ; Y (the NES's B), Left, Right, or A: switch it
+        ora pad_a_new
         beq @out
         ldx menu_at
         lda f:menu_bits,x
@@ -1378,21 +1413,17 @@ bg2_now:
         sta is_title
         stz BG2HOFS
         stz BG2HOFS
-        lda menu_open
+        lda #$6C
+        ldx menu_open
         beq :+
         lda #$3C
-        sta BG2SC
-        stz BG2VOFS
-        stz BG2VOFS
-        bra :++
-:       lda #$6C
-        sta BG2SC
-        ; The notices sit lower than a whole row, so that their line is as far under CONTINUE as
-        ; that is under START.
+:       sta BG2SC
+        ; Both maps sit lower than a whole row, so that OPTIONS is as far under CONTINUE as that is
+        ; under START, and SUPER is where the logo's small print was.
         lda #<(-NOTICE_DOWN)
         sta BG2VOFS
         stz BG2VOFS
-:       ldx #2
+        ldx #2
         bra @done2
 @not_title:
         cmp #1
@@ -3062,6 +3093,68 @@ spr_raw:
         jsr_free_advance
 @out:   rts
 
+; The title's menu, at $1B:813C: START and CONTINUE, which are sprites, and OPTIONS, on BG2. The
+; game's choice is $05, which Up and Down set to 0 or 1 and Select flips; here it goes to 2 as well,
+; and Select steps round. The chosen entry flashes white, as the game's did: palette 0 for its
+; sprites, and menu_tick changes OPTIONS's colour. Start on OPTIONS opens the options menu, and the
+; game does not see the press.
+.export title_menu
+title_menu:
+        lda $F5
+        and #$08            ; Up
+        beq :+
+        lda $05
+        beq :+
+        dec $05
+:       lda $F5
+        and #$04            ; Down
+        beq :+
+        lda $05
+        cmp #2
+        bcs :+
+        inc $05
+:       lda $F5
+        and #$20            ; Select
+        beq :+
+        inc $05
+        lda $05
+        cmp #3
+        bcc :+
+        stz $05
+:       ldx #$FF            ; none lit, for 8 frames of every 16
+        lda $ED
+        and #$08
+        beq :+
+        ldx $05
+:       stx title_lit
+        ; START is the page's sprites $20 to $33, CONTINUE $34 to $53.
+        ldx #$20
+@spr:   lda #0
+        cpx #$34
+        bcc :+
+        lda #1
+:       eor title_lit
+        beq :+
+        lda #1
+:       sta $0202,x
+        inx
+        inx
+        inx
+        inx
+        cpx #$54
+        bcc @spr
+        lda $F5
+        and #$10            ; Start
+        beq @out
+        lda $05
+        cmp #2
+        bne @out
+        lda $F5
+        and #$EF
+        sta $F5
+        inc menu_req
+@out:   rts
+
 ; The title's clouds, at $1B:8116: is this sprite on the screen? The game's X is 9 bits, carry and
 ; $07, and it hides one as soon as that goes negative, since a NES sprite cannot be part way off
 ; the left edge, which leaves a gap there. A SNES sprite can, with the X bit of the high table.
@@ -3455,7 +3548,14 @@ pad_read:
         lda $4016
         lsr a
         rol raw_pad
-        lda menu_open
+        cpx #1              ; the game's last read: a ninth gets the SNES's A, for the menu
+        bne :+
+        lda $4016
+        and #1
+        sta pad_a
+:       lda menu_open
+        ora menu_req
+        ora pad_hold
         beq :+
         lda #0
         rts

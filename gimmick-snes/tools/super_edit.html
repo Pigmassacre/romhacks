@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SUPER Editor</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4;
+    --accent: #2f6fdb; --bad: #c62828; --good: #2e7d32; --grid: rgba(0, 0, 0, 0.08); --tile: rgba(47, 111, 219, 0.55);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1b1a; --panel: #262624; --ink: #ececea; --muted: #a3a39e; --line: #3a3a37;
+      --accent: #6d9cf0; --bad: #ef6b6b; --good: #6cc070; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 16px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .meter { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .meter.over { color: var(--bad); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  canvas { display: block; image-rendering: pixelated; }
+  #grid { cursor: crosshair; touch-action: none; }
+  .previews { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+  .previews figure { margin: 0; }
+  figcaption { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  #status { min-height: 1.4em; color: var(--muted); }
+  #status.ok { color: var(--good); } #status.bad { color: var(--bad); }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SUPER in the title logo</h1>
+  <p class="lead">Left button draws black, right button draws white. Blue lines are BG2's tile edges: every
+    different 8×8 square costs a tile, and SUPER has a fixed number of them. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</p>
+
+  <div class="panel">
+    <div class="bar">
+      <button id="undo">Undo</button>
+      <button data-shift="-1,0">◀</button><button data-shift="1,0">▶</button>
+      <button data-shift="0,-1">▲</button><button data-shift="0,1">▼</button>
+      <button id="clear">Clear</button>
+      <button id="revert">Revert to saved</button>
+      <span class="meter" id="meter"></span>
+      <button class="primary" id="save">Save and build</button>
+    </div>
+    <div class="scroll"><canvas id="grid"></canvas></div>
+    <p id="status"></p>
+  </div>
+
+  <div class="panel previews">
+    <figure><canvas id="big"></canvas><figcaption>The title, twice its size</figcaption></figure>
+    <figure><canvas id="small"></canvas><figcaption>Its real size</figcaption></figure>
+    <div><button id="retake">Take the title again</button>
+      <p class="lead" style="margin-top:8px">The picture is of the ROM as last built.</p></div>
+  </div>
+</main>
+<script>
+const ZOOM = 12;
+let S, rows, saved, title = null;
+const undo = [];
+const $ = id => document.getElementById(id);
+const grid = $("grid"), g = grid.getContext("2d");
+
+function w() { return S.box[2] - S.box[0]; }
+function h() { return S.box[3] - S.box[1]; }
+
+function tiles() {
+  // The 8x8 squares of BG2 that the box touches, as SUPER's tiles: 0 outside the box.
+  const [x0, y0, x1, y1] = S.box, seen = new Set();
+  const top = r => r * 8 + S.rowTop;
+  for (let r = Math.floor((y0 - S.rowTop) / 8); top(r) < y1; r++)
+    for (let c = Math.floor(x0 / 8); c * 8 < x1; c++) {
+      let key = "";
+      for (let y = top(r); y < top(r) + 8; y++)
+        for (let x = c * 8; x < c * 8 + 8; x++)
+          key += (x < x0 || x >= x1 || y < y0 || y >= y1) ? "0" : rows[y - y0][x - x0] === "#" ? "1" : "3";
+      seen.add(key);
+    }
+  return seen.size;
+}
+
+function drawGrid() {
+  grid.width = w() * ZOOM; grid.height = h() * ZOOM;
+  for (let y = 0; y < h(); y++)
+    for (let x = 0; x < w(); x++) {
+      g.fillStyle = rows[y][x] === "#" ? "#000" : "#fff";
+      g.fillRect(x * ZOOM, y * ZOOM, ZOOM, ZOOM);
+    }
+  g.fillStyle = "rgba(0,0,0,0.08)";
+  for (let x = 1; x < w(); x++) g.fillRect(x * ZOOM, 0, 1, grid.height);
+  for (let y = 1; y < h(); y++) g.fillRect(0, y * ZOOM, grid.width, 1);
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--tile");
+  for (let x = 0; x <= w(); x++) if ((S.box[0] + x) % 8 === 0) g.fillRect(x * ZOOM - 1, 0, 2, grid.height);
+  for (let y = 0; y <= h(); y++) if ((S.box[1] + y - S.rowTop) % 8 === 0) g.fillRect(0, y * ZOOM - 1, grid.width, 2);
+}
+
+function drawPreview(canvas, scale) {
+  const c = canvas.getContext("2d");
+  canvas.width = 256 * scale; canvas.height = 224 * scale;
+  c.imageSmoothingEnabled = false;
+  if (title) c.drawImage(title, 0, 0, canvas.width, canvas.height);
+  else { c.fillStyle = "#63adff"; c.fillRect(0, 0, canvas.width, canvas.height); }
+  for (let y = 0; y < h(); y++)
+    for (let x = 0; x < w(); x++) {
+      c.fillStyle = rows[y][x] === "#" ? "#000" : "#fff";
+      c.fillRect((S.box[0] + x) * scale, (S.box[1] + y) * scale, scale, scale);
+    }
+}
+
+function refresh() {
+  drawGrid(); drawPreview($("big"), 2); drawPreview($("small"), 1);
+  const n = tiles(), m = $("meter");
+  m.textContent = `Tiles: ${n} of ${S.budget}`;
+  m.classList.toggle("over", n > S.budget);
+  $("save").disabled = n > S.budget || rows.join() === saved.join();
+}
+
+function remember() { undo.push(rows.slice()); if (undo.length > 200) undo.shift(); }
+function set(x, y, v) {
+  if (x < 0 || y < 0 || x >= w() || y >= h() || rows[y][x] === v) return;
+  rows[y] = rows[y].slice(0, x) + v + rows[y].slice(x + 1);
+}
+
+let painting = null, last = null;
+function cell(e) {
+  const r = grid.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / ZOOM), Math.floor((e.clientY - r.top) / ZOOM)];
+}
+function line([ax, ay], [bx, by], v) {
+  const n = Math.max(Math.abs(bx - ax), Math.abs(by - ay), 1);
+  for (let i = 0; i <= n; i++) set(Math.round(ax + (bx - ax) * i / n), Math.round(ay + (by - ay) * i / n), v);
+}
+grid.addEventListener("contextmenu", e => e.preventDefault());
+grid.addEventListener("pointerdown", e => {
+  remember();
+  painting = e.button === 2 ? "." : "#";
+  last = cell(e); set(...last, painting); refresh();
+  grid.setPointerCapture(e.pointerId);
+});
+grid.addEventListener("pointermove", e => {
+  if (!painting) return;
+  const now = cell(e); line(last, now, painting); last = now; refresh();
+});
+grid.addEventListener("pointerup", () => { painting = null; });
+
+$("undo").onclick = () => { if (undo.length) { rows = undo.pop(); refresh(); } };
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); $("undo").click(); }
+});
+$("clear").onclick = () => { remember(); rows = rows.map(r => ".".repeat(r.length)); refresh(); };
+$("revert").onclick = () => { remember(); rows = saved.slice(); refresh(); };
+document.querySelectorAll("[data-shift]").forEach(b => b.onclick = () => {
+  const [dx, dy] = b.dataset.shift.split(",").map(Number);
+  remember();
+  rows = rows.map((_, y) => Array.from({length: w()}, (_, x) => {
+    const sx = x - dx, sy = y - dy;
+    return sx >= 0 && sy >= 0 && sx < w() && sy < h() ? rows[sy][sx] : ".";
+  }).join(""));
+  refresh();
+});
+
+function status(text, kind) { const s = $("status"); s.textContent = text; s.className = kind || ""; }
+$("save").onclick = async () => {
+  $("save").disabled = true; status("Building…");
+  const r = await fetch("/api/save", {method: "POST", body: JSON.stringify({rows})}).then(r => r.json());
+  if (r.ok) { saved = rows.slice(); status("Saved src/logo_super.txt and built out/gimmick.sfc. " + r.log.join(" "), "ok"); }
+  else status("The build failed: " + r.log.join(" "), "bad");
+  refresh();
+};
+
+function loadTitle(retake) {
+  const img = new Image();
+  img.onload = () => { title = img; refresh(); $("retake").disabled = false; };
+  img.onerror = () => { status("Could not take a picture of the title with Mesen.", "bad"); $("retake").disabled = false; };
+  $("retake").disabled = true;
+  img.src = "/title.png" + (retake ? "?retake=" + Date.now() : "");
+}
+$("retake").onclick = () => loadTitle(true);
+
+fetch("/api/settings").then(r => r.json()).then(s => {
+  S = s; rows = s.rows.slice(); saved = s.rows.slice();
+  refresh(); loadTitle(false);
+});
+</script>
+</body>
+</html>
