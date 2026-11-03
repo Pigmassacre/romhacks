@@ -108,7 +108,7 @@ the sky and yet behind that sprite: only a layer of its own can do that.
 - **BG2** has the title's additions: SUPER in the logo, on white over its small print (`src/logo_super.txt`, at
   most as many different tiles as BG2 has left; `tools/super_edit.py` counts them). It has the logo's four
   colours in two palettes, 4 with the dark grey and 6 with the light, so each tile has one of the greys; OPTIONS under CONTINUE in
-  the menu's own font and colours, and the notices on a white plate like the logo's. That font is the options menu's
+  the menu's own font and colours, and the warning on a white plate like the logo's. That font is the options menu's
   too, white on black in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title
   (`NOTICE_DOWN`), so that OPTIONS is as far under CONTINUE as that is under START.
 - **BG1** is the NES's background, 2 bits a pixel as it is on the NES, in 4 palettes of 4.
@@ -125,8 +125,21 @@ The BG scroll registers share one latch, as the Mode 7 ones do: each gets both i
 
 The island is fixed nametable data. `tools/survey.py` captures it, and `build_mode7` makes a Mode 7 map
 and tiles from it (129 tile and palette pairs). Mode 7 needs the first half of VRAM, so sprites move
-to their second tables and everything is reloaded on the way out. `map_now` runs the arrival from
-a table of scales, then sets the identity, at which it lines up with the sprites.
+to their second tables and everything is reloaded on the way out; `dma_bg_page` refuses while the island
+is up, as the NMI that brings it in can land between a page's check for time and its copy.
+
+The map is a plane seen at a slant. HDMA writes M7A and M7Y on every line, with M7B, M7C and M7D at 0, so
+that each line shows one row of the picture at its own scale. `plane_tables` in `tools/build.py` makes a
+pair of tables for each frame of the island's arrival, as it grows in from far away, and a M7Y table
+for each step of the camera's pan before the last stage; `map_now` points the two HDMA channels at the
+frame's. Once it has arrived, `plane_sprites` puts the game's sprites on the plane at their own size:
+sprites that come one after another and touch are one group, which moves to where its bottom edge lands
+(`PlaneDY` and `PlaneE`). It runs after the frame counts as done, so the game never waits for it, and the
+NMI leaves last frame's sprites up until it is finished. It eases the pan too, which reaches `map_now`
+only with the sprites done, so that they and the island move together.
+
+The first screen, who made the port and the warning, is `splash` in `src/boot.s`, before the game
+starts. Its map is the overlay's last 2 KB, put at VRAM word 0 and cleared after.
 
 ## Gimmick! 1.5, as options
 

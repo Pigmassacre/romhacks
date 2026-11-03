@@ -8,11 +8,17 @@ And since it is on a SNES now, three things the original could not do:
 
 - **Parallax scrolling.** The clouds in stages 1, 2 and 4 are on their own layer, behind the
   stage, at half its speed.
-- **The world map in Mode 7.** The island spins in from far away when the map opens, then settles
-  to the same picture as the original.
+- **The world map in Mode 7.** The map is a plane seen at a slant, as in Yoshi's Island: the island's
+  far edge is smaller than its near one. It grows in from far away when the map opens and stays
+  tilted while the map is up. The ohagis, flags, clouds and ships stand up on it at their own size,
+  where their feet are. Before the last stage the camera moves up the map, to the tower and the
+  airship that flies in above it.
 - **Gimmick! 1.5's features, as options.** OPTIONS on the title screen, under CONTINUE, has star recall,
   water skipping, tap to summon, coyote time and jump buffering, each on or off. They start off, so
   the game plays as it always did. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
+
+Before the game's own SUNSOFT PRESENTS comes a screen of the port's own, saying who made it and that
+it is AI slop; Start or A skips it. The title keeps the warning, under the menu.
 
 You bring your own copy of the Japanese *Gimmick!*. The build makes the SNES ROM from it, and the
 repository holds none of the original game's code, graphics or sound.
