@@ -195,15 +195,14 @@ fast:
         sta MDMAEN
         lda #$6C
         sta BG2SC
-        ; Black, grey and white, for the notices: BG2's palette 2.
+        ; BG2's palette 2, the options menu: black, black and white. Its letters' shadows are
+        ; colour 2, black as the box, as grey ones there were hard to read.
         lda #41
         sta CGADD
         stz CGDATA
         stz CGDATA
-        lda #$73
-        sta CGDATA
-        lda #$4E
-        sta CGDATA
+        stz CGDATA
+        stz CGDATA
         lda #$FF
         sta CGDATA
         lda #$7F

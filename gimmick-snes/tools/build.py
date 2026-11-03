@@ -805,8 +805,9 @@ def build_overlay(chr_rom):
                         for x in range(8)] for y in range(8)])
 
     tiles = bytearray(16 * 128)
-    # Palette 2 is black, grey and white: white letters on black, for the options menu. Palette 3
-    # swaps black and white for the plate, where the same tiles are black letters on white.
+    # Palette 2 is black, black and white: white letters on black, for the options menu, with
+    # their shadows black too (src/boot.s). Palette 3 is white, grey and black, for the plate,
+    # where the same tiles are black letters on white with grey shadows.
     tiles[0:16] = planar([[1] * 8] * 8)
     for i in range(26):
         tiles[(i + 1) * 16:(i + 2) * 16] = letter(chr(65 + i), 1, 3, 2)
