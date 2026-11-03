@@ -1,4 +1,4 @@
-# Gimmick! for GBA
+# Gimmick! Advance
 
 A port of Sunsoft's *Gimmick!* (Famicom, 1992) to the Game Boy Advance. It is a native port: the
 game's 6502 code is translated to C and compiled for the GBA, not run in an emulator on the GBA,
@@ -27,6 +27,8 @@ and Select does nothing. In mGBA's default keys that is X, Z, Enter and Backspac
 
 The GBA's screen is 160 lines tall and the NES playfield is 192, so the camera follows Yumetaro
 up and down, and the title and cutscenes show the part with something on it.
+
+The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
 
 ## Known limits
 
@@ -97,4 +99,5 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 
 ## Credits
 
-*Gimmick!* is © Sunsoft. The font on the title screen's notices is this port's own.
+*Gimmick!* is © Sunsoft. The title screen's notices and ADVANCE are in the game's own menu font,
+with the letters it lacks drawn to match.

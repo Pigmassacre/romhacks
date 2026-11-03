@@ -39,7 +39,7 @@ static const char *shot_dir;
 // (A blank screen is black here too: its layers are all off and colour 0 is black.)
 static u16 bg_pixel(int bg, int x, int y, int *solid) {
   u16 cnt = REG16(0x04000008 + bg * 2);
-  int hofs = bg < 3 ? REG16(0x04000010 + bg * 4) & 511 : 0, vofs = bg < 3 ? REG16(0x04000012 + bg * 4) & 511 : 0;
+  int hofs = REG16(0x04000010 + bg * 4) & 511, vofs = REG16(0x04000012 + bg * 4) & 511;
   int px = (x + hofs) & 255, py = (y + vofs) & 255;
   u16 *map = (u16 *)(sim_vram + ((cnt >> 8) & 31) * 0x800);
   u16 e = map[(py >> 3) * 32 + (px >> 3)];

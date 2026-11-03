@@ -148,75 +148,121 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
   last_sprites = n;
 }
 
-// The notices on the title screen, in a font of this port's own: 5x7, top row first,
-// high bit on the left, white on black so they read on any ground. Their tiles sit
-// after the second layer's, so they never clash.
+// The title's own words, on the fourth layer: the notices, in the style of START and
+// CONTINUE, and ADVANCE in the logo's bar in place of its katakana. The font is the
+// menu's, a bold 7x7: the letters it has are copied, the others drawn to match.
+// Each letter has two tiles: grey with a black shadow down and right, for the sky, and
+// black on the bar's white. Their tiles sit after the second layer's, so they never
+// clash.
 #define TEXT_TILE 256
-#define TEXT_PALETTE 15
-static const struct { char c; u8 rows[7]; } font[] = {
-  {' ', {0,0,0,0,0,0,0}},
-  {'-', {0,0,0,31,0,0,0}},
-  {'A', {14,17,17,31,17,17,17}},
-  {'B', {30,17,17,30,17,17,30}},
-  {'C', {14,17,16,16,16,17,14}},
-  {'D', {30,17,17,17,17,17,30}},
-  {'E', {31,16,16,30,16,16,31}},
-  {'G', {14,17,16,23,17,17,15}},
-  {'I', {14,4,4,4,4,4,14}},
-  {'L', {16,16,16,16,16,16,31}},
-  {'M', {17,27,21,21,17,17,17}},
-  {'N', {17,25,21,19,17,17,17}},
-  {'O', {14,17,17,17,17,17,14}},
-  {'P', {30,17,17,30,16,16,16}},
-  {'R', {30,17,17,30,20,18,17}},
-  {'S', {15,16,16,14,1,1,30}},
-  {'T', {31,4,4,4,4,4,4}},
-  {'Y', {17,17,10,4,4,4,4}},
+#define NOTICE_PALETTE 15
+#define BAR_PALETTE 14
+static const struct { char c; char rows[7][8]; } font[] = {
+  {' ', {".......", ".......", ".......", ".......", ".......", ".......", "......."}},
+  {'-', {".......", ".......", ".......", ".#####.", ".......", ".......", "......."}},
+  {'A', {"..###..", ".##.##.", "##...##", "##...##", "#######", "##...##", "##...##"}},
+  {'B', {"######.", "##...##", "##...##", "######.", "##...##", "##...##", "######."}},
+  {'C', {"..####.", ".##..##", "##.....", "##.....", "##.....", ".##..##", "..####."}},
+  {'D', {"#####..", "##..##.", "##...##", "##...##", "##...##", "##..##.", "#####.."}},
+  {'E', {"#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"}},
+  {'G', {"..####.", ".##....", "##.....", "##..###", "##...##", ".##..##", "..#####"}},
+  {'I', {".######", "...##..", "...##..", "...##..", "...##..", "...##..", ".######"}},
+  {'L', {"##.....", "##.....", "##.....", "##.....", "##.....", "##.....", "#######"}},
+  {'M', {"##...##", "###.###", "#######", "##.#.##", "##...##", "##...##", "##...##"}},
+  {'N', {"##...##", "###..##", "####.##", "#######", "##.####", "##..###", "##...##"}},
+  {'O', {".#####.", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."}},
+  {'P', {"######.", "##...##", "##...##", "######.", "##.....", "##.....", "##....."}},
+  {'R', {"######.", "##...##", "##...##", "##..###", "#####..", "##.###.", "##..###"}},
+  {'S', {".####..", "##..##.", "##.....", ".#####.", ".....##", "##...##", ".#####."}},
+  {'T', {".######", "...##..", "...##..", "...##..", "...##..", "...##..", "...##.."}},
+  {'V', {"##...##", "##...##", "##...##", ".##.##.", ".##.##.", "..###..", "...#..."}},
+  {'Y', {"##...##", "##...##", ".##.##.", "..###..", "...##..", "...##..", "...##.."}},
 };
 #define FONT_SIZE (sizeof font / sizeof font[0])
-#define NOTICE_ROW 18
+#define BAR_TILE (TEXT_TILE + FONT_SIZE)      // then the bar's: its letters, then its ends
+#define CLEAR_TILE (BAR_TILE + FONT_SIZE + 2)
+// Rows of the map, which sits 5 lines up so that the bar's white inside, lines 99 to
+// 105, starts a row. The notices go on the sky above the logo, as Gimmick! 1.5's do.
+#define TEXT_SCROLL 5
+#define BAR_ROW 13
+#define BAR_LEFT 4      // its tiles: the bar's ends are lines at x 32 and 207
+#define BAR_RIGHT 25
+#define NOTICE_ROW 1
 static const char *const notices[2] = {"PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"};
+static const char bar_text[] = "A  D  V  A  N  C  E";
+
+static int is_ink(int g, int x, int y) {
+  return x >= 0 && x < 7 && y >= 0 && y < 7 && font[g].rows[y][x] == '#';
+}
+
+static void put_tile(int tile, u8 px[8][8]) {
+  volatile u16 *t = (volatile u16 *)(VRAM + CHARBLOCK_TEXT * 0x4000 + tile * 32);
+  for (int y = 0; y < 8; y++) {
+    t[y * 2] = px[y][0] | px[y][1] << 4 | px[y][2] << 8 | px[y][3] << 12;
+    t[y * 2 + 1] = px[y][4] | px[y][5] << 4 | px[y][6] << 8 | px[y][7] << 12;
+  }
+}
 
 static void font_init(void) {
-  volatile u16 *tiles = (volatile u16 *)(VRAM + CHARBLOCK_TEXT * 0x4000 + TEXT_TILE * 32);
+  u8 px[8][8];
   for (u32 g = 0; g < FONT_SIZE; g++) {
-    u8 px[8][8];
     for (int y = 0; y < 8; y++)
       for (int x = 0; x < 8; x++)
-        px[y][x] = y < 7 && x >= 1 && x < 6 && (font[g].rows[y] >> (5 - x) & 1) ? 1 : 2;
-    for (int y = 0; y < 8; y++) {
-      tiles[g * 16 + y * 2] = px[y][0] | px[y][1] << 4 | px[y][2] << 8 | px[y][3] << 12;
-      tiles[g * 16 + y * 2 + 1] = px[y][4] | px[y][5] << 4 | px[y][6] << 8 | px[y][7] << 12;
-    }
+        px[y][x] = is_ink(g, x, y) ? 1 : is_ink(g, x - 1, y - 1) ? 2 : 0;
+    put_tile(TEXT_TILE + g, px);
+    // On the bar, its bottom line shows through.
+    for (int y = 0; y < 8; y++)
+      for (int x = 0; x < 8; x++)
+        px[y][x] = y == 7 ? 0 : is_ink(g, x, y) ? 1 : 3;
+    put_tile(BAR_TILE + g, px);
   }
-  BG_PAL[TEXT_PALETTE * 16 + 1] = RGB(255, 255, 255);
-  BG_PAL[TEXT_PALETTE * 16 + 2] = RGB(0, 0, 0);
+  for (int end = 0; end < 2; end++) {
+    for (int y = 0; y < 8; y++)
+      for (int x = 0; x < 8; x++)
+        px[y][x] = y == 7 || x == (end ? 7 : 0) ? 0 : 3;
+    put_tile(BAR_TILE + FONT_SIZE + end, px);
+  }
+  for (int y = 0; y < 8; y++)
+    for (int x = 0; x < 8; x++) px[y][x] = 0;
+  put_tile(CLEAR_TILE, px);
+  BG_PAL[NOTICE_PALETTE * 16 + 1] = nes_colors[0x10];
+  BG_PAL[NOTICE_PALETTE * 16 + 2] = RGB(0, 0, 0);
+  BG_PAL[BAR_PALETTE * 16 + 1] = RGB(0, 0, 0);
+  BG_PAL[BAR_PALETTE * 16 + 3] = nes_colors[0x30];
+}
+
+static int glyph(char c) {
+  u32 g = 0;
+  while (g < FONT_SIZE && font[g].c != c) g++;
+  return g < FONT_SIZE ? g : 0;
 }
 
 static void draw_notices(void) {
   volatile u16 *map = MAP(MAP_TEXT);
-  for (int i = 0; i < 32 * 32; i++) map[i] = TEXT_TILE + FONT_SIZE;  // never drawn: clear
+  for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
   for (int n = 0; n < 2; n++) {
     const char *t = notices[n];
     int len = 0;
     while (t[len]) len++;
     int left = (30 - len) / 2;
-    // A margin on each side of the black bar. The blank is the font's first letter.
-    map[(NOTICE_ROW + n) * 32 + left - 1] = TEXT_TILE | TEXT_PALETTE << 12;
-    map[(NOTICE_ROW + n) * 32 + left + len] = TEXT_TILE | TEXT_PALETTE << 12;
-    for (int i = 0; i < len; i++) {
-      u32 g = 0;
-      while (g < FONT_SIZE && font[g].c != t[i]) g++;
-      map[(NOTICE_ROW + n) * 32 + left + i] = (TEXT_TILE + g) | TEXT_PALETTE << 12;
-    }
+    for (int i = 0; i < len; i++)
+      map[(NOTICE_ROW + n) * 32 + left + i] = (TEXT_TILE + glyph(t[i])) | NOTICE_PALETTE << 12;
   }
+  int len = sizeof bar_text - 1, left = BAR_LEFT + (BAR_RIGHT - BAR_LEFT + 1 - len) / 2;
+  for (int c = BAR_LEFT; c <= BAR_RIGHT; c++) {
+    int tile = c == BAR_LEFT ? BAR_TILE + FONT_SIZE : c == BAR_RIGHT ? BAR_TILE + FONT_SIZE + 1
+             : BAR_TILE + (c >= left && c < left + len ? glyph(bar_text[c - left]) : 0);
+    map[BAR_ROW * 32 + c] = tile | BAR_PALETTE << 12;
+  }
+  REG16(0x0400001C) = 0;
+  REG16(0x0400001E) = TEXT_SCROLL;
 }
 
 // The title loads its logo into these background pages, and nothing else does.
 static inline int on_title(void) {
   return top_chr[5] == 0x65 && top_chr[6] == 0x66 && top_chr[7] == 0x67;
 }
-#define TITLE_TOP 28   // shows the whole logo, START and CONTINUE
+#define TITLE_TOP 6    // the sky above the logo, for the notices, down to CONTINUE
 #define STATUS_FROM 184  // a mid-frame change this low is the status bar
 
 // Which lines of a screen without a status bar have something on them: everything

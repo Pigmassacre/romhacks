@@ -125,7 +125,7 @@ def main():
     env = dict(os.environ, PATH=BIN + os.pathsep + os.environ["PATH"])
     subprocess.run([GCC] + flags + sources + [data_s, "-o", elf], check=True, env=env)
     subprocess.run([os.path.join(BIN, "arm-none-eabi-objcopy"), "-O", "binary", elf, gba], check=True)
-    subprocess.run([GBAFIX, gba, "-tGIMMICK"], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([GBAFIX, gba, "-tGIMMICK ADV"], check=True, stdout=subprocess.DEVNULL)
     print("%s: %d KB" % (gba, os.path.getsize(gba) // 1024))
     nm = subprocess.run([os.path.join(BIN, "arm-none-eabi-nm"), elf], capture_output=True, text=True).stdout
     for line in nm.splitlines():
