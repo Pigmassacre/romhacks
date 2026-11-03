@@ -219,6 +219,8 @@ fast:
         cpx #30
         bne :-
 
+        jsr splash
+
         ; The picture: Mode 0. BG1 is the NES's background, with nothing in front of it but
         ; sprites and BG2, the notices. With parallax, BG3 has what is black in BG1, on the same
         ; map, with sprites that go behind the background between them, and BG4 is the sky.
@@ -308,6 +310,115 @@ fast:
 
 tmp_ptr = $1FF0
 spc_size = $1FF4
+splash_f = $1FF6
+splash_held = $1FF8
+
+; The first screen, before the game's own: who made the port, in white, and the warning, in the
+; title's grey, on black like SUNSOFT PRESENTS. It fades in, stays a while or until Start or A, and
+; fades out. BG2 shows it, from a map at VRAM word 0, which the game's sprites take after.
+SPLASH_IN = 16
+SPLASH_STAY = 150
+.a8
+.i16
+splash:
+        ldx #0
+        stx VMADDL
+        ldx #$2800
+        stx A1T7L           ; the rest of the DMA is the notices', above
+        ldx #$0800
+        stx DAS7L
+        lda #$80
+        sta MDMAEN
+        ; BG2's palette 7: black, black and the grey
+        lda #61
+        sta CGADD
+        stz CGDATA
+        stz CGDATA
+        stz CGDATA
+        stz CGDATA
+        lda #$B5
+        sta CGDATA
+        lda #$56
+        sta CGDATA
+        stz BGMODE
+        stz BG2SC
+        lda #$60            ; BG2's tiles at $6000
+        sta BG12NBA
+        stz BG2HOFS
+        stz BG2HOFS
+        lda #3              ; the two lines, 104 to 127 of the map, about the middle
+        sta BG2VOFS
+        stz BG2VOFS
+        lda #$02
+        sta TM
+        lda #$01            ; the pad, read in each vblank
+        sta NMITIMEN
+        ldx #$FFFF
+        stx splash_held
+        ldx #0
+@frame: stx splash_f
+:       lda RDNMI
+        bpl :-
+        ; In, then out
+        txa
+        cpx #SPLASH_IN
+        bcc @bright
+        lda #15
+        cpx #SPLASH_IN + SPLASH_STAY
+        bcc @bright
+        rep #$20
+        .a16
+        lda #SPLASH_IN * 2 + SPLASH_STAY - 1
+        sec
+        sbc splash_f
+        sep #$20
+        .a8
+@bright:
+        sta INIDISP
+:       lda HVBJOY
+        and #1
+        bne :-
+        ; Start or A, newly pressed, while it stays: on to the fade.
+        rep #$20
+        .a16
+        lda JOY1L
+        tay
+        eor #$FFFF
+        and splash_held
+        sty splash_held
+        and #$1080          ; Start, A
+        sep #$20
+        .a8
+        beq @next
+        cpx #SPLASH_IN
+        bcc @next
+        cpx #SPLASH_IN + SPLASH_STAY
+        bcs @next
+        ldx #SPLASH_IN + SPLASH_STAY - 1
+@next:  inx
+        cpx #SPLASH_IN * 2 + SPLASH_STAY
+        bne @frame
+        lda #$80
+        sta INIDISP
+        stz NMITIMEN
+        stz TM
+        stz BG2VOFS
+        stz BG2VOFS
+        lda #$6C
+        sta BG2SC
+        ; Its map goes, for the sprites' tiles.
+        stz VMADDL
+        stz VMADDH
+        lda #$09
+        sta DMAP7
+        ldx #zero
+        stx A1T7L
+        stz A1B7
+        ldx #$0800
+        stx DAS7L
+        lda #$80
+        sta MDMAEN
+        rts
 
 ; The vertical scroll's HDMA and the background's tile set restart with each frame.
 nmi_emu:

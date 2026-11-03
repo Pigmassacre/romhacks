@@ -13,7 +13,7 @@
 
 .include "hw.inc"
 
-.import ColorLo, ColorHi, AttrTable, ChrObjBanks, BgBanks, BgOffs, PageAlias, M7Anim
+.import ColorLo, ColorHi, AttrTable, ChrObjBanks, BgBanks, BgOffs, PageAlias, PlaneDY, PlaneE
 .import ComboIdx8, ComboIdxA, ComboTable
 
 ; VRAM layout, as word addresses.
@@ -71,6 +71,22 @@ is_title:    .res 1
 scroll_done: .res 1
 map7:        .res 1         ; the world map is showing, in Mode 7
 map7_t:      .res 1
+plane_pan:   .res 1         ; how far up the picture the map's camera has gone
+ps_busy:     .res 1         ; plane_sprites is at work
+ps_pan:      .res 1         ; the pan it works to
+ps_n:        .res 1         ; plane_sprites: the group it is on, from 1
+ps_l:        .res 1         ; and that group's box: left, rightmost x, top and lowest top
+ps_r:        .res 1
+ps_top:      .res 1
+ps_b:        .res 1
+ps_t:        .res 1
+ps_x:        .res 1
+ps_sx:       .res 1
+ps_dy_now:   .res 1
+ps_group:    .res 64        ; each sprite's group
+ps_dx:       .res 64        ; and each group's move
+ps_dy:       .res 64
+ps_fast:     .res 64        ; and whether all of it stays where adding is enough
 tm_mask:     .res 1         ; layers it allows
 parallax:    .res 1
 band_pal:    .res 1
@@ -458,8 +474,10 @@ fme_chr:
         and #7
         tax
         jsr picture_on
-        bcs @split
-        tya
+        bcc @top
+        lda map7            ; the island has the tile sets' place: no split on the map
+        beq @split
+@top:   tya
         sta chr_want,x
         cpx #4
         bcc :+
@@ -549,6 +567,9 @@ load_top_slot:
 ; below the sprites that go behind the background, so they show in the black as on the NES.
 dma_bg_page:
         sta dma_hi
+        ; Not over the island: an NMI that put it up may have come since the caller's look at map7.
+        lda map7
+        bne @out
         lda #$80
         sta VMAINC
         stz VMADDL
@@ -1128,8 +1149,12 @@ menu_draw:
         rts
 
 ; The world map, in Mode 7. It is the screen with $4A = 0 and these pages for the background,
-; with $90 at 0 the first time, from the title, and 1 after a stage.
+; with $90 at 0 the first time, from the title, and 1 after a stage. It is a plane seen at a slant,
+; as in Yoshi's Island: HDMA sets M7A and M7Y on each line from tables tools/build.py makes, one
+; for each frame of the arrival and each step of the camera's pan, with M7B, M7C and M7D at 0.
 MODE7_BANK = $DA
+PLANE_A    = $DB            ; tools/build.py has these
+PLANE_Y    = $DC
 M7_FRAMES  = 72
 M7_AT      = 48 * 8
 map_now:
@@ -1152,38 +1177,23 @@ map_now:
         lda map7_t
         cmp #M7_FRAMES
         bcs @rest
-        ; Scale for this frame
-        asl a
+        ; This frame of the arrival
         tax
-        ; These registers share one latch: each gets both its bytes in turn.
-        lda f:M7Anim,x
-        sta M7A
-        lda f:M7Anim + 1,x
-        sta M7A
-        lda f:M7Anim,x
-        sta M7D
-        lda f:M7Anim + 1,x
-        sta M7D
+        jsr plane_set
         inc map7_t
 @out:   rts
-@rest:  bne @out
-        ; The last frame: square on, and the sprites line up with it.
+@rest:  bne @pan
+        ; It has arrived: the sprites go on, on the plane (plane_sprites).
         inc map7_t
-        stz M7A
-        lda #1
-        sta M7A
-        stz M7B
-        stz M7B
-        stz M7C
-        stz M7C
-        stz M7D
-        lda #1
-        sta M7D
         lda #$FF
         sta tm_mask
         lda tm_now
         sta TM
-        rts
+@pan:   lda plane_pan
+        clc
+        adc #M7_FRAMES
+        ldx #M7_FRAMES
+        jmp plane_set
 @leave: stz map7
         stz BGMODE
         ; The menu's map was in the first half of VRAM, which the island took.
@@ -1218,6 +1228,15 @@ map_now:
         sta obj2_have,x
         dex
         bpl :-
+        rts
+
+; The tables for the next frame: x is M7A's, a M7Y's.
+plane_set:
+        asl a
+        sta A1T2H
+        txa
+        asl a
+        sta A1T1H
         rts
 
 map_enter:
@@ -1275,35 +1294,43 @@ map_enter:
         sta BGMODE
         lda #$80            ; nothing outside the map
         sta M7SEL
+        ; Screen x 128 is the picture's x 128, and M7A scales about it.
         lda #<(M7_AT + 128)
         sta M7X
         lda #>(M7_AT + 128)
         sta M7X
-        lda #<(M7_AT + 112 + 7)
-        sta M7Y
-        lda #>(M7_AT + 112 + 7)
-        sta M7Y
         lda #<M7_AT
         sta BG1HOFS
         lda #>M7_AT
         sta BG1HOFS
-        lda #<(M7_AT + 7)
-        sta BG1VOFS
-        lda #>(M7_AT + 7)
-        sta BG1VOFS
-        ; Far off from the first frame, with no turn.
-        lda f:M7Anim
-        sta M7A
-        lda f:M7Anim + 1
-        sta M7A
-        lda f:M7Anim
-        sta M7D
-        lda f:M7Anim + 1
-        sta M7D
+        stz BG1VOFS
+        stz BG1VOFS
         stz M7B
         stz M7B
         stz M7C
         stz M7C
+        stz M7D
+        stz M7D
+        ; M7A and M7Y by line, from the first frame's tables
+        lda #$02            ; two bytes to one register
+        sta DMAP1
+        sta DMAP2
+        lda #<M7A
+        sta BBAD1
+        lda #<M7Y
+        sta BBAD2
+        stz A1T1L
+        stz A1T2L
+        lda #PLANE_A
+        sta A1B1
+        lda #PLANE_Y
+        sta A1B2
+        stz plane_pan
+        lda #0
+        tax
+        jsr plane_set
+        lda #$06
+        sta HDMAEN
         lda #1
         sta map7
         stz map7_t
@@ -2661,6 +2688,8 @@ oam_dma_a:
         bra @out
 :       lda oam_ready
         bne @ready
+        lda ps_busy
+        bne @out            ; last frame's stay
         jsr convert_oam
 @ready: jsr oam_send
 @out:   ply
@@ -2715,10 +2744,15 @@ frame_done:
         sta $F0
         bra @out
         ; The frame counts as done from here: the game only waits now, so what convert_oam does
-        ; takes spare time. If the NMI comes first its few sprites are a frame late.
-@on:    lda #$AC
+        ; takes spare time. If the NMI comes first its few sprites are a frame late. On the map's
+        ; plane, all of them are, until they are done: the NMI must not send them half moved.
+@on:    jsr map_sprites     ; carry set on the plane
+        lda #$AC
         sta $F0
+        bcs @plane
         jsr convert_oam
+        bra @out
+@plane: jsr plane_sprites
 @out:   lda #$AC
         ply
         plx
@@ -2819,6 +2853,375 @@ frame_done:
         jmp @sprite
 :
 .endmacro
+
+; ---- The world map's sprites, on the plane --------------------------------------------
+
+LAST_STAGE = 6              ; $1B on the map: the stage that comes next
+PLANE_PAN  = 32             ; tools/build.py has the same number
+
+; Are the game's sprites to go on the plane? Once the island has arrived and while the map is up.
+; Carry set if so, and the NMI does not send any until plane_sprites has done them.
+map_sprites:
+        lda map7
+        beq @no
+        lda map7_t
+        cmp #M7_FRAMES
+        bcc @no
+        stz oam_ready
+        lda #1
+        sta ps_busy
+        sec
+        rts
+@no:    clc
+        rts
+
+; Each of the game's sprites, in its order: is it in the group so far? A group is sprites that
+; come one after another and touch its box, like an ohagi and its flag. Tops count from 16 lines
+; above the screen, as a sprite can be part way past the top.
+.macro ps_group buf, first
+.local @each, @next, @top, @in, @new, @grow
+        ldy #0
+        ldx #first
+@each:  lda buf + 1,y
+        cmp buf + 5,y
+        bne :+
+        jmp @next           ; both hidden
+:
+        clc
+        adc #16
+        sta ps_t
+        lda buf + 5,y
+        clc
+        adc #16
+        cmp ps_t
+        bcs @top
+        sta ps_t
+@top:   lda buf,y
+        sta ps_sx
+        ; In the group so far, or within a sprite of its box?
+        lda ps_n
+        beq @new            ; the first
+        lda ps_sx
+        clc
+        adc #8
+        bcs :+
+        cmp ps_l
+        bcc @new
+:       lda ps_r
+        clc
+        adc #8
+        bcs :+
+        cmp ps_sx
+        bcc @new
+:       lda ps_t
+        clc
+        adc #16
+        bcs :+
+        cmp ps_top
+        bcc @new
+:       lda ps_b
+        clc
+        adc #16
+        bcs :+
+        cmp ps_t
+        bcc @new
+:       bra @grow
+@new:   jsr ps_close
+        lda buf,y
+        sta ps_l
+        sta ps_r
+        lda ps_t
+        sta ps_top
+        sta ps_b
+        bra @in
+@grow:  lda ps_sx
+        cmp ps_l
+        bcs :+
+        sta ps_l
+:       cmp ps_r
+        bcc :+
+        sta ps_r
+:       lda ps_t
+        cmp ps_top
+        bcs :+
+        sta ps_top
+:       cmp ps_b
+        bcc @in
+        sta ps_b
+@in:    lda ps_n
+        sta ps_group,x
+@next:  inx
+        tya
+        clc
+        adc #8
+        tay
+        beq :+
+        jmp @each
+:
+.endmacro
+
+; Each sprite moves with its group. Off the screen, it hides; just past the left edge, it has
+; the high table's X bit.
+.macro ps_move buf, first
+.local @each, @next, @left, @set, @hide, @slow
+        ldy #0
+        ldx #first
+@each:  lda buf + 1,y
+        cmp buf + 5,y
+        bne :+
+        jmp @next           ; both hidden
+:
+        stx ps_t
+        lda ps_group,x
+        tax
+        lda ps_dx - 1,x
+        sta ps_x
+        lda ps_dy - 1,x
+        sta ps_dy_now
+        lda ps_fast - 1,x
+        ldx ps_t
+        cmp #0
+        beq @slow
+        ; All of the group stays on the screen, or off its bottom or right edge.
+        lda buf + 1,y
+        clc
+        adc ps_dy_now
+        sta buf + 1,y
+        lda buf + 5,y
+        clc
+        adc ps_dy_now
+        sta buf + 5,y
+        lda buf,y
+        clc
+        adc ps_x
+        jmp @set
+@slow:  lda buf + 1,y
+        jsr ps_move_y
+        sta buf + 1,y
+        lda buf + 5,y
+        jsr ps_move_y
+        sta buf + 5,y
+        lda buf,y
+        clc
+        adc ps_x
+        bit ps_x
+        bmi @left
+        bcs @hide
+        bra @set
+@left:  bcs @set
+        cmp #$F9
+        bcc @hide
+        ; Part way past the left edge: the X bit for both of the pair.
+        pha
+        phx
+        txa
+        lsr a
+        tax
+        lda #$05
+        bcc :+
+        lda #$50
+:       sta spr_neg         ; spr_prep clears the high table again
+        ora oam_buf + 512,x
+        sta oam_buf + 512,x
+        plx
+        pla
+        bra @set
+@hide:  lda #HIDDEN_Y
+        sta buf + 1,y
+        sta buf + 5,y
+        lda #0
+@set:   sta buf,y
+        sta buf + 4,y
+@next:  inx
+        tya
+        clc
+        adc #8
+        tay
+        beq :+
+        jmp @each
+:
+.endmacro
+
+; Every sprite on the plane, at its own size. Each group stands where its bottom edge lands on
+; the plane. This runs after the frame counts as done, in the game's spare time, and if the NMI
+; comes first the sprites before these stay up. The camera's pan before the last stage moves here
+; too, and goes to plane_pan, for map_now, only with these sprites done, so that they and the
+; island move together.
+plane_sprites:
+        jsr convert_oam
+        ; The pan eases to where this visit wants it. The island takes it up with these sprites.
+        ldx #0
+        lda $1B
+        cmp #LAST_STAGE
+        bne :+
+        ldx #PLANE_PAN
+:       txa
+        sec
+        sbc plane_pan
+        bne :+
+        lda plane_pan
+        bra @group
+:
+        bcc @up
+        clc
+        adc #15
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc plane_pan
+        bra @group
+@up:    eor #$FF
+        clc
+        adc #16
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        eor #$FF
+        sec
+        adc plane_pan
+@group: sta ps_pan
+        stz ps_n
+        ps_group oam_buf, 0
+        ps_group oam_buf + 256, 32
+        jsr ps_close
+        ldx #31
+:       stz oam_buf + 512,x
+        dex
+        bpl :-
+        ps_move oam_buf, 0
+        ps_move oam_buf + 256, 32
+        lda ps_pan
+        sta plane_pan
+        lda #1
+        sta oam_ready
+        stz ps_busy
+        rts
+
+; The group so far is done, if there is one: where it goes, down by PlaneDY and out from the
+; middle by PlaneE, as ps_dx and ps_dy for the next group number. Keeps x and y.
+ps_close:
+        phx
+        phy
+        ldx ps_n
+        bne :+
+        jmp @none
+:       lda ps_b
+        clc
+        adc ps_pan
+        bcc :+
+        lda #$FF
+:       tay
+        tyx
+        lda f:PlaneDY,x
+        clc
+        adc ps_pan
+        ldx ps_n
+        sta ps_dy - 1,x
+        ; Its middle, (left + right + 8) / 2, from the screen's middle
+        lda ps_l
+        clc
+        adc ps_r
+        ror a
+        clc
+        adc #4
+        bcc :+
+        lda #$FF
+:       eor #$80            ; signed, from 128
+        sta ps_x
+        bpl :+
+        eor #$FF
+        ina
+:       php
+        sei                 ; arm_irq uses the multiplier
+        sta WRMPYA
+        tyx
+        lda f:PlaneE,x
+        sta ps_dy_now
+        bpl :+
+        eor #$FF
+        ina
+:       sta WRMPYB
+        lda ps_x
+        eor ps_dy_now       ; the sign of the product, while it works
+        sta ps_x
+        nop
+        nop
+        lda RDMPYH
+        plp
+        bit ps_x
+        bpl :+
+        eor #$FF
+        ina
+:       ldx ps_n
+        sta ps_dx - 1,x
+        ; Does all of it stay where adding is enough? Tops from 16 above the screen to 239, below
+        ; it but not so far that the lower half comes round to the top, and x from 0 to 255.
+        stz ps_fast - 1,x
+        clc
+        adc ps_l
+        bit ps_dx - 1,x
+        bmi :+
+        bcs @none
+        bra @x2
+:       bcc @none
+@x2:    lda ps_dx - 1,x
+        clc
+        adc ps_r
+        bit ps_dx - 1,x
+        bmi :+
+        bcs @none
+        bra @y1
+:       bcc @none
+@y1:    lda ps_dy - 1,x
+        clc
+        adc ps_top
+        bit ps_dy - 1,x
+        bmi :+
+        bcs @none
+        bra @y2
+:       bcc @none
+@y2:    lda ps_dy - 1,x
+        clc
+        adc ps_b
+        bit ps_dy - 1,x
+        bmi :+
+        bcs @none
+        bra @fast
+:       bcc @none
+@fast:  lda #1
+        sta ps_fast - 1,x
+@none:  inc ps_n
+        ply
+        plx
+        rts
+
+; The top of one of a pair, a, moved down by ps_dy_now, or hidden if that is off the screen. A top
+; from $F9 up is past the top of the screen, in part. Keeps x and y.
+ps_move_y:
+        cmp #HIDDEN_Y
+        beq @out
+        clc
+        adc #16             ; from 16 lines above the screen
+        clc
+        adc ps_dy_now
+        bit ps_dy_now
+        bmi @neg
+        bcs @hide
+        bra @on
+@neg:   bcc @hide
+@on:    cmp #16 - 7
+        bcc @hide
+        cmp #16 + 224
+        bcs @hide
+        sec
+        sbc #16
+@out:   rts
+@hide:  lda #HIDDEN_Y
+        rts
+
 
 ; Sprite x of the game's: its CHR slot, and whether its page will be there in time. Only one
 ; stale page is sure to be copied in vblank, so sprites on any other stay off for this frame,

@@ -655,25 +655,83 @@ def build_mode7(chr_rom):
     return bytes(grid) + bytes(tiles)
 
 
-def mode7_frames():
-    """The island's arrival: it grows from a long way off, slowing to rest. A matrix entry is how
-    far one pixel on screen moves in the map, so it is 256 over the island's size."""
-    out = []
-    for i in range(M7_FRAMES):
-        u = (i + 1) / M7_FRAMES
-        size = 0.12 + 0.88 * (1 - (1 - u) ** 3)
-        a = int(256 / size)
-        out += [a & 0xFF, a >> 8]
-    return out
+# The map is a plane seen from above at a slant, as in Yoshi's Island: each line shows one row of
+# the NES's picture at its own scale, set by HDMA into M7A and M7Y with M7B, M7C and M7D at 0. Line
+# j of the screen sees row PLANE_CZ - PLANE_H ** 2 / (j - PLANE_YH) of the picture, at a scale of
+# PLANE_H / (j - PLANE_YH) picture pixels a screen pixel: the island's far edge at about 0.8 of its
+# size and its near one at about 1.5. Before the last stage the camera moves up the picture, by up
+# to PLANE_PAN rows, to the tower and the airship that flies up past it. src/runtime.s has these.
+PLANE_YH, PLANE_H, PLANE_CZ = -300, 356, 450
+PLANE_CY = 120              # the island grows in about this row of the picture
+PLANE_PAN = 32
+PLANE_A_HALF, PLANE_Y_HALF = 27, 28     # $DB and $DC: a table every 512 bytes
+
+
+def hdma_words(vals):
+    """An HDMA table of a 16-bit value for each of the 224 lines, for a register written twice."""
+    out = bytearray()
+    for part in (vals[:112], vals[112:]):
+        out.append(0x80 | len(part))
+        for v in part:
+            out += bytes([v & 0xFF, v >> 8 & 0xFF])
+    out.append(0)
+    return bytes(out).ljust(512, b"\0")
+
+
+def plane_tables():
+    """Each frame's tables: M7A's in one bank, for the arrival's M7_FRAMES + 1 frames, and M7Y's in
+    the next, for those and then for each step of the camera's pan, at the arrival's end. On frame k
+    the plane is smaller about PLANE_CY, growing to its size as in the GBA port."""
+    a_tabs, y_tabs = bytearray(), bytearray()
+
+    def frame(k, pan):
+        left = M7_FRAMES - k
+        ease = left * left / (M7_FRAMES * M7_FRAMES)
+        grow = 1 / (1 - ease * 7 / 8)
+        a, y = [], []
+        for j in range(224):
+            d = j - PLANE_YH
+            a.append(round(grow * PLANE_H / d * 256))
+            v = PLANE_CZ - PLANE_H * PLANE_H / d - pan
+            y.append(MAP_AT * 8 + round(PLANE_CY + grow * (v - PLANE_CY)))
+        return hdma_words(a), hdma_words(y)
+
+    for k in range(M7_FRAMES + 1):
+        a, y = frame(k, 0)
+        a_tabs += a
+        y_tabs += y
+    for pan in range(1, PLANE_PAN + 1):
+        y_tabs += frame(M7_FRAMES, pan)[1]
+    assert len(y_tabs) <= 0x10000
+    return bytes(a_tabs), bytes(y_tabs)
+
+
+def plane_feet():
+    """The sprites stand on the plane at their own size. Those that touch are one thing, placed by
+    where its bottom edge lands: s is the top of its lowest sprite, plus the camera's pan, counted
+    from 16 lines above the screen, and that sprite's bottom edge is row s + 8 of the picture, less
+    the pan. PlaneDY is how far it moves
+    down, less the pan; PlaneE how much further from the middle it goes, as 256 times the scale
+    there, less 1."""
+    dy, e = [], []
+    for s in range(-16, 240):
+        dz = PLANE_CZ - (s + 24)
+        top = PLANE_YH + PLANE_H * PLANE_H / dz - 16
+        dy.append(max(-128, min(127, round(top - s))) & 0xFF)
+        e.append(max(-128, min(127, round((PLANE_H / dz - 1) * 256))) & 0xFF)
+    return dy, e
 
 
 # ---- The notices on the title screen ------------------------------------------------
 
-# On a white plate like the logo's, at these rows, and OPTIONS under CONTINUE as the menu's third
-# entry. The rows are BG2's, which scrolls down NOTICE_DOWN pixels on the title (src/runtime.s), so
-# that row r starts at line r * 8 + NOTICE_DOWN - 1.
-NOTICES = {23: "PORT BY PIGMASSACRE", 25: "AI SLOP - DO NOT PLAY"}
-PLATE_ROWS, PLATE_COLS = (22, 27), (4, 28)
+# The warning on a white plate like the logo's, at this row, and OPTIONS under CONTINUE as the menu's
+# third entry. The rows are BG2's, which scrolls down NOTICE_DOWN pixels on the title (src/runtime.s),
+# so that row r starts at line r * 8 + NOTICE_DOWN - 1. Who made the port has a screen of its own,
+# before SUNSOFT PRESENTS: the credit in white and the warning in the title's grey, on black.
+CREDIT, WARNING = "PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"
+NOTICES = {24: WARNING}
+PLATE_ROWS, PLATE_COLS = (23, 26), (4, 28)
+SPLASH_ROWS = {13: (CREDIT, 2), 15: (WARNING, 7)}     # src/boot.s scrolls them to the middle
 OPTIONS_AT = (19, 12)       # under START and CONTINUE, which are sprites at x 96
 NOTICE_DOWN = 6             # src/runtime.s has the same number
 TILE_LOGO = 96              # the logo's SUPER, then OPTIONS's letters
@@ -789,7 +847,8 @@ def bg_tables():
 
 def build_overlay(chr_rom):
     """Tiles and maps for BG2, the notices, which show only on the title, and BG4, the clouds. The
-    first 4 KB are for VRAM word $6800, the next 4 KB for $7800 and the last 2 KB for $3C00."""
+    first 4 KB are for VRAM word $6800, the next 4 KB for $7800, then 2 KB for $3C00, the options
+    menu's map, and 2 KB for the first screen's (src/boot.s)."""
     def planar(pixels):
         out = bytearray(16)
         for y, row in enumerate(pixels):
@@ -926,7 +985,14 @@ def build_overlay(chr_rom):
     text(22, 12, "B - BACK")
     for (r, c), (t, pal) in logo_cells.items():
         menu[r][c] = word(t, pal=pal)
-    return bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)
+    splash = [[word(TILE_BLANK)] * 32 for _ in range(32)]
+    for r, (line, pal) in SPLASH_ROWS.items():
+        c = (32 - len(line)) // 2
+        for i, ch in enumerate(line):
+            t = TILE_BLANK if ch == " " else TILE_DASH if ch == "-" else ord(ch) - 64
+            splash[r][c + i] = word(t, pal=pal)
+    return (bytes(tiles) + b"".join(w for row in screen for w in row) + maps + b"".join(w for row in menu for w in row)
+            + b"".join(w for row in splash for w in row))
 
 
 def attr_table():
@@ -1022,7 +1088,9 @@ def main():
     s += bytes_asm("ColorLo", [c & 0xFF for c in colors])
     s += bytes_asm("ColorHi", [c >> 8 for c in colors])
     s += bytes_asm("AttrTable", attr_table())
-    s += bytes_asm("M7Anim", mode7_frames())
+    dy, e = plane_feet()
+    s += bytes_asm("PlaneDY", dy)
+    s += bytes_asm("PlaneE", e)
     alias, alias_tiles = build_parallax_pages(chr_rom)
     s += bytes_asm("PageAlias", alias)
     bg_banks, bg_offs = bg_tables()
@@ -1120,6 +1188,9 @@ def main():
         image[at:at + 0x800] = alias_tiles[n * 0x800:(n + 1) * 0x800]
     m7 = build_mode7(chr_rom)
     image[MODE7_HALF * 0x10000:MODE7_HALF * 0x10000 + len(m7)] = m7
+    a_tabs, y_tabs = plane_tables()
+    image[PLANE_A_HALF * 0x10000:PLANE_A_HALF * 0x10000 + len(a_tabs)] = a_tabs
+    image[PLANE_Y_HALF * 0x10000:PLANE_Y_HALF * 0x10000 + len(y_tabs)] = y_tabs
     overlay = build_overlay(chr_rom)
     image[OVERLAY_HALF * 0x10000:OVERLAY_HALF * 0x10000 + len(overlay)] = overlay
     for num in range(32):
