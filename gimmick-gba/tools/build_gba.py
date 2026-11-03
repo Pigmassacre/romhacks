@@ -101,7 +101,10 @@ def main():
         flags.append("-DREPLAY")
         # A recording of the NES game with all of Gimmick! 1.5 on is replayed with all
         # its options on.
-        if os.path.basename(trace.rstrip("/")) == "ref15":
+        # REPLAY_OPTIONS in the environment picks other options, to time them.
+        if os.environ.get("REPLAY_OPTIONS"):
+            flags.append("-DREPLAY_OPTIONS=" + os.environ["REPLAY_OPTIONS"])
+        elif os.path.basename(trace.rstrip("/")) == "ref15":
             flags.append("-DREPLAY_OPTIONS=OPT_ALL")
         if "--timing" in sys.argv:
             flags.append("-DTIMING_ONLY")

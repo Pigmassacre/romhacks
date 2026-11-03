@@ -54,7 +54,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 ## Known limits
 
 - It has been run in mGBA, and not on a real GBA.
-- Normal play takes about 70% of the GBA's time for a frame, and the busiest about 85%. Some single
+- Normal play takes about 70% of the GBA's time for a frame, and the busiest about 85%. With all
+  of Gimmick! 1.5's options on it takes about 80%, as their code is not in fast RAM. Some single
   frames take more, up to about 140%, mostly where the NES itself runs long.
 - A heavy frame can run over the GBA's time for a frame. Then that frame is not drawn and the next
   starts straight away. The next is always drawn, so under a sustained load the game slows, as it
