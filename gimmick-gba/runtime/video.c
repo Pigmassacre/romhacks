@@ -429,6 +429,90 @@ static void load_bg_pages(int layer, const u8 *chr_set, u8 ctrl, int how) {
   }
 }
 
+// The world map arrives as the SNES port's does in Mode 7: the island spins in from far
+// away and settles on the picture the NES shows, and from there the usual drawing takes
+// over. The GBA's affine layer has one byte a cell and 8-bit tiles, so each tile and
+// palette the island uses becomes a tile, made from the nametable when the map opens.
+#define MAP_FRAMES 72
+#define AFFINE_MAP 24
+static const u16 quarter_sin[65] = {0, 6, 13, 19, 25, 31, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92, 98, 104, 109,
+  115, 121, 126, 132, 137, 142, 147, 152, 157, 162, 167, 172, 177, 181, 185, 190, 194, 198, 202, 206, 209,
+  213, 216, 220, 223, 226, 229, 231, 234, 237, 239, 241, 243, 245, 247, 248, 250, 251, 252, 253, 254, 255,
+  255, 256, 256, 256};
+
+static int sin256(int a) {  // a in 1/256 turns, result 8.8
+  a &= 255;
+  return a <= 64 ? quarter_sin[a] : a <= 128 ? quarter_sin[128 - a] : a <= 192 ? -quarter_sin[a - 128] : -quarter_sin[256 - a];
+}
+
+static inline int on_world_map(void) {
+  return (top_ctrl & 0x10) && top_chr[4] == 0x54 && top_chr[5] == 0x55;
+}
+
+// The island's cells, as tiles of their own: 0 when that does not fit.
+static int build_island(int top) {
+  static u16 pairs[256] SLOW_RAM;
+  static u8 ids[1024] SLOW_RAM;  // by tile and palette
+  int count = 0;
+  for (int i = 0; i < 1024; i++) ids[i] = 0xFF;
+  const u8 *pages = top_chr + 4;
+  volatile u8 *map = VRAM + AFFINE_MAP * 0x800;
+  int sy = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7);
+  int nt_y = (top_t >> 11) & 1;
+  for (int r = 0; r < 32; r++) {
+    int row = sy / 8 + r, nty = nt_y;
+    while (row >= 30) { row -= 30; nty ^= 1; }
+    for (int c = 0; c < 32; c += 2) {
+      u8 cell[2];
+      for (int k = 0; k < 2; k++) {
+        int col = (top_t & 31) + c + k, ntx = (top_t >> 10) & 1;
+        if (col >= 32) { col -= 32; ntx ^= 1; }
+        const u8 *nt = &ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))];
+        u16 key = r < 30 ? nt[row * 32 + col] | (nt[0x3C0 + (row >> 2) * 8 + (col >> 2)] >> (((row & 2) << 1) | (col & 2)) & 3) << 8 : 0;
+        if (ids[key] == 0xFF) {
+          if (count == 255) return 0;
+          ids[key] = count;
+          pairs[count++] = key;
+        }
+        cell[k] = ids[key];
+      }
+      // VRAM takes 16 bits at a time.
+      *(volatile u16 *)(map + r * 32 + c) = cell[0] | cell[1] << 8;
+    }
+  }
+  for (int id = 0; id < count; id++) {
+    u32 t = pairs[id] & 0xFF, pal = pairs[id] >> 8;
+    const u8 *src = chr + pages[t >> 6] * 0x400 + (t & 63) * 16;
+    volatile u16 *dst = (volatile u16 *)(VRAM + 2 * 0x4000 + id * 64);
+    for (int y = 0; y < 8; y++)
+      for (int x = 0; x < 8; x += 2) {
+        u32 a = (src[y] >> (7 - x) & 1) | (src[8 + y] >> (7 - x) & 1) << 1;
+        u32 b = (src[y] >> (6 - x) & 1) | (src[8 + y] >> (6 - x) & 1) << 1;
+        dst[y * 4 + x / 2] = (a ? pal * 16 + a : 0) | (b ? pal * 16 + b : 0) << 8;
+      }
+  }
+  for (int p = 0; p < 4; p++) loaded_bg[2][p] = 0xFFFF;  // the third layer's tiles are gone
+  return 1;
+}
+
+// Frame k of the arrival: smaller and turned, settling on the NES's picture.
+static void place_island(int k, int top) {
+  int left = MAP_FRAMES - k;                                   // frames to go
+  int ease = left * left * 256 / (MAP_FRAMES * MAP_FRAMES);    // 256 at the start, 0 at the end
+  int zoom = 256 - ease * 7 / 8;                               // 8.8: the island's size
+  int turn = ease * 3 / 2;                                     // 1/256 turns
+  int c = sin256(turn + 64), s = sin256(turn);
+  int pa = c * 256 / zoom, pb = s * 256 / zoom, pc = -s * 256 / zoom, pd = c * 256 / zoom;
+  int cx = SCREEN_W / 2, cy = SCREEN_H / 2;
+  int mx = (cx + 8 + top_x) << 8, my = (cy + top) << 8;
+  REG16(0x04000020) = pa;
+  REG16(0x04000022) = pb;
+  REG16(0x04000024) = pc;
+  REG16(0x04000026) = pd;
+  REG32(0x04000028) = mx - (pa * cx + pb * cy);
+  REG32(0x0400002C) = my - (pc * cx + pd * cy);
+}
+
 // What a layer's map holds now, so it is only rebuilt when that changes.
 static struct { int t, row; } map_key[LAYERS] = {{-1, -1}, {-1, -1}, {-1, -1}};
 
@@ -472,6 +556,16 @@ void video_present(void) {
   int view_h = SCREEN_H - status_h;
   int title = on_title();
   int top = camera(status_line, view_h, status >= 0);
+  static int island = -1;  // the arrival's frame, or -1
+  if (!on_world_map() || !(ppu_mask & 0x18)) island = -1;
+  else if (island == -1 && !parts && status < 0) island = build_island(top) ? 0 : MAP_FRAMES;
+  if (island >= 0 && island < MAP_FRAMES) {
+    place_island(island++, top);
+    BG2CNT = 2 << 2 | 1 << 7 | AFFINE_MAP << 8 | 1 << 14;  // 8-bit tiles, 256x256
+    DISPCNT = 0x0001 | 0x0040 | 0x0400;                     // mode 1, the affine layer only
+    nt_dirty = 0;
+    return;
+  }
   int cloud_stage = parallax_stage(parts, status);
   load_bg_pages(0, top_chr, top_ctrl, cloud_stage >= 0);
 

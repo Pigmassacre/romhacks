@@ -34,6 +34,9 @@ The title screen says ADVANCE in the logo's bar, where the original has its name
 **Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
 behind the stage, at half its speed, as in the SNES port.
 
+**The world map in Mode 7.** The island spins in from far away when the map opens, on the
+GBA's affine layer, then settles on the same picture as the original.
+
 **Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
 skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
 right switch it, and Select or B goes back. They start off, so the game plays as it always did, and
@@ -62,6 +65,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   pages whose sky and clouds are blank, and a mask of each page: the sky's colour where the NES
   shows its colour 0 outside the sky, on a layer between the stage and the clouds. Sprites behind
   the background go between the stage and the mask, where the NES shows them.
+- The world map's arrival builds the island's tiles from the NES's nametable when it opens: the
+  affine layer has 8-bit tiles and one byte a cell, so each tile and palette pair becomes a tile.
+  It ends exactly on the NES's picture, and the usual drawing takes over there.
 - Gimmick! 1.5's code goes in a bank after the game's, and its far calls in the fixed bank's dead
   block, as in 1.5 itself. Each of its five hooks, a JSR to a far call, is a switch at the start of
   the block there: with the options it answers to off, the game's own code runs, cycle for cycle.
