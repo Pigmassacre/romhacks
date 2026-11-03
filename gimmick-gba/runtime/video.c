@@ -91,7 +91,8 @@ static int band_from, band_to;
 
 // The title's third entry, OPTIONS, under START and CONTINUE: the game's own letters,
 // tall sprites with the letter in their lower half, and a P drawn to match in a tile
-// the title's sprites never use. All three go up 8 lines to fit the GBA's screen.
+// the title's sprites never use. All three go up 8 lines, to sit between the logo and
+// the bottom of the GBA's screen.
 // gba.c moves title_cursor; on OPTIONS, START and CONTINUE are both grey, as the
 // game draws the one not chosen, and OPTIONS blinks as the game blinks its choice.
 int title_cursor;
@@ -105,7 +106,7 @@ __attribute__((noinline)) static void put_p_tile(int tile);
 // OPTIONS and the title's own sprites. Not in fast RAM: only the title has them.
 static int blink;
 
-// The game's sprites with START and CONTINUE moved up, and grey while OPTIONS is chosen.
+// The game's sprites, with START and CONTINUE moved up, and grey while OPTIONS is chosen.
 __attribute__((noinline)) static const u8 *title_sprites(void) {
   static u8 copy[256] SLOW_RAM;
   blink = 1;
@@ -205,12 +206,14 @@ HOT __attribute__((long_call, noinline)) static void draw_sprites(int top, int s
 // CONTINUE, and ADVANCE in the logo's bar in place of its katakana. The font is the
 // menu's, a bold 7x7: the letters it has are copied, the others drawn to match. The
 // options menu is on it too, over the logo.
-// Each letter has three tiles: grey with a black shadow down and right, for the sky,
-// black on the bar's white, and black on the menu's white. Their tiles sit after the
-// second layer's, so they never clash.
+// Each letter has two tiles: grey with a black shadow down and right, for the sky, and
+// black on the menu's white. The bar has tiles of its own, drawn whole, so that ADVANCE
+// can sit in its middle to the pixel. They all sit after the second layer's, so they
+// never clash.
 #define TEXT_TILE 256
 #define NOTICE_PALETTE 15
 #define BAR_PALETTE 14
+#define SPLASH_PALETTE 13
 static const struct { char c; char rows[7][8]; } font[] = {
   {' ', {".......", ".......", ".......", ".......", ".......", ".......", "......."}},
   {'-', {".......", ".......", ".......", ".#####.", ".......", ".......", "......."}},
@@ -242,18 +245,24 @@ static const struct { char c; char rows[7][8]; } font[] = {
   {'Y', {"##...##", "##...##", ".##.##.", "..###..", "...##..", "...##..", "...##.."}},
 };
 #define FONT_SIZE (sizeof font / sizeof font[0])
-#define BAR_TILE (TEXT_TILE + FONT_SIZE)      // then the bar's: its letters, then its ends
-#define MENU_TILE (BAR_TILE + FONT_SIZE + 2)
+#define BAR_TILE (TEXT_TILE + FONT_SIZE)      // then the bar's, one per column
+#define MENU_TILE (BAR_TILE + BAR_RIGHT - BAR_LEFT + 1)
 #define CLEAR_TILE (MENU_TILE + FONT_SIZE)
-// Rows of the map, which sits 5 lines up so that the bar's white inside, lines 99 to
-// 105, starts a row. The notices go on the sky above the logo, as Gimmick! 1.5's do.
-#define TEXT_SCROLL 5
+// The title's camera: the line of the NES's picture at the top of the screen. It leaves
+// the sky above the logo room for the notice.
+#define TITLE_TOP 15
+// Rows of the map, which scrolls so that the bar's white inside, lines 99 to 105 of the
+// NES's picture, starts a row. The notice goes on the sky above the logo, as Gimmick!
+// 1.5's do.
+#define TEXT_SCROLL (TITLE_TOP - 1)
 #define BAR_ROW 13
 #define BAR_LEFT 4      // its tiles: the bar's ends are lines at x 32 and 207
 #define BAR_RIGHT 25
-#define NOTICE_ROW 1
-static const char *const notices[2] = {"PORT BY PIGMASSACRE", "AI SLOP - DO NOT PLAY"};
-static const char bar_text[] = "A  D  V  A  N  C  E";
+#define NOTICE_ROW 2
+#define CREDIT "PORT BY PIGMASSACRE"
+#define WARNING "AI SLOP - DO NOT PLAY"
+static const char bar_text[] = "ADVANCE";
+#define BAR_PITCH 24    // from one letter to the next, as the katakana are spaced
 
 static int is_ink(int g, int x, int y) {
   return x >= 0 && x < 7 && y >= 0 && y < 7 && font[g].rows[y][x] == '#';
@@ -267,6 +276,12 @@ static void put_tile(int tile, u8 px[8][8]) {
   }
 }
 
+static int glyph(char c) {
+  u32 g = 0;
+  while (g < FONT_SIZE && font[g].c != c) g++;
+  return g < FONT_SIZE ? g : 0;
+}
+
 static void font_init(void) {
   u8 px[8][8];
   for (u32 g = 0; g < FONT_SIZE; g++) {
@@ -274,33 +289,32 @@ static void font_init(void) {
       for (int x = 0; x < 8; x++)
         px[y][x] = is_ink(g, x, y) ? 1 : is_ink(g, x - 1, y - 1) ? 2 : 0;
     put_tile(TEXT_TILE + g, px);
-    // On the bar, its bottom line shows through.
     for (int y = 0; y < 8; y++)
-      for (int x = 0; x < 8; x++)
-        px[y][x] = y == 7 ? 0 : is_ink(g, x, y) ? 1 : 3;
-    put_tile(BAR_TILE + g, px);
-    px[7][0] = px[7][1] = px[7][2] = px[7][3] = px[7][4] = px[7][5] = px[7][6] = px[7][7] = 3;
+      for (int x = 0; x < 8; x++) px[y][x] = is_ink(g, x, y) ? 1 : 3;
     put_tile(MENU_TILE + g, px);
   }
-  for (int end = 0; end < 2; end++) {
-    for (int y = 0; y < 8; y++)
-      for (int x = 0; x < 8; x++)
-        px[y][x] = y == 7 || x == (end ? 7 : 0) ? 0 : 3;
-    put_tile(BAR_TILE + FONT_SIZE + end, px);
+  // The bar: white inside its ends, the lines at its first and last pixel, with its
+  // bottom line showing through, and ADVANCE in the middle of what is between them.
+  int len = sizeof bar_text - 1, w = (BAR_RIGHT - BAR_LEFT + 1) * 8;
+  int left = 1 + (w - 2 - ((len - 1) * BAR_PITCH + 7)) / 2;
+  for (int c = 0; c < w / 8; c++) {
+    for (int y = 0; y < 8; y++) {
+      for (int x = 0; x < 8; x++) {
+        int bx = c * 8 + x, k = (bx - left) / BAR_PITCH, gx = bx - left - k * BAR_PITCH;
+        int ink = bx >= left && k < len && is_ink(glyph(bar_text[k]), gx, y);
+        px[y][x] = y == 7 || bx == 0 || bx == w - 1 ? 0 : ink ? 1 : 3;
+      }
+    }
+    put_tile(BAR_TILE + c, px);
   }
   for (int y = 0; y < 8; y++)
     for (int x = 0; x < 8; x++) px[y][x] = 0;
   put_tile(CLEAR_TILE, px);
   BG_PAL[NOTICE_PALETTE * 16 + 1] = nes_colors[0x10];
   BG_PAL[NOTICE_PALETTE * 16 + 2] = RGB(0, 0, 0);
+  BG_PAL[SPLASH_PALETTE * 16 + 1] = nes_colors[0x30];
   BG_PAL[BAR_PALETTE * 16 + 1] = RGB(0, 0, 0);
   BG_PAL[BAR_PALETTE * 16 + 3] = nes_colors[0x30];
-}
-
-static int glyph(char c) {
-  u32 g = 0;
-  while (g < FONT_SIZE && font[g].c != c) g++;
-  return g < FONT_SIZE ? g : 0;
 }
 
 // OPTIONS' P, as the game draws its letters: colour 3, with colour 1 down and right.
@@ -317,29 +331,49 @@ __attribute__((noinline)) static void put_p_tile(int tile) {
   p_loaded = 1;
 }
 
+// A line of text, across the middle of the screen.
+static void text_line(volatile u16 *map, int row, const char *t, int palette) {
+  int len = 0;
+  while (t[len]) len++;
+  int left = (30 - len) / 2;
+  for (int i = 0; i < len; i++) map[row * 32 + left + i] = (TEXT_TILE + glyph(t[i])) | palette << 12;
+}
+
+static void draw_bar(volatile u16 *map) {
+  for (int c = BAR_LEFT; c <= BAR_RIGHT; c++)
+    map[BAR_ROW * 32 + c] = (BAR_TILE + c - BAR_LEFT) | BAR_PALETTE << 12;
+}
+
 static void draw_notices(void) {
   volatile u16 *map = MAP(MAP_TEXT);
   for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
-  for (int n = 0; n < 2; n++) {
-    const char *t = notices[n];
-    int len = 0;
-    while (t[len]) len++;
-    int left = (30 - len) / 2;
-    for (int i = 0; i < len; i++)
-      map[(NOTICE_ROW + n) * 32 + left + i] = (TEXT_TILE + glyph(t[i])) | NOTICE_PALETTE << 12;
-  }
-  int len = sizeof bar_text - 1, left = BAR_LEFT + (BAR_RIGHT - BAR_LEFT + 1 - len) / 2;
-  for (int c = BAR_LEFT; c <= BAR_RIGHT; c++) {
-    int tile = c == BAR_LEFT ? BAR_TILE + FONT_SIZE : c == BAR_RIGHT ? BAR_TILE + FONT_SIZE + 1
-             : BAR_TILE + (c >= left && c < left + len ? glyph(bar_text[c - left]) : 0);
-    map[BAR_ROW * 32 + c] = tile | BAR_PALETTE << 12;
-  }
+  text_line(map, NOTICE_ROW, WARNING, NOTICE_PALETTE);
+  draw_bar(map);
   REG16(0x0400001C) = 0;
   REG16(0x0400001E) = TEXT_SCROLL;
 }
 
+// The first screen, before the game's own: who made the port, in white, and the
+// warning, in the title's grey, on black like SUNSOFT PRESENTS. gba.c shows it.
+void splash_draw(int show) {
+  volatile u16 *map = MAP(MAP_TEXT);
+  if (!show) {
+    DISPCNT = 0x0080;
+    draw_notices();
+    return;
+  }
+  for (int i = 0; i < 32 * 32; i++) map[i] = CLEAR_TILE;
+  text_line(map, 9, CREDIT, SPLASH_PALETTE);
+  text_line(map, 11, WARNING, NOTICE_PALETTE);
+  REG16(0x0400001C) = 0;
+  REG16(0x0400001E) = 4;  // the two lines, 72 to 95 of the map, about the screen's middle
+  BG_PAL[0] = 0;
+  DISPCNT = 0x0800;
+}
+
 // Gimmick! 1.5's features as options: a white box over the logo, from the title's
-// OPTIONS. The rows it covers go back to clear when it closes.
+// OPTIONS, down over the bar and its ADVANCE. The rows it covers go back to clear, and
+// the bar to ADVANCE, when it closes.
 #define MENU_TOP 4
 #define MENU_ROWS 9
 static const char *const option_names[5] = {"STAR RECALL", "SKIPPING STONES", "TAP TO SUMMON",
@@ -355,10 +389,14 @@ void menu_draw(int open, int cursor, int opts) {
   for (int r = MENU_TOP; r < MENU_TOP + MENU_ROWS; r++)
     for (int c = BAR_LEFT; c <= BAR_RIGHT; c++)
       map[r * 32 + c] = open ? MENU_TILE | BAR_PALETTE << 12 : CLEAR_TILE;
-  if (!open) return;
-  menu_text(MENU_TOP + 1, BAR_LEFT + 2, "GIMMICK! 1.5 OPTIONS");
+  if (!open) {
+    draw_bar(map);
+    return;
+  }
+  for (int c = BAR_LEFT; c <= BAR_RIGHT; c++) map[BAR_ROW * 32 + c] = MENU_TILE | BAR_PALETTE << 12;
+  menu_text(MENU_TOP + 2, BAR_LEFT + (BAR_RIGHT - BAR_LEFT + 1 - 7) / 2, "OPTIONS");
   for (int i = 0; i < 5; i++) {
-    int row = MENU_TOP + 3 + i;
+    int row = MENU_TOP + 4 + i;
     if (i == cursor) menu_text(row, BAR_LEFT + 1, ">");
     menu_text(row, BAR_LEFT + 2, option_names[i]);
     menu_text(row, BAR_RIGHT - 3, opts >> i & 1 ? " ON" : "OFF");
@@ -370,7 +408,6 @@ static inline int on_title(void) {
   return top_chr[5] == 0x65 && top_chr[6] == 0x66 && top_chr[7] == 0x67;
 }
 int video_on_title(void) { return on_title(); }
-#define TITLE_TOP 6    // the sky above the logo, for the notices, down to CONTINUE
 #define STATUS_FROM 184  // a mid-frame change this low is the status bar
 
 // Which lines of a screen without a status bar have something on them: everything

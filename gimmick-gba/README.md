@@ -30,8 +30,11 @@ The GBA's screen is 160 lines tall and the NES playfield is 192, so the camera f
 up and down, and the title and cutscenes show the part with something on it.
 
 The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
-It has a third entry, OPTIONS, under START and CONTINUE, which are 8 lines higher than on the NES
-so that all three fit. Select, up and down move between them.
+Before the game's own SUNSOFT PRESENTS comes a screen of the port's own, saying who made it and
+that it is AI slop; Start or A skips it. The title keeps the warning above the logo, and has a
+third entry, OPTIONS, under START and CONTINUE. Select, up and down move between them. The logo
+sits higher on the screen than before, and the three entries 8 lines closer to it than on the NES,
+to make room for both on the GBA's shorter screen.
 
 **Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
 behind the stage, at half its speed, as in the SNES port.
