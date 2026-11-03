@@ -207,8 +207,8 @@ fast:
         sta CGDATA
         lda #$7F
         sta CGDATA
-        ; Palette 3, the plate: white, the grey of CONTINUE, black. Palette 4, SUPER in the logo:
-        ; black and white. Palette 5, OPTIONS: the grey, which menu_tick makes white when it
+        ; Palette 3, the plate: white, the grey of CONTINUE, black. Palettes 4 and 6, SUPER in the logo:
+        ; black, a grey and white, the logo's dark grey in 4 and its light grey in 6. Palette 5, OPTIONS: the grey, which menu_tick makes white when it
         ; is chosen, and black.
         lda #45
         sta CGADD
@@ -216,7 +216,7 @@ fast:
 :       lda f:notice_cg,x
         sta CGDATA
         inx
-        cpx #22
+        cpx #30
         bne :-
 
         ; The picture: Mode 0. BG1 is the NES's background, with nothing in front of it but
@@ -345,9 +345,11 @@ zero:   .byte 0
 notice_cg:
         .word $7FFF, $56B5, $0000           ; palette 3, from colour 1
         .word $0000                         ; palette 4's colour 0, which is never seen
-        .word $0000, $0000, $7FFF
+        .word $0000, $318C, $7FFF
         .word $0000, $0000                  ; palette 5's colours 0 and 1, which are never seen
         .word $56B5, $0000
+        .word $0000                         ; palette 6's colour 0
+        .word $0000, $56B5, $7FFF
 
 .segment "HEADER"
         ;       123456789012345678901

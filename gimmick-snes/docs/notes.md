@@ -106,7 +106,8 @@ background shows through colour 0 and is hidden by the rest, so with sky behind 
 the sky and yet behind that sprite: only a layer of its own can do that.
 
 - **BG2** has the title's additions: SUPER in the logo, on white over its small print (`src/logo_super.txt`, at
-  most as many different tiles as BG2 has left; `tools/super_edit.py` counts them), OPTIONS under CONTINUE in
+  most as many different tiles as BG2 has left; `tools/super_edit.py` counts them). It has the logo's four
+  colours in two palettes, 4 with the dark grey and 6 with the light, so each tile has one of the greys; OPTIONS under CONTINUE in
   the menu's own font and colours, and the notices on a white plate like the logo's. That font is the options menu's
   too, white on black in palette 2 and black on white in palette 3. BG2 scrolls down 6 lines on the title
   (`NOTICE_DOWN`), so that OPTIONS is as far under CONTINUE as that is under START.
