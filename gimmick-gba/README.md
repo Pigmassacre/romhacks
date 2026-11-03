@@ -38,6 +38,8 @@ behind the stage, at half its speed, as in the SNES port.
 island lies on the GBA's affine layer, its far edge smaller than its near one. It grows in from
 far away when the map opens and stays tilted while the map is up. The ohagis, flags, clouds and
 the ship stand up on it at their own size, where their feet are, the nearer ones in front.
+Before the last stage the camera moves up the map, to the tower and the airship that flies up
+past it.
 
 **Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
 skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and

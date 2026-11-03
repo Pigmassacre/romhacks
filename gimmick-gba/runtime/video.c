@@ -499,6 +499,11 @@ static int build_island(int top) {
 #define PLANE_H 267
 #define PLANE_F 267
 #define PLANE_CZ 414
+// Before the last stage the camera moves up the picture by PLANE_PAN, to the tower and
+// the airship that flies up past it to the top, which the plane would show small.
+#define LAST_STAGE 6  // $1B on the map: the stage that comes next
+#define PLANE_PAN 36
+static int plane_pan;  // how far up the camera is now
 static short plane_pa[SCREEN_H] SLOW_RAM;  // the scale on each line, 8.8
 static int plane_v[SCREEN_H] SLOW_RAM;     // the picture's row there, 8.8
 static struct affine_line plane_lines[2][SCREEN_H + 1] SLOW_RAM;  // the HBlank's line after the last
@@ -548,7 +553,7 @@ static void place_plane(int k) {
   int grow = 65536 / zoom;                                     // 8.8: picture pixels a plane pixel
   for (int y = 0; y < SCREEN_H; y++) {
     int pa = plane_pa[y];
-    int x0 = -(SCREEN_W / 2) * pa, y0 = plane_v[y] - (cy << 8);  // from the middle, 8.8
+    int x0 = -(SCREEN_W / 2) * pa, y0 = plane_v[y] - (plane_pan << 8) - (cy << 8);  // from the middle, 8.8
     out[y].pa = grow * pa >> 8;
     out[y].pc = 0;
     out[y].pb = 0;
@@ -622,7 +627,7 @@ static void draw_plane_sprites(void) {
   for (int o = 0; o < groups; o++) {
     int g = order[o];
     int fu = (left[g] + right[g]) / 2 + top_x, fv = bottom[g];
-    int dz = PLANE_CZ - fv;
+    int dz = PLANE_CZ - plane_pan - fv;
     int fx = SCREEN_W / 2 + (fu - cx) * PLANE_F / dz;
     int fy = PLANE_YH + (PLANE_H * PLANE_F + dz / 2) / dz;
     for (int a = 0; a < count; a++) {
@@ -691,6 +696,7 @@ void video_present(void) {
   if (!on_world_map() || !(ppu_mask & 0x18)) {
     if (island >= 0) plane_off();
     island = -1;
+    plane_pan = 0;
   } else if (island == -1 && !parts && status < 0) {
     island = build_island(top) ? 0 : -2;
     island_t = top_t;
@@ -704,7 +710,16 @@ void video_present(void) {
     }
   }
   if (island >= 0) {
-    if (island <= MAP_FRAMES) place_plane(island++);
+    if (island <= MAP_FRAMES) {
+      place_plane(island++);
+    } else {
+      // Once it has arrived, the camera eases to where this visit wants it.
+      int d = (ram[0x1B] == LAST_STAGE ? PLANE_PAN : 0) - plane_pan;
+      if (d) {
+        plane_pan += d > 0 ? (d + 15) / 16 : (d - 15) / 16;
+        place_plane(MAP_FRAMES);
+      }
+    }
     BG2CNT = 2 << 2 | 1 << 7 | AFFINE_MAP << 8 | 1 << 14 | 1;  // 8-bit tiles, 256x256
     if (island > MAP_FRAMES) {
       draw_plane_sprites();
