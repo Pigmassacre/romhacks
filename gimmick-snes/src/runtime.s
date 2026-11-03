@@ -87,14 +87,11 @@ itmp:        .res 4         ; the same, for code that interrupts may run
 vf_left:     .res 1
 attr_until:  .res 1
 attr_ch:     .res 1
-attr_pg:     .res 1
 attr_head:   .res 1
 attr_tail:   .res 1
 attr_chg:    .res 128       ; the shadow's bits that the map has yet to get
 attr_q:      .res 128
 attr_new:    .res 1
-attr_col:    .res 1
-attr_row:    .res 1
 attr_lo:     .res 1
 attr_hi:     .res 1
 chr_want:    .res 8         ; what the game has mapped for the top of the picture
@@ -2437,11 +2434,34 @@ vram_flush_now:
         sta VMADDL
         ply
         ldx vf_left
+        cpx #8
+        bcs @dma
 :       lda $0170,y
         sta VMDATAL
         iny
         dex
         bne :-
+        jmp @entry
+@dma:   ; A long one, such as a whole column as a stage starts: by DMA, at a fraction of the cost
+        stz DMAP7
+        lda #<VMDATAL
+        sta BBAD7
+        tya
+        clc
+        adc #$70
+        sta A1T7L
+        lda #$01
+        adc #0
+        sta A1T7H
+        stz A1B7
+        stx DAS7L
+        stz DAS7H
+        lda #$80
+        sta MDMAEN
+        tya
+        clc
+        adc vf_left
+        tay
         jmp @entry
 @slow:  ; palettes, attributes and columns, a byte at a time as the game would
         lda #$FF
@@ -2520,6 +2540,32 @@ attr_work:
         bra @item
 @done:  rts
 
+; One quarter of an attribute group: 2x2 tiles, if its bits changed. Then the next bits.
+.macro attr_quarter off
+.local @same
+        lda attr_ch
+        and #3
+        beq @same
+        lda attr_new
+        and #3
+        asl a
+        asl a
+        tay
+        lda attr_lo
+        ora #off
+        sta VMADDL
+        sty VMDATAH
+        sty VMDATAH
+        ora #off + 32
+        sta VMADDL
+        sty VMDATAH
+        sty VMDATAH
+@same:  lsr attr_ch
+        lsr attr_ch
+        lsr attr_new
+        lsr attr_new
+.endmacro
+
 ; y = the shadow's index
 attr_item:
         tyx
@@ -2528,83 +2574,39 @@ attr_item:
         stz attr_chg,x
         lda attr_shadow,x
         sta attr_new
-        ; map A or B
-        tya
-        and #$40
-        beq :+
-        lda #4
-:       ora #MAP_HI
-        sta attr_pg
-        lda #$80
-        sta VMAINC
+        ; The group's first word: map + group row * 128 + col * 4. The quarters and the second
+        ; row of each add 2, 64 and 32, bits that are clear in it, so ora finds them.
         tya
         and #7
         asl a
         asl a
-        sta attr_col
+        sta attr_lo
         tya
         and #$38
         lsr a
         lsr a
         lsr a
-        sta attr_row
-        ldx #0
-@quarter:
-        lda attr_ch
-        and #3
-        beq @same
-        ; word = map + group row * 128 + (quarter bit 1) * 64 + col * 4 + (quarter bit 0) * 2
-        txa
-        and #1
-        asl a
-        ora attr_col
-        sta attr_lo
-        lda attr_row
         lsr a
-        sta attr_hi
-        lda #0
-        ror a
-        ora attr_lo
-        sta attr_lo
-        txa
-        and #2
-        beq :+
-        lda attr_lo
-        clc
-        adc #64
-        sta attr_lo
         bcc :+
-        inc attr_hi
-:       lda attr_hi
-        ora attr_pg
-        sta attr_hi
-        lda attr_new
-        and #3
-        asl a
-        asl a
-        tay
+        pha
         lda attr_lo
-        sta VMADDL
-        lda attr_hi
+        ora #$80
+        sta attr_lo
+        pla
+:       sta attr_hi
+        tya
+        and #$40
+        beq :+
+        lda #4
+:       ora #MAP_HI
+        ora attr_hi
         sta VMADDH
-        sty VMDATAH
-        sty VMDATAH
-        lda attr_lo
-        clc
-        adc #32
-        sta VMADDL
-        lda attr_hi
-        adc #0
-        sta VMADDH
-        sty VMDATAH
-        sty VMDATAH
-@same:  lsr attr_ch
-        lsr attr_ch
-        lsr attr_new
-        lsr attr_new
-        inx
-        cpx #4
-        bne @quarter
+        lda #$80
+        sta VMAINC
+        attr_quarter 0
+        attr_quarter 2
+        attr_quarter 64
+        attr_quarter 66
         rts
 
 ; ---- $4014: sprites ---------------------------------------------------------------
@@ -3205,6 +3207,148 @@ convert_oam:
         convert_sprites oam_buf, 0
         convert_sprites oam_buf + 256, $80
         plp
+        rts
+
+; $F32E in the game: fill nametable x with tile a and its colours with y, as a stage starts or
+; Yumetaro comes back. 1024 writes through ppu_data_a and 64 colour bytes take 4 frames; with
+; the picture off, two DMAs do it.
+.export clear_nt
+clear_nt:
+        sta $01
+        stx $00
+        sty $02
+        lda force_blank
+        beq :+
+        lda vram_step
+        beq @fast
+:       jmp @slow
+@fast:  ; The SNES map, as ppu_data_w picks it.
+        lda $00
+        and #$0C
+        lsr a
+        lsr a
+        sta tmp
+        lda mirror
+        asl a
+        asl a
+        ora tmp
+        tax
+        lda mirror_nt,x
+        asl a
+        asl a
+        sta tmp             ; +$400 words for map B
+        ora #MAP_HI
+        sta tmp + 1
+        stz VMAINC
+        stz VMADDL
+        sta VMADDH
+        lda #$08            ; one byte, again and again
+        sta DMAP7
+        lda #<VMDATAL
+        sta BBAD7
+        lda #$01
+        sta A1T7L
+        stz A1T7H
+        stz A1B7
+        lda #<960
+        sta DAS7L
+        lda #>960
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
+        ; The colours. Anything still queued for this map gets the same from the shadow.
+        ldx #0
+        lda tmp
+        beq :+
+        ldx #64
+:       stx tmp + 3
+        ldy #64
+        lda $02
+:       sta attr_shadow,x
+        inx
+        dey
+        bne :-
+        ; All four quarters alike: one more DMA, to the high bytes.
+        lda $02
+        and #3
+        sta tmp + 2
+        asl a
+        asl a
+        ora tmp + 2
+        sta tmp + 2
+        asl a
+        asl a
+        asl a
+        asl a
+        ora tmp + 2
+        cmp $02
+        bne @quarters
+        lda tmp + 2
+        and #$0C
+        sta tmp + 2
+        lda #$80
+        sta VMAINC
+        stz VMADDL
+        lda tmp + 1
+        sta VMADDH
+        lda #<VMDATAH
+        sta BBAD7
+        lda #<(tmp + 2)
+        sta A1T7L
+        lda #>(tmp + 2)
+        sta A1T7H
+        lda #<960
+        sta DAS7L
+        lda #>960
+        sta DAS7H
+        lda #$80
+        sta MDMAEN
+        bra @done
+@quarters:
+        lda #64
+        sta tmp + 2
+:       ldy tmp + 3
+        lda #$FF
+        sta attr_chg,y
+        jsr attr_item
+        inc tmp + 3
+        dec tmp + 2
+        bne :-
+@done:  ; v and the latch, as the game's writes leave them
+        stz ppu_w
+        lda #$FF
+        sta data_left
+        lda $00
+        and #$3F
+        sta ppu_thi
+        clc
+        adc #4
+        sta ppu_vhi
+        stz ppu_tlo
+        stz ppu_vlo
+        lda $02
+        ldy #0
+        ldx #0
+        rts
+@slow:  ; as the game does it
+        jsr ppu_status_a
+        lda $00
+        jsr ppu_addr_a
+        lda #0
+        jsr ppu_addr_a
+        lda $01
+        ldy #$1E
+@row:   ldx #$20
+:       jsr ppu_data_a
+        dex
+        bne :-
+        dey
+        bne @row
+        lda $02
+        ldx #$40
+:       jsr ppu_data_a
+        dex
+        bne :-
         rts
 
 .segment "WCODE"

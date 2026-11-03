@@ -34,7 +34,10 @@ takes far longer than a store. Anything late is lost, or worse, so the slow part
   converted there, and with the picture off, CHR pages are loaded there. The main thread may be
   part way through writing a map at other times, and a DMA would move the VRAM address under it.
 - `vram_flush` and `chr_all` replace the game's `$F3D3` and `$F06B`, which write its VRAM buffer and
-  CHR banks.
+  CHR banks. `vram_flush` sends long runs by DMA: as a stage starts or Yumetaro comes back, the game
+  draws the whole screen this way with the picture off.
+- `clear_nt` replaces `$F32E`, which fills a nametable and its colours as a screen starts: through
+  the stubs that took 4 frames longer than on the NES, and two DMAs do it with the picture off.
 - `scroll_now` sets the scroll at the very start of vblank from what the game has decided at `$FC-$FF`,
   because the game's own writes come after vblank on a busy frame.
 - Attribute bytes change the palette of 16 map entries each, so they queue up (`attr_work`).
