@@ -19,7 +19,10 @@ local function on_nmi()
     local D = emu.memType.spcDspRegisters
     for v = 0, 7 do
       local b = v * 16
-      t[#t + 1] = emu.read(b, D) .. "," .. (emu.read(b + 2, D) + emu.read(b + 3, D) * 256) .. "," .. emu.read(b + 4, D)
+      -- DPCM's volume stays put: whether it sounds is its envelope.
+      local vol = emu.read(b, D)
+      if v == 4 and emu.read(b + 8, D) == 0 then vol = 0 end
+      t[#t + 1] = vol .. "," .. (emu.read(b + 2, D) + emu.read(b + 3, D) * 256) .. "," .. emu.read(b + 4, D)
     end
     t[#t + 1] = emu.read(0x6C, D) & 31
   else
