@@ -133,11 +133,16 @@ static u8 pad_bits;
 static int pad_pos;
 void plat_nmi(void) {}
 
-// The options menu on the title (video.c draws it). While it is open, and until the
-// buttons that closed it are let go, the game sees no buttons. The options are kept in
-// the cartridge's SRAM.
+// The title's entries and its options menu (video.c draws them). The game has START
+// and CONTINUE, and swaps between them on Select; OPTIONS is a third, after them.
+// Select, up and down move between all three. The cursor is ours: until the game's
+// choice is the same, the game gets a Select of its own every other frame, and Start
+// waits, as the game takes no Select for a moment after the title appears. On OPTIONS,
+// Start or A opens the menu. While it is
+// open, and until the buttons that closed it are let go, the game sees no buttons.
+// The options are kept in the cartridge's SRAM.
 static int menu_open, menu_cursor, menu_hold;
-static u16 last_keys;
+static u16 last_keys, title_mask, game_keys;
 #define SRAM ((volatile u8 *)0x0E000000)
 __attribute__((used)) static const char save_type[] = "SRAM_V113";  // for emulators and flash carts
 
@@ -152,16 +157,31 @@ static void options_save(void) {
 static void menu_tick(void) {
   u16 k = ~KEYINPUT & 0x3FF, pressed = k & ~last_keys;
   last_keys = k;
+  game_keys = title_mask = 0;
   if (menu_hold && !k) menu_hold = 0;
+  static int on_title, selected;
   if (!video_on_title()) {
     if (menu_open) { menu_open = 0; menu_draw(0, 0, 0); }
+    on_title = 0;
     return;
+  }
+  if (!on_title) {
+    on_title = 1;
+    title_cursor = ram[5] & 1;  // the game's choice, as the title comes up
   }
   if (!menu_open) {
-    if (pressed & 4) { menu_open = menu_hold = 1; menu_draw(1, menu_cursor, options); }
+    int to = title_cursor;
+    if (pressed & (4 | 128)) to = (to + 1) % 3;
+    if (pressed & 64) to = (to + 2) % 3;
+    title_cursor = to;
+    int behind = to < 2 && to != (ram[5] & 1);
+    selected = behind && !selected;
+    if (selected) game_keys = 4;
+    title_mask = 4 | 64 | 128 | (to == 2 || behind ? 1 | 8 : 0);
+    if (to == 2 && pressed & (1 | 8)) { menu_open = menu_hold = 1; menu_draw(1, menu_cursor, options); }
     return;
   }
-  if (pressed & (4 | 2)) {  // Select or B: back to the title
+  if (pressed & (8 | 4 | 2)) {  // Start, Select or B: back to the title
     menu_open = 0;
     menu_hold = 1;
     menu_draw(0, 0, 0);
@@ -181,7 +201,7 @@ u8 plat_pad_read(u16 a) {
   if (a == 0x4017) return 0x40;
   // The game strobes, then takes 8 reads; start over after the 8th.
   if (pad_pos == 0) {
-    u16 k = menu_open || menu_hold ? 0 : ~KEYINPUT;
+    u16 k = menu_open || menu_hold ? 0 : (~KEYINPUT & ~title_mask) | game_keys;
     pad_bits = (k & 1) | (k >> 1 & 1) << 1 | (k >> 2 & 1) << 2 | (k >> 3 & 1) << 3
              | (k >> 6 & 1) << 4 | (k >> 7 & 1) << 5 | (k >> 5 & 1) << 6 | (k >> 4 & 1) << 7;
   }
@@ -266,6 +286,28 @@ u32 trap(u32 pc) {
   for (;;) {}
 }
 
+#ifndef REPLAY
+// The first screen, who made the port and the warning: it fades in, stays a while or
+// until Start or A, and fades out, before the game starts.
+#define BLDCNT REG16(0x04000050)
+#define BLDY REG16(0x04000054)
+static void splash(void) {
+  splash_draw(1);
+  BLDCNT = 0x3F | 3 << 6;  // everything, darker
+  u16 held = ~KEYINPUT & 0x3FF;
+  for (int f = 0; f < 16 + 150 + 16; f++) {
+    BLDY = f < 16 ? 16 - f : f >= 166 ? f - 165 : 0;
+    wait_vblank();
+    u16 k = ~KEYINPUT & 0x3FF;
+    if (f >= 16 && f < 166 && (k & ~held & (1 | 8))) f = 165;
+    held = k;
+  }
+  splash_draw(0);
+  BLDCNT = 0;
+  BLDY = 0;
+}
+#endif
+
 int main(void) {
   WAITCNT = 0x4317;  // 3/1 ROM waits with prefetch
   TM2CNT_L = 0; TM3CNT_L = 0;
@@ -279,6 +321,7 @@ int main(void) {
   sound_init();
 #ifndef REPLAY
   options_load();
+  splash();
 #endif
 #ifdef REPLAY
   result.magic = 0x47494D4B;

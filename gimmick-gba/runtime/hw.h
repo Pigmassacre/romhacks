@@ -84,5 +84,7 @@ int video_on_title(void);
 struct affine_line { short pa, pb, pc, pd; int x, y; };
 extern struct affine_line *volatile affine_lines;
 FAR void affine_arm(void);
+extern int title_cursor;  // 0 START, 1 CONTINUE, 2 OPTIONS
 void menu_draw(int open, int cursor, int opts);
+void splash_draw(int show);
 #endif

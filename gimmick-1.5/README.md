@@ -13,7 +13,7 @@ This hack is AI-assisted, using Claude.
 | | |
 |---|---|
 | **Star recall** | Press B while your star is out (bouncing, rolling, in a tube or vanishing) and a new one starts charging at once. The old star flies back to Yumetaro. In the original, B does nothing until the old star is gone. |
-| **Skipping stones** | A star that hits water fast enough skips off it, a little lower and slower each time, until it sinks. You can ride it while it skips. In the original it sinks at once. |
+| **Water skipping** | A star that hits water fast enough skips off it, a little lower and slower each time, until it sinks. You can ride it while it skips. In the original it sinks at once. |
 | **Tap to summon** | Press Select to switch between holding B to charge the star (as in the original) and tapping B: tap to summon, tap again to throw. A tap that comes too early throws the star as soon as it is ready. Select again switches back. |
 | **Coyote time** | You can still jump for 6 frames after walking off a ledge, an enemy, or a star that was just recalled from under you. |
 | **Jump buffering** | Press A a little too early, just before you land, and you jump as soon as you land. Up to 5 frames early counts. |

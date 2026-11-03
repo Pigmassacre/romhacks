@@ -1,4 +1,4 @@
-; Skipping stones, from Gimmick! 2.
+; Water skipping, from Gimmick! 2.
 ;
 ; In the original game a star that touches water sinks. In Gimmick! 2 a star
 ; that hits water fast enough skips off it, a little lower and slower each

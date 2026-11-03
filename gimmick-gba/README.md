@@ -30,6 +30,11 @@ The GBA's screen is 160 lines tall and the NES playfield is 192, so the camera f
 up and down, and the title and cutscenes show the part with something on it.
 
 The title screen says ADVANCE in the logo's bar, where the original has its name in katakana.
+Before the game's own SUNSOFT PRESENTS comes a screen of the port's own, saying who made it and
+that it is AI slop; Start or A skips it. The title keeps the warning above the logo, and has a
+third entry, OPTIONS, under START and CONTINUE. Select, up and down move between them. The logo
+sits higher on the screen than before, and the three entries 8 lines closer to it than on the NES,
+to make room for both on the GBA's shorter screen.
 
 **Parallax clouds.** In stages 1, 2 and 4 the sky and clouds are on a layer of their own,
 behind the stage, at half its speed, as in the SNES port.
@@ -41,9 +46,9 @@ the ship stand up on it at their own size, where their feet are, the nearer ones
 Before the last stage the camera moves up the map, to the tower and the airship that flies up
 past it.
 
-**Gimmick! 1.5's features, as options.** Press Select on the title screen for star recall,
-skipping stones, tap to summon, coyote time and jump buffering. Up and down pick one, A or left and
-right switch it, and Select or B goes back. They start off, so the game plays as it always did, and
+**Gimmick! 1.5's features, as options.** Choose OPTIONS on the title screen, with Start or A,
+for star recall, water skipping, tap to summon, coyote time and jump buffering. Up and down pick
+one, A or left and right switch it, and Start, Select or B goes back. They start off, so the game plays as it always did, and
 the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for what each one does.
 
 ## Known limits

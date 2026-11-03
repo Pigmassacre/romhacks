@@ -195,28 +195,28 @@ fast:
         sta MDMAEN
         lda #$6C
         sta BG2SC
-        ; Black, grey and white, for the notices: BG2's palette 2.
+        ; BG2's palette 2, the options menu: black, black and white. Its letters' shadows are
+        ; colour 2, black as the box, as grey ones there were hard to read.
         lda #41
         sta CGADD
         stz CGDATA
         stz CGDATA
-        lda #$73
-        sta CGDATA
-        lda #$4E
-        sta CGDATA
+        stz CGDATA
+        stz CGDATA
         lda #$FF
         sta CGDATA
         lda #$7F
         sta CGDATA
-        ; Palette 3, the plate: white, the grey of CONTINUE, black. Palette 4, SUPER: black, red
-        ; and a light yellow.
+        ; Palette 3, the plate: white, the grey of CONTINUE, black. Palettes 4 and 6, SUPER in the logo:
+        ; black, a grey and white, the logo's dark grey in 4 and its light grey in 6. Palette 5, OPTIONS: the grey, which menu_tick makes white when it
+        ; is chosen, and black.
         lda #45
         sta CGADD
         ldx #0
 :       lda f:notice_cg,x
         sta CGDATA
         inx
-        cpx #14
+        cpx #30
         bne :-
 
         ; The picture: Mode 0. BG1 is the NES's background, with nothing in front of it but
@@ -345,7 +345,11 @@ zero:   .byte 0
 notice_cg:
         .word $7FFF, $56B5, $0000           ; palette 3, from colour 1
         .word $0000                         ; palette 4's colour 0, which is never seen
-        .word $0000, $00BB, $477F
+        .word $0000, $318C, $7FFF
+        .word $0000, $0000                  ; palette 5's colours 0 and 1, which are never seen
+        .word $56B5, $0000
+        .word $0000                         ; palette 6's colour 0
+        .word $0000, $56B5, $7FFF
 
 .segment "HEADER"
         ;       123456789012345678901
