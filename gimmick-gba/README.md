@@ -132,6 +132,10 @@ python3 tools/record.py --bombs 2400
 ```
 
 ```bash
+python3 tools/record.py --items
+```
+
+```bash
 python3 tools/record.py --15 6000
 ```
 
@@ -146,7 +150,10 @@ translator picks what goes in fast RAM. `--crowd` stands still in the boss's roo
 throws (`tests/s_crowd.lua`), with health kept the same way: with nothing pressed, the game plays the same without the NES's
 slowdown, so `--timing --no-slowdown` can time the build you play there. `--bombs` charges the
 fireball item under the first stage's hanging bombs (`tests/s_bombs.lua`): until a recording
-reached the fireball's charge, its code ran in the interpreter and the GBA slowed down there. `--15` plays the default run on a NES ROM with all of 1.5 on
+reached the fireball's charge, its code ran in the interpreter and the GBA slowed down there.
+`--items` uses the fireball, the bomb and the medicine at the first two checkpoints of every
+stage, walking, jumping and throwing (`tests/s_items.lua`), reaching each stage by clearing the
+one before as the tour does. `--15` plays the default run on a NES ROM with all of 1.5 on
 (`out/gen/gimmick-1.5.nes`), and the PC build replays it with `OPTIONS=31` set: every byte of RAM
 should match there too.
 
