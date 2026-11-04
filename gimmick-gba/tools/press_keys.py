@@ -9,6 +9,7 @@ takes a picture of the window after each step.
 import ctypes
 import ctypes.util
 import os
+import re
 import subprocess
 import sys
 import time
@@ -106,7 +107,8 @@ def main():
         time.sleep(1)
         shot(out, "j_still_paused")
     finally:
-        subprocess.run(["flatpak", "kill", "io.mgba.mGBA"], stderr=subprocess.DEVNULL)
+        # This mGBA only, by its ROM: others, from other checkouts, may be running too.
+        subprocess.run(["pkill", "-f", "^mgba-qt .*" + re.escape(os.path.join(REPO, "out", "gimmick.gba"))], stderr=subprocess.DEVNULL)
         p.wait()
 
 

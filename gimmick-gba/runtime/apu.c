@@ -104,7 +104,7 @@ void apu_init(u32 hz) {
   fb.env_inc = period_to_inc(32);
 }
 
-HOT void apu_write(u16 a, u8 v) {
+HOT static void apply_write(u16 a, u8 v) {
   if (a >= 0x4000 && a <= 0x4007) {
     struct pulse *p = &pulses[(a - 0x4000) >> 2];
     switch (a & 3) {
@@ -189,9 +189,7 @@ HOT void apu_write(u16 a, u8 v) {
   }
 }
 
-HOT void fiveb_select(u8 v) { fb.select = v & 15; }
-
-HOT void fiveb_write(u8 v) {
+HOT static void apply_fiveb(u8 v) {
   u8 r = fb.select;
   if (fb.regs[r] == v && r != 13) return;
   fb.regs[r] = v;
@@ -545,8 +543,58 @@ HOT __attribute__((noinline)) static void mix_span(s8 *out, int n) {  // kept in
   dc = level;
 }
 
-// One NES frame of samples. The APU's frame counter ticks four times in it.
+// The game only ever writes the sound chips' registers, so a frame's writes can wait
+// and its sound be made later, on a lighter frame (gba.c chooses). They wait here in
+// order, with a mark where each frame ends, and apu_mix plays one frame's back first.
+// The 5B's take addresses of their own.
+#define WRITES 2048
+#define FIVEB_SELECT 0xC000
+#define FIVEB_WRITE 0xE000
+#define FRAME_END 0xFFFF
+static struct { u16 a; u8 v; } writes[WRITES] SLOW_RAM;
+static u32 writes_in, writes_out;  // count on, and wrap by WRITES
+static int frames_waiting, last_n = MAX_SPAN * QUARTERS;
+
+static void apply(u16 a, u8 v) {
+  if (a == FIVEB_SELECT) fb.select = v & 15;
+  else if (a == FIVEB_WRITE) apply_fiveb(v);
+  else apply_write(a, v);
+}
+
+HOT static void note(u16 a, u8 v) {
+  if (writes_in - writes_out == WRITES) {
+    // Full, which takes many frames waiting: make room by putting the oldest frame's
+    // writes in now. Its sound is lost.
+    static s8 lost[MAX_SPAN * QUARTERS];
+    apu_mix(lost, last_n);
+  }
+  writes[writes_in % WRITES].a = a;
+  writes[writes_in % WRITES].v = v;
+  writes_in++;
+}
+
+HOT void apu_write(u16 a, u8 v) { note(a, v); }
+HOT void fiveb_select(u8 v) { note(FIVEB_SELECT, v); }
+HOT void fiveb_write(u8 v) { note(FIVEB_WRITE, v); }
+
+void apu_end_frame(void) {
+  note(FRAME_END, 0);
+  frames_waiting++;
+}
+
+int apu_frames_waiting(void) { return frames_waiting; }
+
+// One NES frame of samples: the oldest waiting frame's, or more of the last if none
+// is. The APU's frame counter ticks four times in it.
 void apu_mix(s8 *out, int n) {
+  while (writes_out != writes_in) {
+    u16 a = writes[writes_out % WRITES].a;
+    u8 v = writes[writes_out % WRITES].v;
+    writes_out++;
+    if (a == FRAME_END) { frames_waiting--; break; }
+    apply(a, v);
+  }
+  last_n = n;
   static u8 seq;
   int done = 0;
   for (int q = 0; q < QUARTERS; q++) {

@@ -17,6 +17,8 @@ FAR void fiveb_select(u8 v);
 FAR void fiveb_write(u8 v);
 void apu_init(u32 hz);
 void apu_mix(s8 *out, int n);
+void apu_end_frame(void);
+int apu_frames_waiting(void);
 
 // Replays can take each NMI at the instruction the recording took it, whatever the
 // cycle count says, so a heavy frame cannot land a frame apart from the recording's.
