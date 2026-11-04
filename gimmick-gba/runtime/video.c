@@ -687,52 +687,67 @@ static void place_plane(int k) {
 // The sprites on the plane. Those that touch are one thing, like an ohagi and its flag,
 // which stands on the plane where its bottom is, at its own size, with the nearer ones
 // in front.
-static u8 sprite_group[64] SLOW_RAM;
+#define PLANE_SPRITES 96  // the map's 64, and copies of its clouds
+static u8 sprite_group[PLANE_SPRITES] SLOW_RAM;
 
 static int group_of(int i) {
   while (sprite_group[i] != i) i = sprite_group[i] = sprite_group[sprite_group[i]];
   return i;
 }
 
+// The map's clouds are sprites in a sky that goes round: one at the NES screen's right
+// edge goes on at its left, from x = 0. On the plane the picture's edges show inside the
+// screen, near the top, so each cloud near an edge is drawn again 256 pixels over, and
+// both sides show whole clouds.
+#define CLOUD(t) (((t) & 0x0D) == 0x0C && (t) < 0x40)  // 0C 1C 2C 3C, and 0E 1E 2E 3E
+
 static void draw_plane_sprites(void) {
   int h = top_ctrl & 0x20 ? 16 : 8;
   int cx = 128 + top_x;
-  u8 list[64], order[64];
+  static struct { short x; u8 y, tile, attr; } spr[PLANE_SPRITES] SLOW_RAM;
+  u8 order[PLANE_SPRITES];
   int count = 0, groups = 0;
   int odd = (oam[8 * 4] < 0xEF) == (oam[63 * 4] < 0xEF) ? ram[0xED] & 1 : oam[63 * 4] < 0xEF;
   for (int k = 0; k < 64; k++) {
     int i = k < 8 || !odd ? k : 71 - k;
-    if (oam[i * 4] < 0xEF) list[count++] = i;
+    const u8 *p = &oam[i * 4];
+    if (p[0] >= 0xEF) continue;
+    for (int copy = 0; copy < 2; copy++) {
+      int x = p[3];
+      if (copy) {
+        if (!CLOUD(p[1]) || (x >= 64 && x < 192) || count == PLANE_SPRITES) break;
+        x += x < 64 ? 256 : -256;
+      }
+      spr[count].x = x; spr[count].y = p[0]; spr[count].tile = p[1]; spr[count].attr = p[2];
+      count++;
+    }
   }
   for (int a = 0; a < count; a++) {
-    const u8 *p = &oam[list[a] * 4];
     sprite_group[a] = a;
     for (int b = 0; b < a; b++) {
-      const u8 *q = &oam[list[b] * 4];
-      if (p[3] <= q[3] + 8 && q[3] <= p[3] + 8 && p[0] <= q[0] + h && q[0] <= p[0] + h) {
+      if (spr[a].x <= spr[b].x + 8 && spr[b].x <= spr[a].x + 8 && spr[a].y <= spr[b].y + h && spr[b].y <= spr[a].y + h) {
         int ga = group_of(a), gb = group_of(b);
         if (ga != gb) sprite_group[ga > gb ? ga : gb] = ga < gb ? ga : gb;
       }
     }
   }
   // Each group's foot: the middle of its bottom edge, in the picture.
-  static short left[64] SLOW_RAM, right[64] SLOW_RAM, bottom[64] SLOW_RAM;
+  static short left[PLANE_SPRITES] SLOW_RAM, right[PLANE_SPRITES] SLOW_RAM, bottom[PLANE_SPRITES] SLOW_RAM;
   for (int a = 0; a < count; a++) {
-    const u8 *p = &oam[list[a] * 4];
     int g = group_of(a);
     if (g == a) {
-      left[g] = p[3];
-      right[g] = p[3] + 8;
-      bottom[g] = p[0] + 1 + h;
+      left[g] = spr[a].x;
+      right[g] = spr[a].x + 8;
+      bottom[g] = spr[a].y + 1 + h;
       // Nearest first, so in front.
       int at = groups++;
       while (at > 0 && bottom[order[at - 1]] < bottom[g]) { order[at] = order[at - 1]; at--; }
       order[at] = g;
     } else {
-      if (p[3] < left[g]) left[g] = p[3];
-      if (p[3] + 8 > right[g]) right[g] = p[3] + 8;
-      if (p[0] + 1 + h > bottom[g]) {
-        bottom[g] = p[0] + 1 + h;
+      if (spr[a].x < left[g]) left[g] = spr[a].x;
+      if (spr[a].x + 8 > right[g]) right[g] = spr[a].x + 8;
+      if (spr[a].y + 1 + h > bottom[g]) {
+        bottom[g] = spr[a].y + 1 + h;
         int at = 0;
         while (order[at] != g) at++;
         while (at > 0 && bottom[order[at - 1]] < bottom[g]) { order[at] = order[at - 1]; at--; }
@@ -741,21 +756,21 @@ static void draw_plane_sprites(void) {
     }
   }
   int n = 0;
-  for (int o = 0; o < groups; o++) {
+  for (int o = 0; o < groups && n < 128; o++) {
     int g = order[o];
     int fu = (left[g] + right[g]) / 2 + top_x, fv = bottom[g];
     int dz = PLANE_CZ - plane_pan - fv;
     int fx = SCREEN_W / 2 + (fu - cx) * PLANE_F / dz;
     int fy = PLANE_YH + (PLANE_H * PLANE_F + dz / 2) / dz;
-    for (int a = 0; a < count; a++) {
+    for (int a = 0; a < count && n < 128; a++) {
       if (group_of(a) != g) continue;
-      const u8 *p = &oam[list[a] * 4];
-      int x = fx + p[3] + top_x - fu, y = fy + p[0] + 1 - fv;
+      int x = fx + spr[a].x + top_x - fu, y = fy + spr[a].y + 1 - fv;
       if (x <= -8 || x >= SCREEN_W || y <= -h || y >= SCREEN_H) continue;
-      u32 tile = h == 16 ? ((p[1] & 1) << 8) | (p[1] & 0xFE) : ((top_ctrl & 8) << 5) | p[1];
+      u32 t = spr[a].tile, at = spr[a].attr;
+      u32 tile = h == 16 ? ((t & 1) << 8) | (t & 0xFE) : ((top_ctrl & 8) << 5) | t;
       OAM[n * 4] = (y & 0xFF) | (h == 16 ? 0x8000 : 0);
-      OAM[n * 4 + 1] = (x & 0x1FF) | ((p[2] & 0x40) ? 0x1000 : 0) | ((p[2] & 0x80) ? 0x2000 : 0);
-      OAM[n * 4 + 2] = tile | ((p[2] & 0x20) ? 2 : 1) << 10 | (p[2] & 3) << 12;
+      OAM[n * 4 + 1] = (x & 0x1FF) | ((at & 0x40) ? 0x1000 : 0) | ((at & 0x80) ? 0x2000 : 0);
+      OAM[n * 4 + 2] = tile | ((at & 0x20) ? 2 : 1) << 10 | (at & 3) << 12;
       n++;
     }
   }
