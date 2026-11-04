@@ -173,8 +173,7 @@ void plat_vblank(void) {
     exit(3);
   }
   static s8 unheard[SAMPLES_PER_FRAME];
-  apu_end_frame();
-  if (!wav) apu_mix(unheard, SAMPLES_PER_FRAME);  // this is what ticks the envelopes, and plays the writes
+  if (apu_log && !wav) apu_mix(unheard, SAMPLES_PER_FRAME);  // this is what ticks the envelopes
   if (video_on) {
     video_present();
     while (shot_next < shot_count && shots[shot_next].frame <= nmi_count + 1) {

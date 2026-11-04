@@ -236,19 +236,6 @@ u8 plat_pad_read(u16 a) {
 }
 #endif
 
-// The oldest waiting frame's sound, into the queue, or lost if the queue is full.
-#define CATCH_UP_BEFORE 100  // a frame's mixing takes up to about 60 lines
-static void mix_frame(void) {
-  u32 next = (sound_write + 1) % SOUND_QUEUE;
-  if (next != sound_read) {
-    apu_mix(sound_buf[next], SAMPLES_PER_FRAME);
-    sound_write = next;
-  } else {
-    static s8 dropped[SAMPLES_PER_FRAME] SLOW_RAM;  // keep the chips ticking
-    apu_mix(dropped, SAMPLES_PER_FRAME);
-  }
-}
-
 void plat_vblank(void) {
 #ifdef REPLAY
   u32 t = now() - frame_start;
@@ -265,31 +252,14 @@ void plat_vblank(void) {
 #ifdef REPLAY
   u32 mix_start = now();
 #endif
-  static u32 nes_frames;
-  static int skipped;
-  nes_frames++;
-  // Sound is made a frame ahead of what plays: the queue starts with a frame of
-  // silence. Then a frame that is already late can leave its sound for the next one,
-  // which makes both if it has the time, and heavy frames are not also the ones that
-  // mix. (The game only writes the sound chips, so making the sound later changes
-  // nothing it sees: apu.c keeps the writes until then.)
-  static int primed;
-  if (!primed) {
-    primed = 1;
-    u32 next = (sound_write + 1) % SOUND_QUEUE;
-    for (int i = 0; i < SAMPLES_PER_FRAME; i++) sound_buf[next][i] = 0;
+  u32 next = (sound_write + 1) % SOUND_QUEUE;
+  if (next != sound_read) {
+    apu_mix(sound_buf[next], SAMPLES_PER_FRAME);
     sound_write = next;
+  } else {
+    static s8 dropped[SAMPLES_PER_FRAME] SLOW_RAM;  // keep the chips ticking
+    apu_mix(dropped, SAMPLES_PER_FRAME);
   }
-  apu_end_frame();
-  int queued = (sound_write - sound_read + SOUND_QUEUE) % SOUND_QUEUE;
-  if (!queued) {
-    while (apu_frames_waiting()) mix_frame();  // nothing else to play next
-  } else if ((int)(vblank_count - nes_frames) < 0) {
-    mix_frame();
-    // One left over from a late frame, while vblank is still well away.
-    if (apu_frames_waiting() && VCOUNT < CATCH_UP_BEFORE && (int)(vblank_count - nes_frames) < 0) mix_frame();
-  }
-  while (apu_frames_waiting() > 2) mix_frame();  // never far behind
 #ifdef REPLAY
   last_mix = now() - mix_start;
   window_mix += last_mix;
@@ -298,6 +268,9 @@ void plat_vblank(void) {
   // But only one in a row: the next is always drawn, and if that means falling behind,
   // the game runs slow for a moment, as it does on the NES. Skipping until it had
   // caught up froze the picture for up to a second while the game ran on unseen.
+  static u32 nes_frames;
+  static int skipped;
+  nes_frames++;
   if ((int)(vblank_count - nes_frames) >= 0) {
     if (!skipped) {
       skipped = 1;
