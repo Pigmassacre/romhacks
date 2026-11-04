@@ -17,10 +17,10 @@ registers behave the same. So the game's code runs as it is, from the same addre
 - **`$6000`.** The game maps a ROM bank here, the stage's tile tables, once per stage. The handler copies
   it to cartridge RAM.
 - **Hardware.** `find_patches` decodes everything reachable from what ran in the survey. Each `abs`
-  access to hardware is 3 bytes, and so is a `JSR`: it becomes one, to a stub in RAM at `$0800-$1FDF`,
-  which the NES game does not use and every ROM bank can reach. `$4016` and `$4017` need no change:
-  the SNES's pads are read the same way, at the same addresses. Interrupts reach the game by `JML` through
-  a pointer updated with each bank switch.
+  access to hardware is 3 bytes, and so is a `JSR`: it becomes one, to a stub in fast ROM at `$C000`
+  (see below), which every ROM bank can reach. `$4016` and `$4017` would need no change: the SNES's
+  pads are read the same way, at the same addresses. Interrupts reach the game by `JML` through a pointer
+  updated with each bank switch.
 
 An interrupt can land inside a stub, so a stub must leave things as an interrupt would expect. `tmp`
 is for the main thread and `itmp` for code interrupts can reach; `nmi_work` saves `tmp`.
@@ -70,7 +70,11 @@ NES's 8 sprites on a line. The SNES has no such limit, and overlapping sprites w
 times a second, so `ORDER_FIXED` in `tools/build.py` makes every frame an even one for that.
 
 **Fast ROM at `$C000`.** Every code bank has that window free, since the game's `$C000` holds only DPCM samples, so
-code the game itself calls can go there and run faster than from RAM. The sprite code does.
+the port's code goes there (`ROMC`) and runs faster than from RAM: a byte of fast ROM takes 6 master clocks and one
+of RAM 8. Bank 0 has a copy too, at its own `$C000`, for the interrupts' code, which runs there, and for
+`jmp (abs)`, which reads its pointer from bank 0. A bank switch carries on in the same code in the new bank. Only
+`fme_6000`, which changes its own addresses, stays in RAM at `$1000` (`WCODE`). The stubs were a third of every
+frame when they ran from RAM.
 
 **CHR pages.** The NES's bank switch is instant and a page here takes 12 lines of vblank, so the game's own
 order, with CHR last, is usually too late. `top_pages` runs first in `nmi_work`, from what the game has at `$E1-$E8`:
@@ -154,11 +158,10 @@ Coyote time, buffering and Select's tap toggle are one routine, `JumpCheck`, so 
 from happening: an old stamp for the floor, no memory of the press, no Select bit. With all three off it does not
 call the routine at all.
 
-`pad_read` takes the place of the game's read of the first pad, to keep a copy for the menu and to show the
+`pad_all` takes the place of the game's read of both pads, `$F2CB`, to keep a copy for the menu and to show the
 game nothing while the menu is open, nor after it closes until the pad is let go. `title_menu` takes the place
 of the game's title cursor at `$1B:813C`: `$05` goes to 2 for OPTIONS, which flashes as START and CONTINUE do,
-and Start there opens the menu. After the game's eighth read of the pad, `pad_read` reads a ninth bit,
-the SNES's A, which the game never sees but the menu uses. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
+and Start there opens the menu. `pad_all` also keeps the SNES's A, which the game never sees but the menu uses. `menu_tick` runs the menu from the NMI, on BG2. The choices last until
 the power goes off: cartridge RAM holds the stage's tables, so there is nowhere to save them.
 
 ## Sound
@@ -189,10 +192,36 @@ sample too, as its 93 steps have a pitch. The 5B's envelope and noise are not ha
 mixer's noise bits only rarely, and never sets an envelope volume.
 
 A frame's registers are sent between messages `$1E` and `$1F`, and the driver does not read them in between: a
-period is two registers, and half of a new one is a wildly wrong note for 4 ms. The 5B takes 32 clocks a step and
+period is two registers, and half of a new one is a wildly wrong note for 4 ms. A message holds two registers,
+in the four ports, as the runtime waits for each answer, in the NMI; and the driver's update of its voices
+stops for a message, as the NMI would wait for all of it, up to 15% of a frame. `$1F` runs it again in full. The 5B takes 32 clocks a step and
 the period itself, where a pulse takes 16 and period + 1, so its voices are an octave below a pulse's with the same
 number. The driver's sweep moves its own copy of a period, so a new note sends the period again even if the
 game's value has not changed.
+
+## Speed
+
+The NES's slowdown is not wanted here: where the NES lags, the port should not. So the frame's work, the game's and
+the port's, has to fit in a frame with room to spare. `tools/lag.py` counts the frames lost at each checkpoint and
+in the first boss's room, on both machines, and how many lines of the frame the work took, from the start of
+vblank to where the game says the frame is done. `tools/prof.py` adds up where the time went, by routine, split
+into the NMI, the status bar's interrupt, the game's frame and the wait after it.
+
+The game's own code is little of it. In a busy frame the NMI alone took a third, nearly all of it the port's
+stubs, which ran from RAM; they are in fast ROM now. Besides that:
+
+- **The pads.** The game reads both pads until two reads agree, against the NES's DPCM, a bit at a time: 32 reads
+  through a stub, 3% of a frame. `pad_all` replaces the whole read with what the SNES reads by itself at the
+  start of vblank (`NMITIMEN` bit 0, which every write of it keeps on).
+- **The SPC700.** Each message waited for the driver to answer, and when it was updating its voices that took up
+  to 15% of a frame. Now that update stops for a message, and each message carries two registers.
+- **Bank switches.** The game's own two routines for `$8000` and `$A000`, `$F051` and `$F05E`, are done whole
+  (`sw_bank8`, `sw_bankA`), not as two stubs and a jump table, and a switch to the bank already there does not
+  jump.
+
+That took the busiest frames found from all of the frame to about 92% of it, and the median frame in the first
+boss's room from 64% to 54%. The first boss's arrival lost frames the NES did not, and no longer does. What is left is
+mostly the DMAs for sprites and CHR pages, the game's sound driver, and `spr_body`.
 
 ## What was found out along the way
 
@@ -201,3 +230,6 @@ game's value has not changed.
 - The game's `$44` is a copy of `$2000` that only its NMI sets, and the NMI writes it back. On the SNES,
   turning on NMI during vblank brings one at once, which would turn NMI off again, so the stub sets `$44`.
 - The status bar's icons are sprites, on CHR page `$1B`, switched in by the second interrupt.
+- `$2B` is Yumetaro's most health. A test that keeps `$346` above it, as at 3 with `$2B` at 2, sends the
+  status bar's loop at `$E3E2` round 256 times a frame, writing over the sprites: the NES then lags in every
+  scene. `tests/s_lag.lua` keeps it at `$2B`.

@@ -400,7 +400,8 @@ splash:
         bne @frame
         lda #$80
         sta INIDISP
-        stz NMITIMEN
+        lda #$01            ; no NMI yet, but the pads still read
+        sta NMITIMEN
         stz TM
         stz BG2VOFS
         stz BG2VOFS
@@ -445,6 +446,7 @@ irq_emu:
         sta irq_line
         stz split_open
         lda nmi_flags
+        ora #1              ; the pads, read in each vblank
         sta NMITIMEN
         pla
         jml [irq_ptr]

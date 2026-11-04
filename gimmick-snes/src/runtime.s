@@ -35,6 +35,7 @@ irq_ptr:     .res 3
 cur_pbr = nmi_ptr + 2
 .export cur_pbr
 back_ptr:    .res 3         ; fme_back, in the current ROM bank
+sw_ptr:      .res 3         ; sw_back, in the bank sw_go switches to
 fme_cmd:     .res 1
 b8:          .res 1
 bA:          .res 1
@@ -135,7 +136,10 @@ apu_kick:    .res 5         ; new notes on the four channels, and DPCM started
 apu_sent:    .res 24
 sb_sent:     .res 16
 bank_sent:   .res 1
-spc_count:   .res 1
+spc_tog:     .res 1         ; bit 7 changes with each message to the SPC700
+spc_odd:     .res 1         ; bit 7: a register waits for a second, in spc_reg and spc_val
+spc_reg:     .res 1
+spc_val:     .res 1
 sb_cmd:      .res 1
 sb_regs:     .res 16
 hdma_tab:    .res 16
@@ -183,7 +187,7 @@ band_tab:    .res 10
 cg_bg:       .res 32
 cg_obj:      .res 32
 
-.segment "WCODE"
+.segment "ROMC"
 
 ; ---- The FME-7 --------------------------------------------------------------------
 
@@ -254,15 +258,66 @@ fme_switch:
         adc f:ComboIdxA,x
         tax
         lda f:ComboTable,x
+        cmp cur_pbr
+        beq fme_back        ; the same bank, as when the game puts back what it had
         sta cur_pbr
         sta back_ptr + 2
         sta irq_ptr + 2
         pha
         plb
-        ; Carry on from this same code, in the new bank's mirror of RAM.
+        ; Carry on from this same code, in the new bank's copy of it.
         jml [back_ptr]
 fme_back:
         jmp fme_done
+
+; The game's own bank switches, $F051 for $8000 and $F05E for $A000: lda #9 or #$0A, sta $3F,
+; sta $8000, sty $40 or $41, sty $A000, rts. Most of its switches are these, and through the
+; stubs each took two calls and a jump through fme_jump. In the same order, for an interrupt:
+; the game's NMI puts back the banks from $40 and $41.
+.export sw_bank8, sw_bankA
+sw_bank8:
+        lda #$09
+        sta $3F
+        sta fme_cmd
+        sty $40
+        phx
+        tya
+        and #$3F
+        sta b8
+        bra sw_go
+sw_bankA:
+        lda #$0A
+        sta $3F
+        sta fme_cmd
+        sty $41
+        phx
+        tya
+        and #$3F
+        sta bA
+sw_go:
+        ldx b8
+        lda f:ComboIdx8,x
+        ldx bA
+        clc
+        adc f:ComboIdxA,x
+        tax
+        lda f:ComboTable,x
+        cmp cur_pbr
+        beq sw_back
+        sta cur_pbr
+        sta back_ptr + 2
+        sta irq_ptr + 2
+        sta sw_ptr + 2
+        pha
+        plb
+        jml [sw_ptr]
+sw_back:
+        plx
+        lda $3F             ; a and the flags as the game's lda # left them
+        rts
+
+; In RAM, as it changes its own addresses.
+.segment "WCODE"
 
 ; $6000-$7FFF shows a ROM bank, chosen once per stage. The SNES has the cartridge's RAM
 ; there and no way to map ROM, so the bank is copied in. The picture is off for this,
@@ -300,6 +355,7 @@ w6_dst: sta a:$6000,x
         bne w6_src
 w6_same:
         jmp fme_done
+.segment "ROMC"
 
 fme_mirror:
         and #3
@@ -326,6 +382,7 @@ fme_irqctl:
         beq :+
         stz irq_flag
         lda nmi_flags
+        ora #1              ; the pads, read in each vblank
         sta NMITIMEN
         jmp fme_done
 :       jsr arm_irq
@@ -398,10 +455,12 @@ arm_irq:
         lda #$20
         sta irq_flag
         ora nmi_flags
+        ora #1
         sta NMITIMEN
         rts
 @never: stz irq_flag
         lda nmi_flags
+        ora #1
         sta NMITIMEN
         rts
 
@@ -1240,8 +1299,9 @@ plane_set:
         rts
 
 map_enter:
-        ; This takes more than a frame: no NMI inside this NMI.
-        stz NMITIMEN
+        ; This takes more than a frame: no NMI inside this NMI. The pads still read.
+        lda #$01
+        sta NMITIMEN
         lda #$80
         sta INIDISP
         stz HDMAEN
@@ -1343,6 +1403,7 @@ map_enter:
 :       bit RDNMI
         lda nmi_flags
         ora irq_flag
+        ora #1
         sta NMITIMEN
         rts
 
@@ -1681,7 +1742,7 @@ commit_palette:
         bne @set
 @out:   rts
 
-.segment "WCODE"
+.segment "ROMC"
 
 ; For each stage: BG4's map (0 for none), the palette its clouds use and where they sit.
 cloud_sc:  .byte $78, $78, $00, $7C, $00, $00, $00
@@ -1852,6 +1913,7 @@ ppu_ctrl_w:
         sty $44
 :       sta nmi_flags
         ora irq_flag
+        ora #1
         sta NMITIMEN
         lda tmp + 1
         and #3
@@ -3854,7 +3916,7 @@ clear_nt:
         bne :-
         rts
 
-.segment "WCODE"
+.segment "ROMC"
 
 ; ---- Gimmick! 1.5, as options ---------------------------------------------------------
 
@@ -3946,7 +4008,41 @@ opt_water:
         sta $0397
         rts
 
-; The game reads the pad here. A copy for the menu; with the menu open, the game sees nothing.
+; The game's read of both pads, $F2CB, from the SNES's own read at the start of vblank: the
+; high bytes are the NES's order, with B and Y where the NES's A and B are. It reads them
+; again until two reads agree, against the NES's DPCM, and one bit at a time through a stub
+; that took 3% of a frame. A copy for the menu; with the menu open, the game sees nothing.
+.export pad_all
+pad_all:
+:       lda HVBJOY
+        lsr a
+        bcs :-              ; still reading
+        lda JOY1L
+        asl a
+        lda #0
+        rol a
+        sta pad_a
+        lda JOY1H
+        sta raw_pad
+        lda menu_open
+        ora menu_req
+        ora pad_hold
+        beq :+
+        stz $F5
+        stz $10
+        bra :++
+:       lda raw_pad
+        sta $F5
+        lda JOY3H           ; the second wire, as the NES's $4016 has
+        sta $10
+:       lda JOY2H
+        sta $F6
+        lda JOY4H
+        sta $11
+        ldx #0
+        rts
+
+; The same, a bit at a time, for TEST_AUTOPLAY's buttons: the game reads the pad here.
 pad_read:
         lda $4016
         lsr a
@@ -4099,22 +4195,42 @@ sound_hook:
         jsr spc_send
 :       ldx #$1F
         jsr spc_send
+        jsr spc_flush
         ply
         plx
         pla
         plp
         rts
 
-; A value in a for the register in x.
+; A value in a for the register in x, keeping y. Each message waits for the SPC700 to
+; answer, so they carry two: the first waits in spc_reg and spc_val for the second.
 spc_send:
-        stx APUIO1
-        sta APUIO2
-        inc spc_count
-        lda spc_count
+        bit spc_odd
+        bmi spc_pair
+        stx spc_reg
+        sta spc_val
+        lda #$80
+        sta spc_odd
+        rts
+; The one waiting, if any, on its own.
+spc_flush:
+        bit spc_odd
+        bpl :++
+        ldx #$FF
+spc_pair:
+        stz spc_odd
+        stx APUIO2
+        sta APUIO3
+        lda spc_val
+        sta APUIO1
+        lda spc_tog
+        eor #$80
+        sta spc_tog
+        ora spc_reg
         sta APUIO0
 :       cmp APUIO0
         bne :-
-        rts
+:       rts
 
 ; ---- Start-up, called from the boot code ------------------------------------------
 
@@ -4124,6 +4240,10 @@ runtime_init:
         sta back_ptr
         lda #>fme_back
         sta back_ptr + 1
+        lda #<sw_back
+        sta sw_ptr
+        lda #>sw_back
+        sta sw_ptr + 1
         lda #$80
         sta force_blank
         lda #$FF
@@ -4137,7 +4257,7 @@ runtime_init:
         rts
 
 ; lda $2007, which the game only does in code that never ran in the survey.
-.segment "WCODE"
+.segment "ROMC"
 .export ppu_data_read_a, ppu_data_read_x, ppu_data_read_y
 ppu_data_read_a:
         lda #0
