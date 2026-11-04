@@ -68,7 +68,7 @@ struct result {
 };
 volatile struct result result;
 static u32 window_gap, window_drawn, window_late, window_late_line;
-static u32 frame_start, window_sum, window_max, window_over, window_mix, window_draw, last_mix;
+static u32 frame_start, window_sum, window_max, window_over, window_mix, window_draw, last_mix, last_draw;
 static int nmi_index;
 
 static void log_text(const char *a, u32 v) {
@@ -252,6 +252,8 @@ void plat_vblank(void) {
 #ifdef TIMING_ONLY
       log_text("over_at=", nmi_index);
       log_text("over_cycles=", t);
+      log_text("over_draw=", last_draw);
+      log_text("over_mix=", last_mix);
 #endif
     }
   }
@@ -290,7 +292,8 @@ void plat_vblank(void) {
 #endif
   video_present();
 #ifdef REPLAY
-  window_draw += now() - frame_start;
+  last_draw = now() - frame_start;
+  window_draw += last_draw;
   // Drawing that runs on past VBlank changes OAM and the registers while the screen is
   // drawn, and a sprite tears across the line it reached.
   u32 line = VCOUNT;

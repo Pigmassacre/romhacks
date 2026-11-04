@@ -53,7 +53,7 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 
 ## Known limits
 
-- It has been run in mGBA, and not on a real GBA.
+- It has been played in mGBA and on an Analogue Pocket, and not on a real GBA.
 - Normal play takes about 55% of the GBA's time for a frame, and the busiest stretch of the boss
   fight about 70%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
   in fast RAM. A few single frames in the boss fight go a little over, up to about 106%, and
@@ -80,6 +80,10 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   up. Their registers stay in the struct: loading and storing them all each time the dispatcher
   comes in cost more than it saved. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
+  The loops that clear a nametable, `sta $2007` / `dex` / `bne` back to the `sta`, become one
+  call that fills as many bytes as the loop would before its next stop for an interrupt, a word
+  at a time: a room change makes about 2,000 such writes in one frame, and one at a time they
+  took most of it.
   Fast RAM is shared with the stack, and how much the hot code takes is only estimated when it
   is picked: `tools/build_gba.py` shrinks it until 1.5 KB is left for the stack. Test builds mark
   that space at start-up, and `tools/run_gba.py` reports how much of it the stack never reached.
@@ -168,7 +172,7 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 | Tool | What it checks |
 |---|---|
 | `tools/build_gba.py --replay out/trace_tour`, then `tools/run_gba.py 1600` | The same replay on the GBA in mGBA, with RAM checked every frame |
-| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play, with the NES's slowdown kept so that the recording plays the same; how often the drawing ran past VBlank; and how much of the stack's room was never used. The log in `out/gba_log/` names each frame that went over |
+| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play, with the NES's slowdown kept so that the recording plays the same; how often the drawing ran past VBlank; and how much of the stack's room was never used. The log in `out/gba_log/` names each frame that went over, with what its drawing and its sound took |
 | `tools/compare_screens.py` | Every marked moment of the tour as the GBA would show it, beside Mesen's screenshot of that frame, on contact sheets in `out/screens/` |
 | `tools/compare_sound.py` | The sound chips' state in Mesen against `runtime/apu.c`'s, frame by frame |
 | `tools/record.py --audio 2600`, then `tools/compare_audio.py` | The sound itself: what each of Mesen's channels outputs, through Mesen's mixer formulas, against this port's, for loudness and spectrum |

@@ -389,6 +389,17 @@ def expect(cond, bank, taken, not_taken):
 FIXED_CHAIN = set()  # the fixed bank's blocks any bank's ROM blocks may go on to
 
 
+def fill_loop(bank, start):
+    """Whether the block at start is a loop that fills the nametables, sta $2007 / dex /
+    bne back to the sta, which emit_block makes into one call of ppu_fill."""
+    sta, dex, bne = (bank.instrs.get(start + k) for k in (0, 3, 4))
+    if not (sta and dex and bne) or start + 3 in bank.leaders or start + 4 in bank.leaders:
+        return False
+    off = bne[3] - 256 if bne[3] >= 128 else bne[3]
+    return (sta[:2] == ("sta", "abs") and sta[3] == 0x2007 and dex[0] == "dex" and bne[0] == "bne"
+            and (start + 6 + off) & 0xFFFF == start)
+
+
 def emit_block(bank, start, out, hot, chain=()):
     """One basic block, as a label in a function that holds many: in fast RAM, every
     block there (hot is the set of them); in ROM, a bank's own (chain is the set of
@@ -426,6 +437,23 @@ def emit_block(bank, start, out, hot, chain=()):
 
     dead = dead_flags(bank, start)
     cur, cyc = start, 0
+
+    if fill_loop(bank, start):
+        # Each time round costs what the three instructions do, and the last one less, as
+        # its branch is not taken. As one at a time, it stops at block_limit after the time
+        # round that reaches it, with X counted down that far.
+        nxt = start + 6
+        taken = 2 if (start ^ nxt) & 0xFF00 else 1
+        each = 4 + 2 + 2 + taken
+        out.append("  { u32 n = X ? X : 256, k = cyc + %d >= block_limit ? 1 : (block_limit - cyc + %d) / %d;"
+                   % (each, each - 1, each))
+        out.append("    if (k > n) k = n;")
+        out.append("    ppu_fill(A, k);")
+        out.append("    X -= k; N = Z = X;")
+        out.append("    CYC(%d * k - (X ? 0 : %d)); }" % (each, taken))
+        out.append("  if (Z) { %s }" % jump(start))
+        out.append("  " + jump(nxt))
+        return
 
     def code(m, mode, arg, nxt):
         c = emit_instr(m, mode, arg, nxt)

@@ -85,6 +85,7 @@ extern const u16 *const hot_maps[64];  // in ROM: fast RAM is kept for code and 
 extern u8 prg_map[3];
 
 FAR void ppu_data_write(u8 v);
+FAR void ppu_fill(u8 v, u32 n);
 
 // A read or write whose address is only known at run time, without a call for what is
 // not hardware.

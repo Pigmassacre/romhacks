@@ -32,7 +32,7 @@ static u32 irq_due = 0xFFFFFFFF;
 
 u8 ppu_ctrl, ppu_mask, mirror_mode, nt_dirty = 1, palette_dirty = 1;
 u32 nt_rows_dirty[2] = {~0u, ~0u};
-u8 ciram[0x800] SLOW_RAM, palette[32], oam[256] SLOW_RAM __attribute__((aligned(4)));
+u8 ciram[0x800] SLOW_RAM __attribute__((aligned(4))), palette[32], oam[256] SLOW_RAM __attribute__((aligned(4)));
 static u8 ppu_status, ppu_buf, ppu_w, ppu_latch;
 static u16 ppu_v;
 u16 ppu_t;
@@ -212,9 +212,9 @@ HOT static u8 ppu_read_data(void) {
   return v;
 }
 
-HOT void ppu_data_write(u8 v) {
-  ppu_latch = v;
-  u16 a = ppu_v & 0x3FFF;
+// A byte written to $2007, at PPU address a.
+static inline __attribute__((always_inline)) void ppu_put(u16 a, u8 v) {
+  a &= 0x3FFF;
   if (a >= 0x2000 && a < 0x3F00) {
     u32 i = nt_index(a), o = i & 0x3FF;
     // The game writes much of it again as it was, the status bar every frame: that
@@ -226,7 +226,71 @@ HOT void ppu_data_write(u8 v) {
     }
   }
   else if (a >= 0x3F00) { palette[(a & 3) ? a & 31 : a & 15] = v; palette_dirty = 1; }
+}
+
+HOT void ppu_data_write(u8 v) {
+  ppu_latch = v;
+  ppu_put(ppu_v, v);
   ppu_v += (ppu_ctrl & 4) ? 32 : 1;
+}
+
+// Makes the n bytes at p all v, a word at a time where p is aligned: ciram is, and an
+// aligned word is all in one row of a nametable or one group of its attributes. Gives
+// one more than the first byte that was not v, or 0 when all were, and the last in *to,
+// to a word: the rows they are in are the ones it changed.
+FAR u32 fill_span(u8 *p, u32 n, u32 v, u32 *to);
+HOT u32 fill_span(u8 *p, u32 n, u32 v, u32 *to) {
+  u32 first = 0, last = 0, j = 0, vv = v * 0x01010101u;
+#define FILL_BYTE(k) if (p[k] != v) { p[k] = v; if (!first) first = (k) + 1; last = (k); }
+  for (; j < n && ((u32)(p + j) & 3); j++) FILL_BYTE(j)
+  for (; j + 4 <= n; j += 4) {
+    if (*(u32 *)(p + j) != vv) {
+      *(u32 *)(p + j) = vv;
+      if (!first) first = j + 1;
+      last = j + 3;
+    }
+  }
+  for (; j < n; j++) FILL_BYTE(j)
+#undef FILL_BYTE
+  *to = last;
+  return first;
+}
+
+// n writes of the same byte, n at least 1: the game's loops that clear a nametable,
+// which tools/recomp.py makes into one call. One at a time, each costs a call and the
+// loop's own counting, and a room change makes about 2,000 of them in one frame. Only
+// fill_span is in fast RAM, which is kept for the hot code.
+void ppu_fill(u8 v, u32 n) {
+  ppu_latch = v;
+  u32 step = (ppu_ctrl & 4) ? 32 : 1;
+  u16 a = ppu_v;
+  while (n) {
+    u32 b = a & 0x3FFF;
+    if (step == 1 && b >= 0x2000 && b < 0x3F00) {
+      // Along one nametable at a time, the rows it changed marked at the end.
+      u32 i = nt_index(b), o = i & 0x3FF, run = 0x400 - o;
+      if (run > 0x3F00 - b) run = 0x3F00 - b;
+      if (run > n) run = n;
+      u32 last, first = fill_span(&ciram[i], run, v, &last);
+      if (first) {
+        u32 from = o + first - 1, to = o + last, rows = 0;
+        if (from < 0x3C0) rows |= (2u << ((to < 0x3C0 ? to : 0x3BF) >> 5)) - (1u << (from >> 5));
+        if (to >= 0x3C0) {
+          u32 f = from < 0x3C0 ? 0 : (from - 0x3C0) >> 3, t = (to - 0x3C0) >> 3;
+          rows |= (t == 7 ? 0 : 1u << ((t + 1) << 2)) - (1u << (f << 2));
+        }
+        nt_dirty = 1;
+        nt_rows_dirty[i >> 10] |= rows;
+      }
+      a += run;
+      n -= run;
+    } else {
+      ppu_put(a, v);
+      a += step;
+      n--;
+    }
+  }
+  ppu_v = a;
 }
 
 HOT static u32 irq_now(void) {
