@@ -720,6 +720,23 @@ static int plane_v[SCREEN_H] SLOW_RAM;     // the picture's row there, 8.8
 static struct affine_line plane_lines[2][SCREEN_H + 1] SLOW_RAM;  // the HBlank's line after the last
 struct affine_line *volatile affine_lines;
 
+// The map's sprites, and the DISPCNT that shows them or not, are drawn here and shown at
+// a VBlank with the plane: drawing that runs on past VBlank would change OAM while the
+// screen is drawn, and a sprite would tear across that line.
+static u16 plane_oam[128 * 4] SLOW_RAM __attribute__((aligned(4)));
+static u16 plane_dispcnt;
+static int plane_last;  // plane_oam's sprites after this one are hidden
+static volatile int plane_ready;
+
+static void plane_show(void) {
+  if (!plane_ready) return;
+  plane_ready = 0;
+  const u32 *from = (const u32 *)plane_oam;
+  volatile u32 *to = (volatile u32 *)OAM;
+  for (int i = 0; i < 128 * 2; i++) to[i] = from[i];
+  DISPCNT = plane_dispcnt;
+}
+
 static void plane_init(void) {
   for (int y = 0; y < SCREEN_H; y++) {
     int d = y - PLANE_YH;
@@ -729,8 +746,10 @@ static void plane_init(void) {
 }
 
 #ifndef HOST
-// From the VBlank interrupt, and from drawing when the table changes in a VBlank.
+// From the VBlank interrupt, and from drawing when the map's picture is ready in a
+// VBlank: the plane's table, and the sprites if they are new.
 void affine_arm(void) {
+  plane_show();
   DMA0CNT = 0;
   struct affine_line *l = affine_lines;
   if (!l) return;
@@ -743,12 +762,19 @@ void affine_arm(void) {
   DMA0CNT = 0xA6600000 | 4;  // at each HBlank, 4 words, repeating, back to BG2PA each time
 }
 #else
-void affine_arm(void) {}
+void affine_arm(void) { plane_show(); }
 #endif
 
 static void plane_off(void) {
   affine_lines = 0;
+  plane_ready = 0;
   affine_arm();
+  last_sprites = 128;  // OAM has the map's
+}
+
+static void plane_on(void) {
+  for (int i = 0; i < 128; i++) plane_oam[i * 4] = 0x0200;  // hidden
+  plane_last = 0;
 }
 
 // Frame k of the arrival, MAP_FRAMES and on the plane itself: the plane made smaller
@@ -775,7 +801,6 @@ static void place_plane(int k) {
   out[SCREEN_H] = out[SCREEN_H - 1];
   affine_lines = out;
   back ^= 1;
-  if (VCOUNT >= SCREEN_H) affine_arm();
 }
 
 // The sprites on the plane. Those that touch are one thing, like an ohagi and its flag,
@@ -783,6 +808,13 @@ static void place_plane(int k) {
 // in front.
 #define PLANE_SPRITES 96  // the map's 64, and copies of its clouds
 static u8 sprite_group[PLANE_SPRITES] SLOW_RAM;
+// Sprites that touch are at most 8 pixels apart across, so each is only checked against
+// those in its own column of 8 pixels and the columns beside it. x goes from -64 to 319,
+// with the clouds' copies.
+#define COLUMNS 48
+static u8 column_next[PLANE_SPRITES] SLOW_RAM;
+// Each group's sprites, in order, from its first.
+static u8 member_first[PLANE_SPRITES] SLOW_RAM, member_next[PLANE_SPRITES] SLOW_RAM;
 
 static int group_of(int i) {
   while (sprite_group[i] != i) i = sprite_group[i] = sprite_group[sprite_group[i]];
@@ -816,22 +848,39 @@ static void draw_plane_sprites(void) {
       count++;
     }
   }
+  u8 column_first[COLUMNS];
+  for (int c = 0; c < COLUMNS; c++) column_first[c] = 0xFF;
   for (int a = 0; a < count; a++) {
     sprite_group[a] = a;
-    for (int b = 0; b < a; b++) {
-      // A cloud drifting past an ohagi is not part of it: joined, the ohagi's foot would
-      // jump as the cloud came and went.
-      if (CLOUD(spr[a].tile) != CLOUD(spr[b].tile)) continue;
-      if (spr[a].x <= spr[b].x + 8 && spr[b].x <= spr[a].x + 8 && spr[a].y <= spr[b].y + h && spr[b].y <= spr[a].y + h) {
-        int ga = group_of(a), gb = group_of(b);
-        if (ga != gb) sprite_group[ga > gb ? ga : gb] = ga < gb ? ga : gb;
+    int ax = spr[a].x, ay = spr[a].y, cloud = CLOUD(spr[a].tile), col = (ax + 64) >> 3;
+    for (int c = col > 0 ? col - 1 : 0; c <= col + 1 && c < COLUMNS; c++) {
+      for (int b = column_first[c]; b != 0xFF; b = column_next[b]) {
+        // A cloud drifting past an ohagi is not part of it: joined, the ohagi's foot would
+        // jump as the cloud came and went.
+        if (cloud != CLOUD(spr[b].tile)) continue;
+        if (ax <= spr[b].x + 8 && spr[b].x <= ax + 8 && ay <= spr[b].y + h && spr[b].y <= ay + h) {
+          int ga = group_of(a), gb = group_of(b);
+          if (ga != gb) sprite_group[ga > gb ? ga : gb] = ga < gb ? ga : gb;
+        }
       }
     }
+    column_next[a] = column_first[col];
+    column_first[col] = a;
+  }
+  // Each sprite's group straight, and each group's sprites in a list.
+  for (int a = 0; a < count; a++) {
+    sprite_group[a] = group_of(a);
+    member_first[a] = 0xFF;
+  }
+  for (int a = count - 1; a >= 0; a--) {
+    int g = sprite_group[a];
+    member_next[a] = member_first[g];
+    member_first[g] = a;
   }
   // Each group's foot: the middle of its bottom edge, in the picture.
   static short left[PLANE_SPRITES] SLOW_RAM, right[PLANE_SPRITES] SLOW_RAM, bottom[PLANE_SPRITES] SLOW_RAM;
   for (int a = 0; a < count; a++) {
-    int g = group_of(a);
+    int g = sprite_group[a];
     if (g == a) {
       left[g] = spr[a].x;
       right[g] = spr[a].x + 8;
@@ -859,20 +908,19 @@ static void draw_plane_sprites(void) {
     int dz = PLANE_CZ - plane_pan - fv;
     int fx = SCREEN_W / 2 + (fu - cx) * PLANE_F / dz;
     int fy = PLANE_YH + (PLANE_H * PLANE_F + dz / 2) / dz;
-    for (int a = 0; a < count && n < 128; a++) {
-      if (group_of(a) != g) continue;
+    for (int a = member_first[g]; a != 0xFF && n < 128; a = member_next[a]) {
       int x = fx + spr[a].x + top_x - fu, y = fy + spr[a].y + 1 - fv;
       if (x <= -8 || x >= SCREEN_W || y <= -h || y >= SCREEN_H) continue;
       u32 t = spr[a].tile, at = spr[a].attr;
       u32 tile = h == 16 ? ((t & 1) << 8) | (t & 0xFE) : ((top_ctrl & 8) << 5) | t;
-      OAM[n * 4] = (y & 0xFF) | (h == 16 ? 0x8000 : 0);
-      OAM[n * 4 + 1] = (x & 0x1FF) | ((at & 0x40) ? 0x1000 : 0) | ((at & 0x80) ? 0x2000 : 0);
-      OAM[n * 4 + 2] = tile | ((at & 0x20) ? 2 : 1) << 10 | (at & 3) << 12;
+      plane_oam[n * 4] = (y & 0xFF) | (h == 16 ? 0x8000 : 0);
+      plane_oam[n * 4 + 1] = (x & 0x1FF) | ((at & 0x40) ? 0x1000 : 0) | ((at & 0x80) ? 0x2000 : 0);
+      plane_oam[n * 4 + 2] = tile | ((at & 0x20) ? 2 : 1) << 10 | (at & 3) << 12;
       n++;
     }
   }
-  for (int i = n; i < last_sprites; i++) OAM[i * 4] = 0x0200;  // hidden
-  last_sprites = n;
+  for (int i = n; i < plane_last; i++) plane_oam[i * 4] = 0x0200;  // hidden
+  plane_last = n;
 }
 
 // What a layer's map holds now, so it is only rebuilt when that changes.
@@ -1032,6 +1080,7 @@ void video_present(void) {
     plane_pan = 0;
   } else if (island == -1 && !parts && status < 0) {
     island = build_island(top) ? 0 : -2;
+    if (!island) plane_on();
     island_t = top_t;
   } else if (island >= 0 && (nt_dirty || top_t != island_t)) {
     island_t = top_t;
@@ -1056,10 +1105,19 @@ void video_present(void) {
     BG2CNT = 2 << 2 | 1 << 7 | AFFINE_MAP << 8 | 1 << 14 | 1;  // 8-bit tiles, 256x256
     if (island > MAP_FRAMES) {
       draw_plane_sprites();
-      DISPCNT = 0x1441;  // mode 1, the affine layer and the sprites
+      plane_dispcnt = 0x1441;  // mode 1, the affine layer and the sprites
     } else {
-      DISPCNT = 0x0441;  // the affine layer only
+      plane_dispcnt = 0x0441;  // the affine layer only
     }
+    // The plane and its sprites are shown now if this is still the VBlank, and with time
+    // to copy them, or else at the next one.
+    plane_ready = 1;
+#ifdef HOST
+    affine_arm();
+#else
+    u32 line = VCOUNT;
+    if (line >= SCREEN_H && line < 224) affine_arm();
+#endif
     ring.valid = 0;  // the picture's map is drawn whole when it is back
     nt_dirty = 0;
     return;

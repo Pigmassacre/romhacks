@@ -67,7 +67,7 @@ struct result {
   u32 magic, frames, cycles_sum, cycles_max, over_budget, checked, first_bad, done, untranslated;
 };
 volatile struct result result;
-static u32 window_gap, window_drawn;
+static u32 window_gap, window_drawn, window_late, window_late_line;
 static u32 frame_start, window_sum, window_max, window_over, window_mix, window_draw, last_mix;
 static int nmi_index;
 
@@ -141,7 +141,9 @@ void plat_nmi(void) {
     log_text("over_500=", result.over_budget - window_over);
     log_text("gap_500=", window_gap);
     log_text("drawn_500=", window_drawn);
-    window_gap = window_drawn = 0;
+    log_text("late_500=", window_late);
+    log_text("late_line_500=", window_late_line);
+    window_gap = window_drawn = window_late = window_late_line = 0;
     log_text("mix_500=", window_mix / 500);
     log_text("draw_500=", window_draw / 500);
     window_mix = window_draw = 0;
@@ -245,7 +247,13 @@ void plat_vblank(void) {
     window_sum += t;
     if (t > window_max) window_max = t;
     if (t > result.cycles_max) result.cycles_max = t;
-    if (t > FRAME_CYCLES) result.over_budget++;
+    if (t > FRAME_CYCLES) {
+      result.over_budget++;
+#ifdef TIMING_ONLY
+      log_text("over_at=", nmi_index);
+      log_text("over_cycles=", t);
+#endif
+    }
   }
   result.frames++;
 #endif
@@ -283,6 +291,13 @@ void plat_vblank(void) {
   video_present();
 #ifdef REPLAY
   window_draw += now() - frame_start;
+  // Drawing that runs on past VBlank changes OAM and the registers while the screen is
+  // drawn, and a sprite tears across the line it reached.
+  u32 line = VCOUNT;
+  if (line < SCREEN_H) {
+    window_late++;
+    if (line + 1 > window_late_line) window_late_line = line + 1;
+  }
 #endif
 }
 

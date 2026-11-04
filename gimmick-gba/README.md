@@ -91,7 +91,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   affine layer has 8-bit tiles and one byte a cell, so each tile and palette pair becomes a tile.
   Each line's scale and place on the picture comes from a table that an HBlank DMA copies into
   the affine registers, set up again at every VBlank. Sprites that touch are one thing, placed by
-  where its bottom edge lands on the plane.
+  where its bottom edge lands on the plane. They are drawn into a copy of OAM, shown with the
+  plane's table at a VBlank: drawn straight into OAM, a frame whose drawing ran past VBlank
+  would move a sprite while the screen was drawn, and tear it across that line.
 - Gimmick! 1.5's code goes in a bank after the game's, and its far calls in the fixed bank's dead
   block, as in 1.5 itself. Each of its five hooks, a JSR to a far call, is a switch at the start of
   the block there: with the options it answers to off, the game's own code runs, cycle for cycle.
@@ -153,7 +155,7 @@ recording took it. `tools/stepdiff.py` finds the first block that differs.
 | Tool | What it checks |
 |---|---|
 | `tools/build_gba.py --replay out/trace_tour`, then `tools/run_gba.py 1600` | The same replay on the GBA in mGBA, with RAM checked every frame |
-| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play, with the NES's slowdown kept so that the recording plays the same; and how much of the stack's room was never used |
+| `tools/build_gba.py --replay --timing`, then `tools/run_gba.py` | How much of each frame the game, the drawing and the sound take in the build you play, with the NES's slowdown kept so that the recording plays the same; how often the drawing ran past VBlank; and how much of the stack's room was never used. The log in `out/gba_log/` names each frame that went over |
 | `tools/compare_screens.py` | Every marked moment of the tour as the GBA would show it, beside Mesen's screenshot of that frame, on contact sheets in `out/screens/` |
 | `tools/compare_sound.py` | The sound chips' state in Mesen against `runtime/apu.c`'s, frame by frame |
 | `tools/record.py --audio 2600`, then `tools/compare_audio.py` | The sound itself: what each of Mesen's channels outputs, through Mesen's mixer formulas, against this port's, for loudness and spectrum |
