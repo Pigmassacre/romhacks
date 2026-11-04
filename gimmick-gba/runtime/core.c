@@ -111,9 +111,13 @@ static inline int rendering(void) {
 // last starts a new region of the picture, and what the game sets in its first few
 // lines is what that region shows.
 #define SPLIT_SETTLE_LINES 3
-static void mid_frame(void) {
+// In fast RAM, as ARM: the game writes $2000 and $2006 by the dozen while it uploads
+// to the PPU, and each comes here.
+HOT static void mid_frame(void) {
   if (!rendering()) return;
-  int line = (cyc - render_start) * 3 / LINE_THIRDS;
+  // (cyc - render_start) * 3 / LINE_THIRDS, without a division: exact below 2^20 thirds,
+  // and a frame held as long as it can be is under 2^18.
+  int line = (u32)(((uint64_t)((cyc - render_start) * 3) * 12595213u) >> 32);
   if (!(ppu_mask & 0x18)) {
     // Rendering is still off (the game can keep it off into the frame, for more time
     // to upload): this only sets what the picture will start with.
