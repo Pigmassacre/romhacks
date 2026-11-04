@@ -263,7 +263,7 @@ static inline u32 fiveb_env_level(void) {
 // The wave has 8 steps, one bit each in shape. Almost every sample is between edges, so
 // it works out how many there are until the next step and takes those in one go.
 // The squares go into a buffer of changes, not of levels: each square writes only where
-// its level changes, and one pass at the end (squares_done) adds them all up. That makes
+// its level changes, and one pass at the end adds them all up. That makes
 // a square cost by its edges, not its samples. inverse is 2^16 / (inc >> 16).
 #define SET(at, v) do { int v_ = (v); if (v_ != cur) { delta[at] += v_ - cur; cur = v_; } } while (0)
 HOT static u32 add_square(short *delta, int n, u32 phase, u32 inc, u32 inverse, int vol, u32 shape) {
@@ -299,7 +299,9 @@ HOT static u32 add_square(short *delta, int n, u32 phase, u32 inc, u32 inverse, 
 }
 #undef SET
 
-// The squares' changes, added up into the buffer, and cleared for the next ones.
+#ifdef HOST
+// The squares' changes, added up into the buffer, and cleared for the next ones. The
+// PC build adds up each channel apart, to play it alone; the GBA in mix_span's last pass.
 HOT static void squares_done(short *buf, short *delta, int n) {
   int level = 0;
   for (int i = 0; i < n; i++) {
@@ -309,6 +311,7 @@ HOT static void squares_done(short *buf, short *delta, int n) {
   }
   delta[n] = 0;
 }
+#endif
 
 HOT static void mix_pulse(short *delta, int n, struct pulse *p, u32 duty) {
   int vol = pulse_level(p) * 2;
@@ -357,18 +360,20 @@ HOT static int mix_dmc(short *buf, int n) {
     dmc.accum = (accum + inc * n) & 0xFFFF;
     return (level * 15) >> 4;
   }
-  u32 shift = dmc.shift, bits = dmc.bits, silent = dmc.silent;
+  // In locals: the writes to buf could be any of these for all the compiler knows.
+  u32 shift = dmc.shift, bits = dmc.bits, silent = dmc.silent, addr = dmc.addr, left = dmc.left;
+  int out = (level * 15) >> 4;
   for (int i = 0; i < n; i++) {
     accum += inc;
     while (accum >= 0x10000) {
       accum -= 0x10000;
       if (!bits) {
-        if (dmc.left) {
-          shift = rd(dmc.addr);
-          dmc.addr = dmc.addr == 0xFFFF ? 0x8000 : dmc.addr + 1;
+        if (left) {
+          shift = rd(addr);
+          addr = addr == 0xFFFF ? 0x8000 : addr + 1;
           bits = 8;
           silent = 0;
-          if (!--dmc.left && dmc.loop) { dmc.addr = dmc.start_addr; dmc.left = dmc.start_len; }
+          if (!--left && dmc.loop) { addr = dmc.start_addr; left = dmc.start_len; }
         } else {
           silent = 1;
         }
@@ -376,17 +381,20 @@ HOT static int mix_dmc(short *buf, int n) {
       if (!silent && bits) {
         if (shift & 1) { if (level <= 125) level += 2; }
         else if (level >= 2) level -= 2;
+        out = (level * 15) >> 4;
         shift >>= 1;
         bits--;
       }
     }
-    buf[i] += (level * 15) >> 4;
+    buf[i] += out;
   }
   dmc.accum = accum;
   dmc.level = level;
   dmc.shift = shift;
   dmc.bits = bits;
   dmc.silent = silent;
+  dmc.addr = addr;
+  dmc.left = left;
   return 0;
 }
 
@@ -486,19 +494,21 @@ HOT static void mix_fiveb(short *buf, short *delta, int n, const u8 *levels) {
 #else
 #define ONLY(bit)
 #define STEADY(bit, level) (level)
-#define SQUARES(bit)  // added up once, with the 5B's
+#define SQUARES(bit)  // added up in the last pass, with the 5B's
 #endif
 
 HOT __attribute__((noinline)) static void mix_span(s8 *out, int n) {  // kept in fast RAM, not inlined into apu_mix
 #ifdef HOST
   short total[MAX_SPAN] = {0};
 #endif
-  short buf[MAX_SPAN], delta[MAX_SPAN + 1];
+  // Cleared a word at a time: n is at most MAX_SPAN, and these have room for it rounded up.
+  u32 buf_w[(MAX_SPAN + 1) / 2], delta_w[(MAX_SPAN + 2) / 2];
+  short *buf = (short *)buf_w, *delta = (short *)delta_w;
   u8 levels[16], duties[4];
   for (int i = 0; i < 16; i++) levels[i] = fiveb_levels[i];
   for (int i = 0; i < 4; i++) duties[i] = duty_steps[i];
-  for (int i = 0; i < n; i++) buf[i] = 0;
-  for (int i = 0; i <= n; i++) delta[i] = 0;
+  for (int i = 0; i < (n + 1) / 2; i++) buf_w[i] = 0;
+  for (int i = 0; i < (n + 2) / 2; i++) delta_w[i] = 0;
   mix_pulse(delta, n, &pulses[0], duties[pulses[0].duty]);
   SQUARES(1);
   mix_pulse(delta, n, &pulses[1], duties[pulses[1].duty]);
@@ -510,17 +520,17 @@ HOT __attribute__((noinline)) static void mix_span(s8 *out, int n) {  // kept in
   steady += STEADY(16, mix_dmc(buf, n));
   ONLY(16);
   mix_fiveb(buf, delta, n, levels);
-  squares_done(buf, delta, n);
-  ONLY(32);
+  SQUARES(32);  // on the GBA, added up in the last pass instead
   // The NES's output stage blocks DC, so the DPCM level drifting does not push the
   // whole mix up and down. This is the same idea: a high-pass filter, at about 90 Hz.
 #ifdef HOST
   for (int i = 0; i < n; i++) buf[i] = total[i];
 #endif
   static int dc;
-  int level = dc;
+  int level = dc, squares = 0;
   for (int i = 0; i < n; i++) {
-    int in = (buf[i] + steady) << 8;
+    squares += delta[i];
+    int in = (buf[i] + squares + steady) << 8;
     level += (in - level) >> 5;
     int s = ((in - level) >> 8) * OUTPUT_GAIN >> 8;
     out[i] = s > 127 ? 127 : s < -128 ? -128 : s;
