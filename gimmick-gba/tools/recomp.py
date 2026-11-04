@@ -370,6 +370,22 @@ def has_mapper_write(bank, start):
     return False
 
 
+COUNTS = {}  # how often each instruction ran in the recordings, by (bank, pc)
+
+
+def expect(cond, bank, taken, not_taken):
+    """A branch's condition, with which way it mostly went in the recordings, so the
+    compiler lays out and keeps in registers what the common way needs."""
+    num = FIXED_BANK if taken >= 0xE000 else bank.num
+    t = COUNTS.get((num, taken), 0)
+    f = COUNTS.get((FIXED_BANK if not_taken >= 0xE000 else bank.num, not_taken), 0)
+    if t > 2 * f:
+        return "__builtin_expect(!!(%s), 1)" % cond
+    if f > 2 * t:
+        return "__builtin_expect(!!(%s), 0)" % cond
+    return cond
+
+
 FIXED_CHAIN = set()  # the fixed bank's blocks any bank's ROM blocks may go on to
 
 
@@ -403,7 +419,7 @@ def emit_block(bank, start, out, hot, chain=()):
             # A loop has to jump backwards or return, so going forwards can wait. Falling
             # through into the next block goes forwards too (cur is already that block).
             return "FORWARD(L%02X_%04X, 0x%04X);" % (target, t, t)
-        return "if (cyc < block_limit) goto L%02X_%04X; return 0x%04X;" % (target, t, t)
+        return "if (__builtin_expect(cyc < block_limit, 1)) goto L%02X_%04X; return 0x%04X;" % (target, t, t)
 
     def dynamic(expr):
         return ("pc = %s; goto dyn;" % expr) if is_hot else ("return %s;" % expr)
@@ -436,7 +452,7 @@ def emit_block(bank, start, out, hot, chain=()):
             t = (nxt + off) & 0xFFFF
             extra = 2 if (t ^ nxt) & 0xFF00 else 1
             out.append("  CYC(%d);" % (cyc + c))
-            out.append("  if (%s) { CYC(%d); %s }" % (BRANCH[m], extra, jump(t)))
+            out.append("  if (%s) { CYC(%d); %s }" % (expect(BRANCH[m], bank, t, nxt), extra, jump(t)))
             out.append("  " + jump(nxt))
             return
         elif m == "jmp":
@@ -559,7 +575,7 @@ def emit_hot(banks, hot, out):
     """Every block in fast RAM, as one function."""
     order = sorted(hot)
     index = {key: i + 1 for i, key in enumerate(order)}
-    out.append('#include "cpu.h"\n#include "platform.h"\n')
+    out.append('#pragma GCC optimize ("no-reorder-blocks")\n#include "cpu.h"\n#include "platform.h"\n')
     for num in sorted({k[0] for k in hot}):
         out.append("static const u16 hot_map_%02X[0x2000] = {" % num)
         for (n, pc) in order:
@@ -580,7 +596,7 @@ def emit_hot(banks, hot, out):
     out.append(LOAD_REGS)
     out.append("  goto *labels[pc];")
     out.append("dyn:")
-    out.append("  if (cyc >= block_limit || pc < 0x8000) goto leave;")
+    out.append("  if (__builtin_expect(cyc >= block_limit || pc < 0x8000, 0)) goto leave;")
     out.append("  e = hot_lookup(pc);")
     out.append("  if (!e) goto leave;")
     out.append("  goto *labels[e];")
@@ -802,6 +818,7 @@ def main():
         num, pc = int(num, 16), int(pc, 16)
         seen.setdefault(num, set()).add(pc)
         counts[num, pc] = int(n)
+    COUNTS.update(counts)
     entries = {int(line, 16) for line in open(os.path.join(DATA, "entries.txt"))}
     banks = {}
     for num, pcs in sorted(seen.items()):
