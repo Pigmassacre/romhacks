@@ -19,7 +19,9 @@ ON_NMI = function(f)
       phase = "fight"; t0 = f
     end
   else
-    if r(0x346) < 3 then poke(0x346, 3) end
+    -- At his most ($2B), not above it: past that, the status bar's loop at $E3E2 goes
+    -- round 256 times a frame, and the NES lags all the time.
+    if r(0x346) < r(0x2B) then poke(0x346, r(0x2B)) end
     if (f - t0) % 150 == 0 then
       local h = io.open(OUT .. "shot_" .. (f - t0) .. ".png", "wb")
       h:write(emu.takeScreenshot()); h:close()

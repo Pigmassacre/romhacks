@@ -54,10 +54,10 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 ## Known limits
 
 - It has been run in mGBA, and not on a real GBA.
-- Normal play takes about 65% of the GBA's time for a frame, and the busiest stretch of the boss
-  fight about 75%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
-  in fast RAM. Some single frames take more, mostly a little over, where the game does its heavy
-  work every other frame, and up to about 140% while a stage loads.
+- Normal play takes about 55% of the GBA's time for a frame, and the busiest stretch of the boss
+  fight about 70%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
+  in fast RAM. A few single frames in the boss fight go a little over, up to about 106%, and
+  loading a stage can take two or three frames' worth.
 - It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
   vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
   But a heavy frame can still run over the GBA's own time for a frame. Then that frame is not
@@ -133,9 +133,11 @@ These play the NES game in [Mesen 2](https://www.mesen.ca/) (put the Linux build
 record RAM at every NMI, what code ran, and what the pads gave. `--tour` warps through every stage
 and checkpoint, sweeps across each stage's map, clears each stage, and goes through the world map,
 both endings and a game over (`tests/s_tour.lua`). `--boss` fights a crowd of ohagis in the first stage,
-the heaviest frames found so far (`tests/s_boss.lua`), and its code counts 20 times over when the
+the heaviest frames found so far (`tests/s_boss.lua`), with Yumetaro's health kept at its most
+(`$2B`): above that, the status bar's loop goes round 256 times a frame and the NES lags all the
+time, and its code counts 20 times over when the
 translator picks what goes in fast RAM. `--crowd` stands still in the boss's room while it
-throws (`tests/s_crowd.lua`): with nothing pressed, the game plays the same without the NES's
+throws (`tests/s_crowd.lua`), with health kept the same way: with nothing pressed, the game plays the same without the NES's
 slowdown, so `--timing --no-slowdown` can time the build you play there. `--15` plays the default run on a NES ROM with all of 1.5 on
 (`out/gen/gimmick-1.5.nes`), and the PC build replays it with `OPTIONS=31` set: every byte of RAM
 should match there too.
