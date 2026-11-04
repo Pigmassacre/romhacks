@@ -73,9 +73,11 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   internal RAM, as one function that jumps straight between them, with the 6502's registers and
   flags in its own variables: the compiler keeps them in the GBA's registers where it can, and
   skips flags nothing reads. The rest stay in ROM, and anything never seen running goes through an
-  interpreter. Both are Thumb code, which is about half the size of ARM, so more fits. A block in ROM that
-  goes on to another of its bank's, or the fixed bank's, names it, and the dispatcher calls that
-  one straight away instead of looking it up. `data/` says where code
+  interpreter. Both are Thumb code, which is about half the size of ARM, so more fits. Each bank's
+  blocks in ROM are one function too, jumping straight between themselves; one that goes on to the
+  fixed bank's names that block, and the dispatcher calls it straight away instead of looking it
+  up. Their registers stay in the struct: loading and storing them all each time the dispatcher
+  comes in cost more than it saved. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
   Fast RAM is shared with the stack, and how much the hot code takes is only estimated when it
   is picked: `tools/build_gba.py` shrinks it until 1.5 KB is left for the stack. Test builds mark

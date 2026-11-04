@@ -374,28 +374,31 @@ FIXED_CHAIN = set()  # the fixed bank's blocks any bank's ROM blocks may go on t
 
 
 def emit_block(bank, start, out, hot, chain=()):
-    """One basic block. In fast RAM, blocks are labels in one function and jump
-    straight to each other; in ROM, each is a function that returns the next PC, or
-    names the next block when it is in chain, one of this bank's own in ROM, for the
-    dispatcher to call straight away: that saves the rest of a trip through it. (Thumb
-    code has no tail calls, so a block cannot just call the next itself.)"""
+    """One basic block, as a label in a function that holds many: in fast RAM, every
+    block there (hot is the set of them); in ROM, a bank's own (chain is the set of
+    them). Blocks in the same function jump straight to each other. Anything else
+    returns the next PC for the dispatcher, or, from another bank to the fixed bank's,
+    also names its block for the dispatcher to call straight away. With neither, the
+    block is a function of its own."""
     is_hot = hot is not None
     moved = has_mapper_write(bank, start)
 
     def jump(t, fall=False):
-        if not is_hot:
-            if t in chain and not moved:
-                return "chain_next = b%02X_%04X; return 0x%04X;" % (bank.num, t, t)
-            if bank.num != FIXED_BANK and t >= 0xE000 and t in FIXED_CHAIN:
-                return "chain_next = b%02X_%04X; return 0x%04X;" % (FIXED_BANK, t, t)
-            return "return 0x%04X;" % t
         target = None
-        if bank.has(t) and not moved and (bank.num, t) in hot:
-            target = bank.num
-        elif t >= 0xE000 and (FIXED_BANK, t) in hot:
-            target = FIXED_BANK
-        if target is None:
-            return "pc = 0x%04X; goto dyn;" % t
+        if is_hot:
+            if bank.has(t) and not moved and (bank.num, t) in hot:
+                target = bank.num
+            elif t >= 0xE000 and (FIXED_BANK, t) in hot:
+                target = FIXED_BANK
+            if target is None:
+                return "pc = 0x%04X; goto dyn;" % t
+        else:
+            if t in chain and not moved:
+                target = bank.num
+            elif bank.num != FIXED_BANK and t >= 0xE000 and t in FIXED_CHAIN:
+                return "chain_next = b%02X_%04X; return 0x%04X;" % (FIXED_BANK, t, t)
+            else:
+                return "return 0x%04X;" % t
         if t > cur or fall:
             # A loop has to jump backwards or return, so going forwards can wait. Falling
             # through into the next block goes forwards too (cur is already that block).
@@ -494,27 +497,20 @@ def emit_bank(bank, out, hot, after_hook):
     names = {}
     pcs = rom_blocks(bank, hot)
     chain = chain_set(bank, hot, after_hook)
+    index = {pc: i + 1 for i, pc in enumerate(pcs)}
+    run = "run_%02X" % bank.num
     out.append('#include "cpu.h"\n')
     # The fixed bank's that others go on to are not private to its file.
     shared = FIXED_CHAIN if bank.num == FIXED_BANK else set()
     if bank.num != FIXED_BANK:
         for pc in sorted(FIXED_CHAIN):
             out.append("u32 b%02X_%04X(void);" % (FIXED_BANK, pc))
+    out.append("static u32 %s(u32 e);" % run)
+    # Where the dispatcher comes in: the bank's one function, at that block.
     for pc in pcs:
         names[pc] = "b%02X_%04X" % (bank.num, pc)
-        out.append("%su32 %s(void);" % ("" if pc in shared else "static ", names[pc]))
+        out.append("%su32 %s(void) { return %s(%d); }" % ("" if pc in shared else "static ", names[pc], run, index[pc]))
     out.append("")
-    for pc in pcs:
-        out.append("%su32 %s(void) {" % ("" if pc in shared else "static ", names[pc]))
-        hook = HOOKS.get((bank.num, pc))
-        if hook:
-            # 1.5's JSR to its far call, when an option it answers to is on.
-            target = after_hook[(bank.num, pc)].far
-            ret = pc + 2
-            out.append("  if (options & %d) { opt_prep(%d); CYC(6); PUSH(0x%02X); PUSH(0x%02X); return 0x%04X; }"
-                       % (hook[0], hook[1], ret >> 8, ret & 0xFF, target))
-        emit_block(bank, pc, out, None, chain)
-        out.append("}\n")
     # 1.5's code after each hook's far call. Where the game has an instruction at the
     # same place, the hook's options choose between them: the game can be there too,
     # stepping through the interpreter or back from an interrupt.
@@ -539,7 +535,24 @@ def emit_bank(bank, out, hot, after_hook):
     out.append("const block_t tbl_%02X[0x2000] = {" % bank.num)
     for pc in sorted(names):
         out.append("  [0x%04X] = %s," % (pc - bank.window, names[pc]))
-    out.append("};")
+    out.append("};\n")
+    out.append("static u32 %s(u32 e) {" % run)
+    out.append("  static void *const labels[] = {0,")
+    for pc in pcs:
+        out.append("    &&L%02X_%04X," % (bank.num, pc))
+    out.append("  };")
+    out.append("  goto *labels[e];")
+    for pc in pcs:
+        out.append("L%02X_%04X:" % (bank.num, pc))
+        hook = HOOKS.get((bank.num, pc))
+        if hook:
+            # 1.5's JSR to its far call, when an option it answers to is on.
+            target = after_hook[(bank.num, pc)].far
+            ret = pc + 2
+            out.append("  if (options & %d) { opt_prep(%d); CYC(6); PUSH(0x%02X); PUSH(0x%02X); return 0x%04X; }"
+                       % (hook[0], hook[1], ret >> 8, ret & 0xFF, target))
+        emit_block(bank, pc, out, None, chain)
+    out.append("}")
 
 
 def emit_hot(banks, hot, out):
@@ -564,7 +577,7 @@ def emit_hot(banks, hot, out):
         out.append("    &&L%02X_%04X," % (n, pc))
     out.append("  };")
     out.append("  u32 e;")
-    out.append("  u8 " + ", ".join("r%s = cs->%s" % (r, r) for r in LOCAL_REGS) + ";")
+    out.append(LOAD_REGS)
     out.append("  goto *labels[pc];")
     out.append("dyn:")
     out.append("  if (cyc >= block_limit || pc < 0x8000) goto leave;")
@@ -575,20 +588,25 @@ def emit_hot(banks, hot, out):
     for (n, pc) in order:
         body.append("L%02X_%04X:" % (n, pc))
         emit_block(banks[n], pc, body, hot)
-    # Leaving goes through one place, which puts the registers back where the rest of
-    # the game looks for them.
+    leave(body, out)
+    out.append("}")
+
+
+def leave(body, out):
+    """A function of blocks leaves through one place, which puts the registers back
+    where the rest of the game looks for them."""
     for line in body:
         line = re.sub(r"return trap\(([^;]*)\);", r"{ STORE_REGS; return trap(\1); }", line)
         out.append(re.sub(r"return ([^;]*);", r"{ pc = \1; goto leave; }", line))
     out.append("leave:")
     out.append("  STORE_REGS;")
     out.append("  return pc;")
-    out.append("}")
 
 
-# In fast RAM the 6502's registers and flags are locals, not the struct's: the compiler
+# In a function of blocks the 6502's registers and flags are locals, not the struct's: the compiler
 # keeps them in machine registers where it can, and drops flags nothing reads.
 LOCAL_REGS = ("a", "x", "y", "s", "c", "v", "n", "z")
+LOAD_REGS = "  u8 " + ", ".join("r%s = cs->%s" % (r, r) for r in LOCAL_REGS) + ";"
 HOT_LOCALS = "\n".join(
     ["#undef %s\n#define %s r%s" % (r.upper(), r.upper(), r) for r in LOCAL_REGS] +
     ["#define STORE_REGS (" + ", ".join("cs->%s = r%s" % (r, r) for r in LOCAL_REGS) + ")",
