@@ -819,6 +819,9 @@ static void draw_plane_sprites(void) {
   for (int a = 0; a < count; a++) {
     sprite_group[a] = a;
     for (int b = 0; b < a; b++) {
+      // A cloud drifting past an ohagi is not part of it: joined, the ohagi's foot would
+      // jump as the cloud came and went.
+      if (CLOUD(spr[a].tile) != CLOUD(spr[b].tile)) continue;
       if (spr[a].x <= spr[b].x + 8 && spr[b].x <= spr[a].x + 8 && spr[a].y <= spr[b].y + h && spr[b].y <= spr[a].y + h) {
         int ga = group_of(a), gb = group_of(b);
         if (ga != gb) sprite_group[ga > gb ? ga : gb] = ga < gb ? ga : gb;
