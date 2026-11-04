@@ -370,11 +370,9 @@ HOT static int mix_dmc(short *buf, int n) {
   }
   // In locals: the writes to buf could be any of these for all the compiler knows.
   u32 shift = dmc.shift, bits = dmc.bits, silent = dmc.silent, addr = dmc.addr, left = dmc.left;
-  int out = (level * 15) >> 4;
   for (int i = 0; i < n; i++) {
     accum += inc;
-    while (accum >= 0x10000) {
-      accum -= 0x10000;
+    for (u32 steps = accum >> 16; steps; steps--) {
       if (!bits) {
         if (left) {
           shift = rd(addr);
@@ -387,14 +385,15 @@ HOT static int mix_dmc(short *buf, int n) {
         }
       }
       if (!silent && bits) {
-        if (shift & 1) { if (level <= 125) level += 2; }
-        else if (level >= 2) level -= 2;
-        out = (level * 15) >> 4;
+        // Up 2 for a 1 and down 2 for a 0, unless that leaves 0-127.
+        int next = level + (int)((shift & 1) << 2) - 2;
+        if ((u32)next <= 127) level = next;
         shift >>= 1;
         bits--;
       }
     }
-    buf[i] += out;
+    accum &= 0xFFFF;
+    buf[i] += (level * 15) >> 4;
   }
   dmc.accum = accum;
   dmc.level = level;

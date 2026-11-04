@@ -786,6 +786,87 @@ static void update_layer(int layer, int t, int row, u16 nes_t, int line, int row
   layer_rows[layer][0] = layer_rows[layer][1] = 0;
 }
 
+// The picture's own layer scrolls the most, so its map is a ring: map row = picture
+// row mod 32 and map column = NES column mod 32, with the GBA's scroll pointing at the
+// window. When the camera moves, only the rows and columns it brings in are drawn,
+// along with rows the game wrote. Picture rows run 0-59 down both nametables, and
+// columns 0-63 across them.
+#define RING_ROWS 22
+#define RING_COLS 31  // the screen shows NES columns 8-247: 30 and a part
+static struct { int valid, u, a; } ring;  // u: the window's top row, counted on past 59
+
+// n cells of picture row r, from column a, into map row map_row.
+HOT __attribute__((long_call, noinline)) static void draw_cells(volatile u16 *map, int map_row, int r, int a, int n) {
+  int nty = r >= 30, ry = r - (nty ? 30 : 0);
+  int attr_shift = (ry & 2) << 1;
+  u16 *out = (u16 *)&map[map_row * 32];
+  while (n > 0) {
+    int col = a & 31;
+    const u8 *nt = &ciram[nt_index(0x2000 + (nty << 11) + ((a >> 5 & 1) << 10))];
+    const u8 *tiles = nt + ry * 32, *attrs = nt + 0x3C0 + (ry >> 2) * 8;
+    int k = 32 - col;
+    if (k > n) k = n;
+    for (int i = 0; i < k; i++, col++) {
+      u32 pal = attrs[col >> 2] >> (attr_shift | (col & 2)) & 3;
+      out[col] = tiles[col] | pal << 12;
+    }
+    a = (a + k) & 63;
+    n -= k;
+  }
+}
+
+static int picture_row(int u) {
+  int r = u % 60;
+  return r < 0 ? r + 60 : r;
+}
+
+// The rows the game has written since layer 0 was drawn, for the top and the bottom
+// pair of nametables: bit n for row n of each.
+static u32 rows_written(int nty) {
+  return layer_rows[0][nt_index(0x2000 + (nty << 11)) >> 10] | layer_rows[0][nt_index(0x2400 + (nty << 11)) >> 10];
+}
+
+// Bring layer 0's map up to date for scroll t with picture line `line` at the top, and
+// give the scroll that shows it, less the fine horizontal scroll.
+static void update_ring(u16 t, int line, int *hofs, int *vofs) {
+  int sy = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + line;
+  int nt_y = (t >> 11) & 1;
+  while (sy >= 240) { sy -= 240; nt_y ^= 1; }
+  int top_row = nt_y * 30 + sy / 8;
+  int a = (((t >> 10) & 1) * 32 + (t & 31) + 1) & 63;
+  volatile u16 *map = MAP(layer_map[0]);
+  int dr = 0, dc = 0, whole = !ring.valid;
+  if (!whole) {
+    dr = top_row - picture_row(ring.u);
+    if (dr >= 30) dr -= 60; else if (dr < -30) dr += 60;
+    dc = a - ring.a;
+    if (dc >= 32) dc -= 64; else if (dc < -32) dc += 64;
+    whole = dr >= RING_ROWS || dr <= -RING_ROWS || dc >= RING_COLS || dc <= -RING_COLS;
+  }
+  if (whole) {
+    ring.valid = 1;
+    ring.u = top_row;
+    dr = RING_ROWS;  // every row is new
+  } else {
+    ring.u += dr;
+  }
+  ring.a = a;
+  u32 written[2] = {rows_written(0), rows_written(1)};
+  int r = picture_row(ring.u);
+  for (int i = 0; i < RING_ROWS; i++, r = r == 59 ? 0 : r + 1) {
+    int map_row = (ring.u + i) & 31;
+    if ((dr > 0 && i >= RING_ROWS - dr) || (dr < 0 && i < -dr) || written[r >= 30] >> (r >= 30 ? r - 30 : r) & 1)
+      draw_cells(map, map_row, r, a, RING_COLS);
+    else if (dc > 0)
+      draw_cells(map, map_row, r, (a + RING_COLS - dc) & 63, dc);
+    else if (dc < 0)
+      draw_cells(map, map_row, r, a, -dc);
+  }
+  layer_rows[0][0] = layer_rows[0][1] = 0;
+  *hofs = (a & 31) * 8;
+  *vofs = (ring.u & 31) * 8 + (sy & 7);
+}
+
 void video_present(void) {
   for (int i = 0; i < LAYERS; i++) {
     layer_rows[i][0] |= nt_rows_dirty[0];
@@ -866,23 +947,24 @@ void video_present(void) {
     } else {
       DISPCNT = 0x0441;  // the affine layer only
     }
+    ring.valid = 0;  // the picture's map is drawn whole when it is back
     nt_dirty = 0;
     return;
   }
   int cloud_stage = parallax_stage(parts, status);
   load_bg_pages(0, top_chr, top_ctrl, cloud_stage >= 0);
 
-  int picture_y = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7) + top;
-  update_layer(0, top_t & 0x0C1F, picture_y >> 3, top_t, top, 22);
-  BG0VOFS = picture_y & 7;
-  BG0HOFS = top_x;
+  int hofs, vofs;
+  update_ring(top_t, top, &hofs, &vofs);
+  BG0VOFS = vofs;
+  BG0HOFS = hofs + top_x;
   if (cloud_stage >= 0) {
     // The mask on the third layer, with the picture's map and scroll, and the clouds on
     // the fourth, at half the camera's speed, both behind the sprites behind the picture.
     load_bg_pages(2, top_chr, top_ctrl, 2);
     BG2CNT = 2 << 2 | layer_map[0] << 8 | 3;
-    REG16(0x04000018) = top_x;
-    REG16(0x0400001A) = picture_y & 7;
+    REG16(0x04000018) = hofs + top_x;
+    REG16(0x0400001A) = vofs;
     draw_clouds(cloud_stage);
     BG3CNT = 0 << 2 | CLOUD_MAP << 8 | 3;
     int x = ((top_t >> 10) & 1) * 256 + (top_t & 31) * 8 + top_x;
