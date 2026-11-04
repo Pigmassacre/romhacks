@@ -264,24 +264,9 @@ void plat_vblank(void) {
   last_mix = now() - mix_start;
   window_mix += last_mix;
 #endif
-  // A frame that ran late can skip its drawing and start straight away, to catch up.
-  // But only one in a row: the next is always drawn, and if that means falling behind,
-  // the game runs slow for a moment, as it does on the NES. Skipping until it had
-  // caught up froze the picture for up to a second while the game ran on unseen.
-  static u32 nes_frames;
-  static int skipped;
-  nes_frames++;
-  if ((int)(vblank_count - nes_frames) >= 0) {
-    if (!skipped) {
-      skipped = 1;
-#ifdef REPLAY
-      frame_start = now();
-#endif
-      return;
-    }
-    nes_frames = vblank_count + 1;
-  }
-  skipped = 0;
+  // Every frame is drawn. A frame that ran late does not skip its drawing to catch up:
+  // the game runs slow for a moment instead, as it does on the NES. A skipped picture
+  // plays worse than a held one.
 #ifndef REPLAY
   menu_tick();
 #endif

@@ -60,9 +60,9 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   loading a stage can take two or three frames' worth.
 - It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
   vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
-  But a heavy frame can still run over the GBA's own time for a frame. Then that frame is not
-  drawn and the next starts straight away. The next is always drawn, so under a sustained load
-  the game slows and the sound repeats. Loading a room can take a few frames.
+  But a heavy frame can still run over the GBA's own time for a frame. Then the game slows for
+  a moment, as on the NES: every frame is drawn, none is skipped to catch up, and under a
+  sustained load the sound repeats. Loading a room can take a few frames.
 - The sound runs on the NES's frame clock, so changes land at most a frame apart from the NES.
 - A few things are simplified: a sprite that crosses a mid-frame graphics change uses the upper
   set of graphics, and a picture is only ever split in two.
