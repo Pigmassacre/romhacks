@@ -28,7 +28,7 @@ FIXED_BANK = 0x1F
 WAIT_LOOP = (0xF29A, 0xF2A5)
 # How much fast RAM the blocks may take. The exact-timing test build's code is bigger,
 # and speed does not matter there, so tools/build_gba.py gives it less.
-HOT_BYTES = int(os.environ.get("HOT_BYTES", 44000))
+HOT_BYTES = int(os.environ.get("HOT_BYTES", 49000))
 ARM_BYTES_PER_INSTR = 36     # rough size of a translated instruction as ARM code
 # $F319 reads an inline jump table after its JSR, so nothing returns there.
 NO_RETURN = {0xF319}
@@ -557,22 +557,55 @@ def emit_hot(banks, hot, out):
     for num in sorted({k[0] for k in hot}):
         out.append("  [0x%02X] = hot_map_%02X," % (num, num))
     out.append("};\n")
+    out.append(HOT_LOCALS)
     out.append("HOT_THUMB u32 hot_run(u32 pc) {")
     out.append("  static void *const labels[] = {0,")
     for (n, pc) in order:
         out.append("    &&L%02X_%04X," % (n, pc))
     out.append("  };")
     out.append("  u32 e;")
+    out.append("  u8 " + ", ".join("r%s = cs->%s" % (r, r) for r in LOCAL_REGS) + ";")
     out.append("  goto *labels[pc];")
     out.append("dyn:")
-    out.append("  if (cyc >= block_limit || pc < 0x8000) return pc;")
+    out.append("  if (cyc >= block_limit || pc < 0x8000) goto leave;")
     out.append("  e = hot_lookup(pc);")
-    out.append("  if (!e) return pc;")
+    out.append("  if (!e) goto leave;")
     out.append("  goto *labels[e];")
+    body = []
     for (n, pc) in order:
-        out.append("L%02X_%04X:" % (n, pc))
-        emit_block(banks[n], pc, out, hot)
+        body.append("L%02X_%04X:" % (n, pc))
+        emit_block(banks[n], pc, body, hot)
+    # Leaving goes through one place, which puts the registers back where the rest of
+    # the game looks for them.
+    for line in body:
+        line = re.sub(r"return trap\(([^;]*)\);", r"{ STORE_REGS; return trap(\1); }", line)
+        out.append(re.sub(r"return ([^;]*);", r"{ pc = \1; goto leave; }", line))
+    out.append("leave:")
+    out.append("  STORE_REGS;")
+    out.append("  return pc;")
     out.append("}")
+
+
+# In fast RAM the 6502's registers and flags are locals, not the struct's: the compiler
+# keeps them in machine registers where it can, and drops flags nothing reads.
+LOCAL_REGS = ("a", "x", "y", "s", "c", "v", "n", "z")
+HOT_LOCALS = "\n".join(
+    ["#undef %s\n#define %s r%s" % (r.upper(), r.upper(), r) for r in LOCAL_REGS] +
+    ["#define STORE_REGS (" + ", ".join("cs->%s = r%s" % (r, r) for r in LOCAL_REGS) + ")",
+     "#undef FORWARD",
+     "#ifdef EXACT_TIMING",
+     "#define FORWARD(label, pc_) do { if (cyc < block_limit) goto label; pc = pc_; goto leave; } while (0)",
+     "#else",
+     "#define FORWARD(label, pc_) goto label",
+     "#endif",
+     # cpu.h's inline helpers name the struct's, so these take their place here.
+     "#define ASL(v_) ({ u8 v = (v_); C = v >> 7; v <<= 1; N = Z = v; v; })",
+     "#define LSR(v_) ({ u8 v = (v_); C = v & 1; v >>= 1; N = Z = v; v; })",
+     "#define ROL(v_) ({ u8 v = (v_); u8 c_ = C; C = v >> 7; v = v << 1 | c_; N = Z = v; v; })",
+     "#define ROR(v_) ({ u8 v = (v_); u8 c_ = C; C = v & 1; v = v >> 1 | c_ << 7; N = Z = v; v; })",
+     "#define get_p() ((u8)((N & 0x80) | (V ? 0x40 : 0) | 0x20 | (D ? 8 : 0) | (I ? 4 : 0) | (Z ? 0 : 2) | (C ? 1 : 0)))",
+     "#define set_p(p_) do { u8 p = (p_); N = p; V = p & 0x40; D = (p >> 3) & 1; I = (p >> 2) & 1; Z = (p & 2) ? 0 : 1; C = p & 1; } while (0)",
+     ""])
 
 
 def emit_interpreter(out, hooks):

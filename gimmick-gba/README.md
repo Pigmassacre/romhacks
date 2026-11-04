@@ -70,8 +70,10 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 ## How it works
 
 - `tools/recomp.py` turns each basic block into C. The blocks that run most go in the GBA's fast
-  internal RAM as ARM code, as one function that jumps straight between them. The rest stay in ROM
-  as Thumb, and anything never seen running goes through an interpreter. A block in ROM that
+  internal RAM, as one function that jumps straight between them, with the 6502's registers and
+  flags in its own variables: the compiler keeps them in the GBA's registers where it can, and
+  skips flags nothing reads. The rest stay in ROM, and anything never seen running goes through an
+  interpreter. Both are Thumb code, which is about half the size of ARM, so more fits. A block in ROM that
   goes on to another of its bank's, or the fixed bank's, names it, and the dispatcher calls that
   one straight away instead of looking it up. `data/` says where code
   ran and how often: only addresses, so a build needs no recording.
