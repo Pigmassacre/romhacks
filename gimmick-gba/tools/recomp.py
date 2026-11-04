@@ -28,7 +28,7 @@ FIXED_BANK = 0x1F
 WAIT_LOOP = (0xF29A, 0xF2A5)
 # How much fast RAM the blocks may take. The exact-timing test build's code is bigger,
 # and speed does not matter there, so tools/build_gba.py gives it less.
-HOT_BYTES = int(os.environ.get("HOT_BYTES", 49000))
+HOT_BYTES = int(os.environ.get("HOT_BYTES", 48200))
 ARM_BYTES_PER_INSTR = 36     # rough size of a translated instruction as ARM code
 # $F319 reads an inline jump table after its JSR, so nothing returns there.
 NO_RETURN = {0xF319}

@@ -76,7 +76,7 @@ STACK_ROOM = 1536
 
 def main():
     replay = "--replay" in sys.argv
-    hot = int(os.environ.get("HOT_BYTES", 30000 if replay and "--timing" not in sys.argv else 49000))
+    hot = int(os.environ.get("HOT_BYTES", 29200 if replay and "--timing" not in sys.argv else 48200))
     while True:
         free = build(replay, hot)
         if free >= STACK_ROOM:
