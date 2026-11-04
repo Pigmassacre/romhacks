@@ -220,6 +220,16 @@ stubs, which ran from RAM; they are in fast ROM now. Besides that:
 - **Bank switches.** The game's own two routines for `$8000` and `$A000`, `$F051` and `$F05E`, are done whole
   (`sw_bank8`, `sw_bankA`), not as two stubs and a jump table, and a switch to the bank already there does not
   jump.
+- **The sound driver's stores.** A store keeps the flags, so the stubs for the APU's registers are a store and
+  nothing else. One through an index used to work out whether it was a channel's fourth register and so a new
+  note; now it marks `apu_hit`, and `sound_hook` looks at the four that start notes once a frame. Choosing a 5B
+  register is a store too, and the number is cut to 4 bits as its value goes in. `sound_hook` compares the
+  registers unrolled.
+- **The status bar's split.** At `$EB3F` it switches four sprite pages one at a time, and below a split each only
+  goes in `obj2_want`, after 40 instructions of stubs. `split_obj` does the four at once. That alone saved nothing,
+  as the interrupt starts `IRQ_EARLY` lines ahead and waits for its line: now `arm_irq` starts this one
+  `IRQ_EARLY_BAR` lines ahead, 7, which leaves it 2 lines to spare as before. The other splits, the title's and
+  the credits', keep 10: some of them have no more than that to spare.
 - **Hiding unused sprites.** The game's loop at `$F390` puts Y = `$F4` in each slot it has not used, with four
   `iny` a slot. `hide_rest` jumps into a run of 64 stores at the first free one.
 - **`spr_body`** writes both halves' Y before it knows of a vertical flip, and swaps them for one, and goes on to
@@ -227,10 +237,11 @@ stubs, which ran from RAM; they are in fast ROM now. Besides that:
 
 The CPU is in emulation mode while the game runs, so `rep #$20` does nothing there: everything is a byte at a time.
 
-That took the busiest frames of the first boss's fight from all of the frame to 79% of it, and its median frame
-from 64% to 52%. The boss's arrival lost frames the NES did not, and no longer does. What is left is spread thin:
+That took the busiest frames of the first boss's fight from all of the frame to 78% of it, and its median frame
+from 64% to 51%; a frame there needs 57% of the CPU's time on average, where it was 71%. The boss's arrival lost frames the NES did not, and no longer does. What is left is spread thin:
 the DMAs for sprites and CHR pages, the game's sound driver and the stubs it writes through, the status bar's
-interrupt, and `spr_body`. `ROMC` is 7.5 KB of its 8.
+interrupt, and `spr_body`. `ROMC` is nearly full, so code that runs seldom, the title's and `clear_nt`, is in
+RAM (`WCODE`), where it runs a quarter slower.
 
 ## What was found out along the way
 

@@ -42,9 +42,10 @@ ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
 CALLS = {(0x1B, 0x8116): ("cloud_x", 8), (0x1B, 0x813C): ("title_menu", 64)}
 # Routines of the game's that do many PPU writes in vblank, done directly instead; its two
 # bank switches, which through the stubs took far longer than the rest of the routine; and
-# its loop that hides the sprite slots it has not used.
+# its loop that hides the sprite slots it has not used; and the status bar's split, as far as
+# its four switches of sprite pages.
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt",
-            0xF051: "sw_bank8", 0xF05E: "sw_bankA", 0xF390: "hide_rest"}
+            0xF051: "sw_bank8", 0xF05E: "sw_bankA", 0xF390: "hide_rest", 0xEB3F: "split_obj"}
 
 # 2C02 colours.
 NES_RGB = [tuple(bytes.fromhex(c)) for c in """
@@ -155,9 +156,8 @@ class Stubs:
             self.lines.append(".export %s\n%s:\n%s\n        rts" % (name, name, "\n".join("        " + b for b in body)))
         return self.made[key]
 
-    def apu_store(self, reg, addr, index=None):
-        i = ",%s" % index if index else ""
-        return ["php", "st%s apu_regs + %d%s" % (reg, addr - 0x4000, i)] + (["plp"])
+    def apu_store(self, reg, addr):
+        return ["st%s apu_regs + %d" % (reg, addr - 0x4000)]    # a store keeps the flags
 
     def apu_kick(self, reg, addr):
         ch = (addr - 0x4003) // 4
@@ -206,10 +206,14 @@ def stub_for(stubs, m, mode, a):
     if mode in ("abx", "aby") and m in ("sta",):
         i = "x" if mode == "abx" else "y"
         if 0x4000 <= a < 0x4016:
-            # Which register it is only shows now: apu_indexed sees to a new note.
-            return stubs.gen(("apux", i, a), ["php", "sta apu_regs + %d,%s" % (a - 0x4000, i), "pha", "phx",
-                                              "t%sa" % i, "clc", "adc #%d" % (a - 0x4000), "jsr apu_indexed",
-                                              "plx", "pla", "plp"])
+            # Which register it is only shows now: apu_hit marks it, and sound_hook looks at
+            # the four that start a note.
+            if i == "x":
+                body = ["php", "sta apu_regs + %d,x" % (a - 0x4000), "inc apu_hit + %d,x" % (a - 0x4000), "plp"]
+            else:
+                body = ["php", "sta apu_regs + %d,y" % (a - 0x4000), "pha", "lda #1",
+                        "sta apu_hit + %d,y" % (a - 0x4000), "pla", "plp"]
+            return stubs.gen(("apux", i, a), body)
     return None
 
 
@@ -1132,7 +1136,7 @@ def main():
     s += bytes_asm("SpcEntry", [SPC_CODE & 0xFF, SPC_CODE >> 8])
     s += bytes_asm("SpcSize", [len(spc) & 0xFF, len(spc) >> 8])
     autoplay = os.environ.get("TEST_AUTOPLAY")
-    s += '.segment "ROMC"\n.import apu_regs, apu_kick, apu_indexed\n.p816\n.a8\n.i8\n.smart off\n'
+    s += '.segment "ROMC"\n.import apu_regs, apu_kick, apu_hit\n.p816\n.a8\n.i8\n.smart off\n'
     s += "\n".join(stubs.lines) + "\n"
     if autoplay:
         s += '.segment "WCODE"\n' + AUTOPLAY_STUB    # its counters are in it
