@@ -10,7 +10,13 @@
 
 extern const u8 rom_prg[], rom_chr[], chr4_data[], parallax_data[];
 
-static inline u32 now(void) { return TM2CNT_L | (u32)TM3CNT_L << 16; }
+// The timer's two halves are read apart, so read the top again: if it moved, the
+// bottom wrapped in between.
+static inline u32 now(void) {
+  u32 hi, lo;
+  do { hi = TM3CNT_L; lo = TM2CNT_L; } while (hi != TM3CNT_L);
+  return lo | hi << 16;
+}
 
 // Sound: a frame is exactly 304 samples at this rate. Finished frames wait in a queue,
 // and a VBlank interrupt starts the next, or plays the last again if none is ready.
