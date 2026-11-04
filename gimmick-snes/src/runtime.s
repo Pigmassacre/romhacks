@@ -26,6 +26,7 @@ MASK_HI    = $60            ; BG3's tiles: what is black in the first tile set, 
 HIDDEN_Y   = $F0
 PRG_HALF   = 16             ; which ROM banks' lower halves hold the NES banks, 4 in each
 IRQ_EARLY  = 10             ; lines ahead of time to start a split's interrupt
+IRQ_EARLY_BAR = 7           ; the same for the status bar's, which has less to do: arm_irq
 CROP_TOP   = 8              ; the SNES's 224 lines start this far down the NES's 240
 
 .segment "WVARS"
@@ -130,18 +131,21 @@ obj_used:    .res 8         ; sprites use this slot of the second table: see con
 set_wr:      .res 12        ; a split wrote this slot itself, so it must be copied soon
 nmi_count:   .res 1
 .export obj2_have
-.export apu_regs, sb_cmd, sb_regs, apu_kick
-apu_regs:    .res 32
+.export apu_regs, sb_cmd, sb_regs, apu_kick, apu_hit
+apu_regs:    .res 48        ; $4000-$4017, then the 5B's 16 at $20: the SPC700's numbers
+sb_regs = apu_regs + $20
 apu_kick:    .res 5         ; new notes on the four channels, and DPCM started
-apu_sent:    .res 24
-sb_sent:     .res 16
+apu_hit:     .res $18       ; written through an index this frame: $03, $07, $0B, $0F start a note
+apu_sent:    .res 48        ; what the SPC700 has, in the same order
+sb_sent = apu_sent + $20
 bank_sent:   .res 1
 spc_tog:     .res 1         ; bit 7 changes with each message to the SPC700
 spc_odd:     .res 1         ; bit 7: a register waits for a second, in spc_reg and spc_val
 spc_reg:     .res 1
 spc_val:     .res 1
+spc_busy:    .res 1         ; a message has gone that the SPC700 may not have taken yet
+spc_last:    .res 1         ; its first register
 sb_cmd:      .res 1
-sb_regs:     .res 16
 hdma_tab:    .res 16
 .export hdma_tab
 attr_shadow: .res 128
@@ -269,6 +273,34 @@ fme_switch:
         jml [back_ptr]
 fme_back:
         jmp fme_done
+
+; The status bar's split, at $EB3F: ldx #0, ldy #$41, lda #$0F, then CHR registers 0-3 = $41,
+; one stx $8000, sty $A000 at a time, and on at $EB60, its inx to register 4, with x = 3. Below a split those four only
+; go in obj2_want (fme_chr), but through the stubs each took 40 instructions. With the picture
+; off or the island up, fme_chr does more: then it goes the slow way.
+.export split_obj
+split_obj:
+        ldy #$41
+        jsr picture_on
+        bcc @slow
+        lda map7
+        bne @slow
+        sty obj2_want
+        sty obj2_want + 1
+        sty obj2_want + 2
+        sty obj2_want + 3
+        lda #3
+        sta fme_cmd
+        bra @out
+@slow:  ldx #0
+:       jsr fme_cmd_x
+        jsr fme_val_y
+        inx
+        cpx #4
+        bne :-
+@out:   ldx #3
+        lda #$0F
+        jmp $EB60
 
 ; The game's own bank switches, $F051 for $8000 and $F05E for $A000: lda #9 or #$0A, sta $3F,
 ; sta $8000, sty $40 or $41, sty $A000, rts. Most of its switches are these, and through the
@@ -436,9 +468,28 @@ arm_irq:
         bcs @never
         sta irq_next
         ; Early, since the game's handler takes much longer here than on the NES. What it
-        ; changes on screen waits for the line, in wait_line.
+        ; changes on screen waits for the line, in wait_line. The status bar's split, case 1 of
+        ; the game's handler, has less to do than the rest before it waits (split_obj), so it
+        ; starts later. From a split, $28 is the case to come; from the NMI, which only sets
+        ; $28 after this, it is the game's table at $EAE4 by $4A.
+        ldy #IRQ_EARLY
+        ldx in_split
+        bne @split
+        ldx $4A
+        cpx #5
+        bcs @early
+        pha
+        lda $EAE4,x
+        bra @case
+@split: pha
+        lda $28
+@case:  cmp #1
+        bne :+
+        ldy #IRQ_EARLY_BAR
+:       pla
+@early: sty itmp + 1
         sec
-        sbc #IRQ_EARLY
+        sbc itmp + 1
         bcs :+
         lda #0
 :       sta itmp
@@ -911,26 +962,23 @@ nmi_work2:
         lda #252
         jsr attr_work
 @all_done:
-        ; Ready, if the slots that matter have what they asked for.
-        ldy #1
-        ldx #4
-@rdy:   lda obj2_want,x
-        cmp obj2_have,x
-        beq @rdy2
+        ; Ready, if the slots that matter have what they asked for. Unrolled: this is every NMI.
         ldy #0
-@rdy2:  dex
-        bpl @rdy
-        sty obj2_ready
-:       ldx #7
-:       lda chr_want,x
-        sta obj2_want,x
-        dex
-        bpl :-
-        ldx #11
-:       stz set_wr,x
-        dex
-        cpx #4
-        bcs :-
+.repeat 5, k
+        lda obj2_want + k
+        cmp obj2_have + k
+        bne @rdy
+.endrepeat
+        iny
+@rdy:   sty obj2_ready
+:
+.repeat 8, k
+        lda chr_want + k
+        sta obj2_want + k
+.endrepeat
+.repeat 8, k
+        stz set_wr + 4 + k
+.endrepeat
         rts
 
 ; What the game has mapped for the top of the picture, before anything else takes up vblank:
@@ -1842,7 +1890,6 @@ ppu_data_a:
 ppu_data_a_slow:
         pha
         jmp ppu_data_w
-reg_stub "sb_data", sb_data_w
 
 reg_done:
         ply
@@ -3372,7 +3419,7 @@ spr_check:
 ; of $0200 and convert_oam, which knows about them. There are four copies, as the two halves of
 ; OAM are more than an index register's reach and mirroring changes how X comes out.
 .macro spr_body self, other, mirrored, buf, upper
-.local @sprite, @skip, @fine, @same, @down, @commit, @neg, @on, @up, @set, @slow
+.local @sprite, @skip, @fine, @down, @commit, @neg, @on, @slow, @same
 self:
         lda $EF
         asl a
@@ -3386,6 +3433,7 @@ self:
 @slow:  jsr spr_raw
         jmp self
 @sprite:
+        ; x stays the slot's place in buf until the slot moves on, in @commit or spr_raw.
         lda ($08),y
         bne :+
         rts
@@ -3395,6 +3443,13 @@ self:
         bcc :+
         jmp @skip
 :       sta spr_y
+        ; Both halves' Y, top first: a vertical flip swaps them, below.
+        sec
+        sbc #CROP_TOP - 1
+        sta buf + 1,x
+        clc
+        adc #8
+        sta buf + 5,x
         iny
         lda ($08),y
         lsr a
@@ -3425,22 +3480,12 @@ self:
 @same:  lda spr_attr + 1    ; its top bit is the vertical flip, as on the NES
         sta buf + 3,x
         sta buf + 7,x
-        bmi @down
-        lda spr_y
-        sec
-        sbc #CROP_TOP - 1
+        bpl @fine
+@down:  lda buf + 5,x
         sta buf + 1,x
-        clc
-        adc #8
-        sta buf + 5,x
-        bra @fine
-@down:  lda spr_y
         sec
-        sbc #CROP_TOP - 1
+        sbc #8
         sta buf + 5,x
-        clc
-        adc #8
-        sta buf + 1,x
 @fine:  iny
 .if mirrored
         lda #$FA
@@ -3472,15 +3517,15 @@ self:
         lda $05
         adc #$FF
 @on:    beq @commit
-        jmp self            ; off the screen: the slot is still free
+        jmp @sprite         ; off the screen: the slot is still free
 @skip:  iny
         iny
         iny
         iny
-        jmp self
+        jmp @sprite
 @commit:
         ldx $EF
-        lda #1
+        txa                 ; never 0: the slots start at $20
         sta spr_flag,x
 .ifdef SPR_SHADOW
         lda spr_y
@@ -3491,9 +3536,24 @@ self:
         sta $0202,x
         lda spr_x
         sta $0203,x
+        txa
 .endif
-        jsr_free_advance
-        jmp self
+        clc                 ; jsr_free_advance, with $EF already in a
+        adc #4
+        bne :+
+        lda #$20
+        inc $6F
+:       sta $EF
+        ; as self does, from the new $EF in a
+        asl a
+        tax
+.if upper
+        bcs :+
+.else
+        bcc :+
+.endif
+        jmp other
+:       jmp @sprite
 .endmacro
 
 ; On to the next slot. x is $EF. The game reverses the order every other frame, so that with the
@@ -3557,6 +3617,10 @@ spr_raw:
         bne @out            ; off the screen: the slot is still free
         jsr_free_advance
 @out:   rts
+
+; Title screen code, and what runs only with the picture off, is in RAM: ROMC has no room
+; for code that is seldom run.
+.segment "WCODE"
 
 ; The title's menu, at $1B:813C: START and CONTINUE, which are sprites, and OPTIONS, on BG2. The
 ; game's choice is $05, which Up and Down set to 0 or 1 and Select flips; here it goes to 2 as well,
@@ -3663,6 +3727,8 @@ cloud_x:
         rts
 @off:   lda #1
         rts
+
+.segment "ROMC"
 
 ; A frame's sprites are done. This has to come before the game can go on. Sprites on a CHR page
 ; that is not loaded: one such page will be, at the next NMI; sprites on any other go off for
@@ -3773,6 +3839,8 @@ convert_oam:
         convert_sprites oam_buf + 256, $80
         plp
         rts
+
+.segment "WCODE"
 
 ; $F32E in the game: fill nametable x with tile a and its colours with y, as a stage starts or
 ; Yumetaro comes back. 1024 writes through ppu_data_a and 64 colour bytes take 4 frames; with
@@ -4042,6 +4110,32 @@ pad_all:
         ldx #0
         rts
 
+; The game's hiding of the sprite slots it has not used this frame, $F390: Y = $F4 in each, from
+; $EF up. ORDER_FIXED makes every frame go up. Its loop takes four iny a slot: this jumps into a
+; run of stores, a third of the time. Left as the game's: a = $F4, y = 0, z set.
+.export hide_rest
+hide_rest:
+        lda $6F
+        bne @out            ; the slots have gone round: none is free
+        phx
+        lda $EF
+        lsr a
+        tax
+        lda #$F4
+        jmp (hide_at,x)
+@out:   rts
+hide_run:
+.repeat 64, k
+        sta $0200 + k * 4
+.endrepeat
+        plx
+        ldy #0
+        rts
+hide_at:
+.repeat 64, k
+        .word hide_run + k * 3
+.endrepeat
+
 ; The same, a bit at a time, for TEST_AUTOPLAY's buttons: the game reads the pad here.
 pad_read:
         lda $4016
@@ -4064,58 +4158,55 @@ pad_read:
 
 ; ---- Sound ------------------------------------------------------------------------
 
+; The 5B: a register's number, then its value. The number keeps only its low 4 bits, as the
+; value goes in, so that choosing one, which the game does as often, is a store.
+.export sb_cmd_a, sb_cmd_x, sb_cmd_y, sb_data_a, sb_data_x, sb_data_y
+sb_cmd_a:
+        sta sb_cmd
+        rts
+sb_cmd_x:
+        stx sb_cmd
+        rts
+sb_cmd_y:
+        sty sb_cmd
+        rts
+sb_data_x:
+        php
+        pha
+        txa
+        bra sb_data_w
+sb_data_y:
+        php
+        pha
+        tya
+        bra sb_data_w
+sb_data_a:
+        php
+        pha
 sb_data_w:
         phx
-        ldx sb_cmd
+        pha
+        lda sb_cmd
+        and #$0F
+        tax
+        pla
         sta sb_regs,x
         plx
         pla
         plp
         rts
 
-.export sb_cmd_a, sb_cmd_x, sb_cmd_y
-sb_cmd_a:
-        php
-        pha
-        and #$0F
-        sta sb_cmd
-        pla
-        plp
-        rts
-sb_cmd_x:
-        php
-        pha
-        txa
-        and #$0F
-        sta sb_cmd
-        pla
-        plp
-        rts
-sb_cmd_y:
-        php
-        pha
-        tya
-        and #$0F
-        sta sb_cmd
-        pla
-        plp
-        rts
-
-; A store to APU register a: a channel's fourth register starts a note.
-.export apu_indexed
-apu_indexed:
-        cmp #$10
-        bcs @out
-        tax
-        and #3
-        cmp #3
-        bne @out
-        txa
-        lsr a
-        lsr a
-        tax
-        inc apu_kick,x
-@out:   rts
+; One register for sound_hook: sent if it has changed.
+.macro sound_reg n
+.local @same
+        lda apu_regs + n
+        cmp apu_sent + n
+        beq @same
+        sta apu_sent + n
+        ldx #n
+        jsr spc_send
+@same:
+.endmacro
 
 ; Send the SPC700 what has changed. Called from the game's NMI, just after its sound code.
 .export sound_hook
@@ -4127,6 +4218,20 @@ sound_hook:
         phy
         ldx #$1E
         jsr spc_send
+        ; A channel's fourth register, written through an index, starts a note too.
+        ldy #3
+        ldx #$0F
+@hit:   lda apu_hit,x
+        beq :+
+        stz apu_hit,x
+        lda #1
+        sta apu_kick,y
+:       dex
+        dex
+        dex
+        dex
+        dey
+        bpl @hit
         ; The SPC700's sweep moves its copy of a period: a new note sends it again.
         ldy #3
 @sw:    lda apu_kick,y
@@ -4143,29 +4248,14 @@ sound_hook:
         sta apu_sent + 3,x
 :       dey
         bpl @sw
-        ldy #0
-@apu:   lda apu_regs,y
-        cmp apu_sent,y
-        beq :+
-        sta apu_sent,y
-        tyx
-        jsr spc_send
-:       iny
-        cpy #$16
-        bne @apu
-        ldy #0
-@sb:    lda sb_regs,y
-        cmp sb_sent,y
-        beq :+
-        sta sb_sent,y
-        tya
-        ora #$20
-        tax
-        lda sb_regs,y
-        jsr spc_send
-:       iny
-        cpy #16
-        bne @sb
+        ; What has changed: the APU's $00-$15, then the 5B's $20-$2F, one at a time, as the CPU
+        ; is in emulation mode here, and unrolled, as this runs every frame.
+.repeat $16, k
+        sound_reg k
+.endrepeat
+.repeat 16, k
+        sound_reg $20 + k
+.endrepeat
         ; The new notes, whose length counter comes from a register sent just now
         ldy #0
 @kick:  lda apu_kick,y
@@ -4203,7 +4293,8 @@ sound_hook:
         rts
 
 ; A value in a for the register in x, keeping y. Each message waits for the SPC700 to
-; answer, so they carry two: the first waits in spc_reg and spc_val for the second.
+; answer, so they carry two: the first waits in spc_reg and spc_val for the second. The wait
+; is just before the next message, so the SPC700 takes this one while the CPU goes on.
 spc_send:
         bit spc_odd
         bmi spc_pair
@@ -4219,6 +4310,14 @@ spc_flush:
         ldx #$FF
 spc_pair:
         stz spc_odd
+        pha
+        lda spc_busy
+        beq @free
+        lda spc_tog
+        ora spc_last
+:       cmp APUIO0
+        bne :-
+@free:  pla
         stx APUIO2
         sta APUIO3
         lda spc_val
@@ -4228,8 +4327,10 @@ spc_pair:
         sta spc_tog
         ora spc_reg
         sta APUIO0
-:       cmp APUIO0
-        bne :-
+        lda spc_reg
+        sta spc_last
+        lda #1
+        sta spc_busy
 :       rts
 
 ; ---- Start-up, called from the boot code ------------------------------------------
