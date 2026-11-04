@@ -68,6 +68,8 @@ Each tool plays both machines with the same buttons, in Mesen.
 - `tools/tour.py` warps through every checkpoint of every stage, the ending and a game over, taking
   screenshots and nametables on both, and `tools/tourdiff.py` and `tools/tourmontage.py` compare them.
 - `tools/sounddiff.py` compares each sound channel with its DSP voice.
+- `tools/lag.py` counts the frames each machine loses at every checkpoint and in the first boss's room, and how
+  much of each frame the SNES's work takes; `tools/prof.py` shows where that time goes.
 - `tools/test15.py` runs Gimmick! 1.5's tests here (`tests/gimmick-1.5/`), with the options off (they expect the original
   game) and on (they expect 1.5).
 

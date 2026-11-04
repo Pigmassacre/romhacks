@@ -40,8 +40,10 @@ SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
 # Other places that call the runtime, with how many bytes of the game's they take: (bank, pc).
 CALLS = {(0x1B, 0x8116): ("cloud_x", 8), (0x1B, 0x813C): ("title_menu", 64)}
-# Routines of the game's that do many PPU writes in vblank, done directly instead.
-REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt"}
+# Routines of the game's that do many PPU writes in vblank, done directly instead, and its
+# two bank switches, which through the stubs took far longer than the rest of the routine.
+REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt",
+            0xF051: "sw_bank8", 0xF05E: "sw_bankA"}
 
 # 2C02 colours.
 NES_RGB = [tuple(bytes.fromhex(c)) for c in """
@@ -549,6 +551,7 @@ HOOKS = {(0x1E, 0x8199): "opt_jump", (0x1E, 0x81C3): "opt_star", (0x1E, 0x81DA):
 FAR_NAMES = {"opt_jump": "Far_Jump", "opt_star": "Far_StarButton", "opt_bheld": "Far_BHeld",
              "opt_fx": "Far_FxDraw", "opt_water": "Far_Water"}
 PAD_READ = 0xF2D7           # lda $4016: the first pad, in the game's read loop
+PAD_ALL = 0xF2CB            # the game's read of both pads, which the SNES has done by itself
 
 
 SEG_RE = re.compile(r"^\s*;@\s*seg\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s+\$?([0-9A-Fa-f]+)\s*(.*)$")
@@ -1128,10 +1131,10 @@ def main():
     s += bytes_asm("SpcEntry", [SPC_CODE & 0xFF, SPC_CODE >> 8])
     s += bytes_asm("SpcSize", [len(spc) & 0xFF, len(spc) >> 8])
     autoplay = os.environ.get("TEST_AUTOPLAY")
-    s += '.segment "WCODE"\n.import apu_regs, apu_kick, apu_indexed\n.p816\n.a8\n.i8\n.smart off\n'
+    s += '.segment "ROMC"\n.import apu_regs, apu_kick, apu_indexed\n.p816\n.a8\n.i8\n.smart off\n'
     s += "\n".join(stubs.lines) + "\n"
     if autoplay:
-        s += AUTOPLAY_STUB
+        s += '.segment "WCODE"\n' + AUTOPLAY_STUB    # its counters are in it
     gen_s = os.path.join(GEN, "gen.s")
     open(gen_s, "w").write(".p816\n" + s)
 
@@ -1157,7 +1160,7 @@ def main():
         for pc, label in patches.get(num, {}).items():
             w = windows[num]
             t = addr[label]
-            if not 0x0800 <= t < 0x2000:
+            if not (0x0800 <= t < 0x2000 or 0xC000 <= t < 0xE000):
                 sys.exit("stub %s at $%04X" % (label, t))
             data[pc - w:pc - w + 3] = bytes([0x20, t & 0xFF, t >> 8])
         for (bank, pc), (label, code) in hooks15.items():
@@ -1178,7 +1181,9 @@ def main():
             t = addr["frame_done"]
             for pc in FRAME_DONE:
                 data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x20, t & 0xFF, t >> 8, 0xEA])
-            for pc, label in REPLACED.items():
+            # The pads come from the SNES's own read, except where TEST_AUTOPLAY presses them.
+            pads = {} if os.environ.get("TEST_AUTOPLAY") else {PAD_ALL: "pad_all"}
+            for pc, label in list(REPLACED.items()) + list(pads.items()):
                 t = addr[label]
                 data[pc - 0xE000:pc - 0xE000 + 4] = bytes([0x4C, t & 0xFF, t >> 8, 0xEA])
         patched[num] = bytes(data)
@@ -1186,6 +1191,7 @@ def main():
     romc = open(boot + ".c", "rb").read()    # src/runtime.s's fast code, for every code bank's $C000
     image = bytearray(b"\xFF" * ROM_SIZE)
     image[0x8000:0x10000] = open(boot, "rb").read()
+    image[0xC000:0xC000 + len(romc)] = romc    # bank 0 too, for the interrupts' code and its tables
     for n, b in enumerate(banks):
         at = (FIRST_CODE_BANK + n) * 0x10000 + 0x8000
         for i in range(2):

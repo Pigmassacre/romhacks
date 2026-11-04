@@ -6,6 +6,7 @@
 port0 = $F4
 port1 = $F5
 port2 = $F6
+port3 = $F7
 dspa  = $F2
 dspd  = $F3
 ctrl  = $F1
@@ -46,14 +47,28 @@ start:
         call dsp_init
         mov timer0,#33      ; 8 kHz / 33 = 242 Hz
         mov ctrl,#$01
+; Two registers a message: port0 has the first's number, with bit 7 changing each time, and
+; port1 its value; port2 the second's number, $FF for none, and port3 its value.
 main:
         mov a,port0
         cmp a,last
         beq no_msg
         mov last,a
-        mov x,port1
-        mov a,port2
-        mov port0,last      ; acknowledge
+        mov y,port1
+        mov x,port2
+        mov a,port3
+        mov port0,last      ; acknowledge: the ports are free for the next
+        push a
+        push x
+        mov a,last
+        and a,#$3F
+        mov x,a
+        mov a,y
+        call msg
+        pop x
+        pop a
+        cmp x,#$FF
+        beq no_msg
         call msg
 no_msg:
         mov a,dp_pend
@@ -434,20 +449,42 @@ sw_down:
         ret
 
 ; The voices' volume, pitch and sample, from the registers.
+; It gives way to a message: the runtime would wait for it, in the NMI. The end of the batch
+; that the message starts runs it again, and in the meantime the voices it has not got to
+; keep what they had.
 update:
         ; pulse 1, pulse 2
         mov x,#0
         call pulse
+        mov a,port0
+        cmp a,last
+        bne up_out
         mov x,#1
         call pulse
+        mov a,port0
+        cmp a,last
+        bne up_out
         call triangle
+        mov a,port0
+        cmp a,last
+        bne up_out
         call noise
+        mov a,port0
+        cmp a,last
+        bne up_out
         mov x,#0
         call fiveb
+        mov a,port0
+        cmp a,last
+        bne up_out
         mov x,#1
         call fiveb
+        mov a,port0
+        cmp a,last
+        bne up_out
         mov x,#2
         call fiveb
+up_out:
         ret
 
 ; Pitch of DSP voice (a*16) from the period in ptr (up to 12 bits).
