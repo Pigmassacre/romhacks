@@ -499,7 +499,22 @@ static int camera(int play_h, int view_h, int has_status) {
 #define PAR_STAGE(s) (parallax + 132 + (s) * 4)
 #define PAR_TILES (parallax + 256)
 #define PAR_MAPS (parallax + 256 + 67 * 32)
+#define PAR_KEPT_INDEX (PAR_MAPS + 3 * 1024)
+#define PAR_KEPT_TILES (PAR_KEPT_INDEX + 6 * 64)  // after the 6 versions' indexes
+#define KEPT_TILE (CLOUD_TILE + 67)
+#define KEPT_TILES 66
 const u8 *parallax;
+
+// The sky tiles also draw the stage's own things in its other palettes, such as stage
+// 2's ship, so a cell shows its tile as it is when the tile has a colour there that
+// is not one of the sky's. Per palette, the tile each tile of the picture's pages
+// shows, and the palettes where that is not always the tile itself.
+static u32 kept_pals;
+static u16 sky_kept[4][256] SLOW_RAM;
+static u8 kept_colours[KEPT_TILES] SLOW_RAM;  // bit c - 1 for each colour c a kept tile has
+static u8 kept_version[4] SLOW_RAM;  // the version of each page in the picture, or 0
+static u32 not_sky;  // per palette 3 bits: its colours 1-3 that are none of the sky's
+static int kept_masks_in, kept_changed;
 
 // The stages with clouds behind them, in play, with the clouds' page in.
 static int parallax_stage(int parts, int status) {
@@ -533,6 +548,59 @@ void video_init(void) {
   plane_init();
   volatile u16 *to = (volatile u16 *)(VRAM + CLOUD_TILE * 32);
   for (int i = 0; i < 67 * 16; i++) to[i] = PAR_TILES[i * 2] | PAR_TILES[i * 2 + 1] << 8;
+  to = (volatile u16 *)(VRAM + KEPT_TILE * 32);
+  for (int i = 0; i < KEPT_TILES * 16; i++) to[i] = PAR_KEPT_TILES[i * 2] | PAR_KEPT_TILES[i * 2 + 1] << 8;
+  for (int i = 0; i < KEPT_TILES * 16; i++) {
+    u32 v = PAR_KEPT_TILES[i * 2] | PAR_KEPT_TILES[i * 2 + 1] << 8;
+    for (int n = 0; n < 16; n += 4)
+      if (v >> n & 15) kept_colours[i / 16] |= 1 << ((v >> n & 15) - 1);
+  }
+}
+
+// Bring sky_kept and kept_pals up to date with the pages and palettes, for a stage
+// with clouds or not (stage < 0). Returns 1 when that changes what cells show.
+static int update_kept(int stage) {
+  u32 mask = 0;
+  if (stage >= 0) {
+    const u8 *sky = &palette[PAR_STAGE(stage)[1] * 4];
+    for (int p = 0; p < 4; p++)
+      for (int c = 1; c < 4; c++) {
+        u8 colour = palette[p * 4 + c];
+        if (colour != sky[1] && colour != sky[2] && colour != sky[3]) mask |= 1 << (p * 3 + c - 1);
+      }
+  }
+  if (mask == not_sky && !(mask && kept_changed)) return 0;
+  int was = kept_pals;
+  not_sky = mask;
+  kept_changed = 0;
+  kept_pals = 0;
+  for (int p = 0; p < 4; p++) {
+    u32 colours = mask >> (p * 3) & 7;
+    for (int i = 0; i < 4; i++) {
+      const u8 *index = PAR_KEPT_INDEX + (kept_version[i] - 128) * 64;
+      for (int t = 0; t < 64; t++) {
+        u32 v = i * 64 + t;
+        if (kept_version[i] && index[t] != 0xFF && kept_colours[index[t]] & colours) {
+          v = KEPT_TILE + index[t];
+          kept_pals |= 1 << p;
+        }
+        sky_kept[p][i * 64 + t] = v;
+      }
+    }
+  }
+  return kept_pals || was;
+}
+
+// The kept sky tiles' masks, on the third layer: the sky's colour where they have colour 0.
+static void load_kept_masks(void) {
+  volatile u16 *to = (volatile u16 *)(VRAM + 2 * 0x4000 + KEPT_TILE * 32);
+  for (int i = 0; i < KEPT_TILES * 16; i++) {
+    u32 v = PAR_KEPT_TILES[i * 2] | PAR_KEPT_TILES[i * 2 + 1] << 8, m = 0;
+    for (int n = 0; n < 16; n += 4)
+      if (!(v >> n & 15)) m |= 15 << n;
+    to[i] = m;
+  }
+  kept_masks_in = 1;
 }
 
 // how: 0 the pages as they are, 1 the stage's version for parallax, 2 their masks.
@@ -540,13 +608,21 @@ static void load_bg_pages(int layer, const u8 *chr_set, u8 ctrl, int how) {
   int from = (ctrl & 0x10) ? 4 : 0;
   for (int i = 0; i < 4; i++) {
     u32 page = chr_set[i + from];
-    if (how == 1 && PAR_ALIAS(page) != 0xFF) page = PAR_ALIAS(page);
+    if (how == 1) {
+      u32 version = PAR_ALIAS(page) != 0xFF ? PAR_ALIAS(page) : 0;
+      if (kept_version[i] != version) {
+        kept_version[i] = version;
+        kept_changed = 1;
+      }
+      if (version) page = version;
+    }
     if (how == 2) page += PAR_MASK_BASE;
     if (loaded_bg[layer][i] != page) {
       loaded_bg[layer][i] = page;
       copy_chr(VRAM + layer * 0x4000 + i * 0x800, page);
     }
   }
+  if (how == 2 && !kept_masks_in) load_kept_masks();
 }
 
 // The world map is a plane seen from above at a slant, as in Yoshi's Island: the island
@@ -604,6 +680,7 @@ static int build_island(int top) {
       }
   }
   for (int p = 0; p < 4; p++) loaded_bg[2][p] = 0xFFFF;  // the third layer's tiles are gone
+  kept_masks_in = 0;
   return 1;
 }
 
@@ -822,8 +899,9 @@ HOT __attribute__((long_call, noinline)) static void draw_cells(volatile u16 *ma
     int k = 32 - col;
     if (k > n) k = n;
     for (int i = 0; i < k; i++, col++) {
-      u32 pal = attrs[col >> 2] >> (attr_shift | (col & 2)) & 3;
-      out[col] = tiles[col] | pal << 12;
+      u32 pal = attrs[col >> 2] >> (attr_shift | (col & 2)) & 3, v = tiles[col];
+      if (kept_pals >> pal & 1) v = sky_kept[pal][v];
+      out[col] = v | pal << 12;
     }
     a = (a + k) & 63;
     n -= k;
@@ -968,6 +1046,7 @@ void video_present(void) {
   }
   int cloud_stage = parallax_stage(parts, status);
   load_bg_pages(0, top_chr, top_ctrl, cloud_stage >= 0);
+  if (update_kept(cloud_stage)) ring.valid = 0;
 
   int hofs, vofs;
   update_ring(top_t, top, &hofs, &vofs);

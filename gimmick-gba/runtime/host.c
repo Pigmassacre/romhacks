@@ -151,7 +151,7 @@ static void take_shot(const char *name) {
 
 // The tiles and the parallax clouds' data, which tools/recomp.py writes.
 static void video_host_init(void) {
-  static u8 tiles[0x100000], par[0x2000];
+  static u8 tiles[0x100000], par[0x4000];
   FILE *f = fopen("out/gen/chr4.bin", "rb");
   if (!f || !fread(tiles, 1, sizeof tiles, f)) exit(1);
   fclose(f);

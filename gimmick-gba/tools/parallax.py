@@ -10,6 +10,11 @@ the clouds only show where the NES shows sky. Sprites behind the background go b
 the stage and the mask, where the NES shows them.
 
 chr4.bin is the 128 pages of 64 tiles, then those versions, then a mask of each page.
+
+The same tiles are also the stage's own, in its other palettes: the ship of stage 2 is
+built from the sky's solid tile and its clouds' patterns. So a sky tile only goes blank
+where its palette's colour 1 is the sky's, and parallax.bin keeps the sky tiles as they
+are, for the cells drawn in other colours.
 """
 import struct
 
@@ -46,9 +51,12 @@ SLOPE_TILES = {0x02: {t for t in range(64) if t & 15 >= 4}}
 SKY = {0x00: (0x10, 0x11, 0x01), 0x23: (0x10, 0x11, 0x01), 0x36: (0x01,), 0x34: (0x01,),
        CLOUD_PAGE: CLOUD_TILES}
 
-# For each stage ($1B): which cloud map (1 with the bank, 2 the puffs alone), the NES
-# palette its clouds use, and the line of the map at the top of the NES's screen.
-STAGES = {0: (1, 1, 7), 1: (1, 1, 7 - 40), 3: (2, 3, 7)}
+# For each stage ($1B): which cloud map (1 with the bank, 2 the puffs alone, 3 the bank
+# over the sea), the NES palette its clouds use, and the line of the map at the top of
+# the NES's screen. Stage 2's sea is a row of waves on the NES's row 22 and its light
+# colour under them, so there the bank's last row is behind the waves and the fill under
+# it is that colour.
+STAGES = {0: (1, 1, 7), 1: (3, 1, 7 - 39), 3: (2, 3, 7)}
 
 
 def tile_4bpp(chr16, pixel=lambda p: p):
@@ -67,7 +75,7 @@ def page_tiles(chr_rom, page):
     return [chr_rom[page * 0x400 + t * 16:page * 0x400 + t * 16 + 16] for t in range(64)]
 
 
-def cloud_map(tables, fill_from):
+def cloud_map(tables, fill_from, fill=TILE_W):
     out = [[TILE_SKY] * 32 for _ in range(32)]
     for table in tables:
         for r, parts in table.items():
@@ -76,7 +84,7 @@ def cloud_map(tables, fill_from):
                     out[r][(c + i) % 32] = TILE_L if v == "L" else TILE_W if v == "W" else v
     if fill_from is not None:
         for r in range(fill_from, 22):
-            out[r] = [TILE_W] * 32
+            out[r] = [fill] * 32
     return bytes(v for row in out for v in row)
 
 
@@ -114,13 +122,26 @@ def build(chr_rom):
         clouds += solid(t)
     fill = page_tiles(chr_rom, FILL_PAGE)
     clouds += solid(fill[0x11]) + solid(fill[0x01]) + solid(bytes(16))
-    maps = cloud_map([PUFFS, CLOUD_BANK], FILL_ROW) + cloud_map([PUFFS], None)
+    maps = (cloud_map([PUFFS, CLOUD_BANK], FILL_ROW) + cloud_map([PUFFS], None)
+            + cloud_map([PUFFS, CLOUD_BANK], FILL_ROW, TILE_L))
+
+    # Each version's sky tiles as they are: per version 64 bytes, the number of each of
+    # its sky tiles among these (0xFF for the others), then the tiles.
+    index, kept = bytearray(), bytearray()
+    for p in sorted(set(SKY) | set(SLOPE_TILES)):
+        for i, t in enumerate(page_tiles(chr_rom, p)):
+            if i in SKY.get(p, ()):
+                index.append(len(kept) // 32)
+                kept += tile_4bpp(t)
+            else:
+                index.append(0xFF)
 
     # alias[128], mask_base, 3 spare, then per stage (8): map, palette, top line (s16),
-    # then at 256 the cloud tiles and at 256 + 67 * 32 their two maps.
+    # then at 256 the cloud tiles, at 256 + 67 * 32 their three maps, and after those the
+    # sky tiles as they are.
     head = bytearray(bytes(alias) + bytes([mask_base, 0, 0, 0]))
     for s in range(8):
         m, pal, y = STAGES.get(s, (0, 0, 0))
         head += struct.pack("<BBh", m, pal, y)
     head += bytes(256 - len(head))
-    return bytes(chr4), bytes(head + clouds + maps)
+    return bytes(chr4), bytes(head + clouds + maps + index + kept)
