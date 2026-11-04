@@ -63,7 +63,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   But a heavy frame can still run over the GBA's own time for a frame. Then that frame is not
   drawn and the next starts straight away. The next is always drawn, so under a sustained load
   the game slows and the sound repeats. Loading a room can take a few frames.
-- The sound runs on the NES's frame clock, so changes land at most a frame apart from the NES.
+- The sound runs on the NES's frame clock, so changes land at most a frame apart from the NES. It
+  also plays a frame (17 ms) behind the picture, so a heavy frame can leave its sound to the next.
 - A few things are simplified: a sprite that crosses a mid-frame graphics change uses the upper
   set of graphics, and a picture is only ever split in two.
 - Code that no recording reached runs in an interpreter. It gives the same results, more slowly.
