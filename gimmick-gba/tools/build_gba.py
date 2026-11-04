@@ -55,13 +55,15 @@ def sync_table(path, trace):
 
 
 def expected_table(path, trace):
-    host = open(os.path.join(OUT, "host_ram.bin"), "rb")
-    sps = [int(l.split()[5]) for l in open(os.path.join(trace, "cpu.txt"))]
-    frames = min(os.path.getsize(host.name) // SIZE, len(sps))
+    # From the recording's own RAM. (It was the PC build's last replay, out/host_ram.bin,
+    # which is another recording's after a check of that one: the tour's matches this
+    # one's up to the title, and the GBA "failed" at NMI 183, where they part.)
+    rec = open(os.path.join(trace, "ram.bin"), "rb")
+    frames = os.path.getsize(rec.name) // SIZE
     with open(path, "wb") as f:
         for n in range(frames):
-            host.seek(n * SIZE)
-            r = host.read(0x800)
+            rec.seek(n * SIZE)
+            r = rec.read(0x800)
             f.write(struct.pack("<I", fnv(r[:0x100] + r[0x200:])))
 
 

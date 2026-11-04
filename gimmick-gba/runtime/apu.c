@@ -23,17 +23,17 @@ static const u8 fiveb_levels[16] = {0,1,1,2,3,4,5,7,10,14,20,28,39,55,78,110};
 
 struct pulse {
   u32 phase, inc, inverse;
-  u16 timer;
+  u16 timer, done_timer;  // done_timer: what inc and inverse were worked out for
   u8 duty, length, env_on, env_loop, env_period, env_div, env_vol, const_vol, start;
   u8 sweep_on, sweep_period, sweep_neg, sweep_shift, sweep_div, sweep_reload, halt, enabled;
 };
-static struct pulse pulses[2];
+static struct pulse pulses[2] = {{.done_timer = 0xFFFF}, {.done_timer = 0xFFFF}};
 
 static struct {
   u32 phase, inc;
-  u16 timer;
+  u16 timer, done_timer;
   u8 length, linear, linear_reload, linear_flag, control, enabled;
-} tri;
+} tri = {.done_timer = 0xFFFF};
 
 static struct {
   u32 accum, inc;
@@ -50,16 +50,18 @@ static struct {
 static struct {
   u8 regs[16], select;
   u32 phase[3], inc[3], inverse[3];
+  u16 done_period[3];
   u32 env_phase, env_inc, noise_accum, noise_inc;
   u16 noise_lfsr;
   u8 env_step, env_held, env_hold_level;
-} fb = {.noise_lfsr = 1};
+} fb = {.noise_lfsr = 1, .done_period = {0xFFFF, 0xFFFF, 0xFFFF}};
 
 static u32 sample_hz = 18157;
 static int noise_period = 4;
 
 // Phase runs over 2^32 for one whole wave: 2^32 * (CPU_HZ / divisor) / sample_hz. The
-// music writes these registers all the time, so this has to be a plain 32-bit divide.
+// music writes these registers all the time, mostly with the period they already had,
+// so each channel only divides again when its period changes.
 static u32 hz_scale;
 HOT static u32 period_to_inc(u32 divisor) {
   if (!divisor) return 0;
@@ -75,14 +77,20 @@ static u32 dmc_rate(u32 period) {
 }
 
 static void pulse_update(struct pulse *p) {
+  if (p->timer == p->done_timer) return;
+  p->done_timer = p->timer;
   p->inc = p->timer >= 8 ? period_to_inc(16u * (p->timer + 1)) : 0;
   p->inverse = p->inc >> 16 ? 65536 / (p->inc >> 16) : 0;
 }
 HOT static void tri_update(void) {
+  if (tri.timer == tri.done_timer) return;
+  tri.done_timer = tri.timer;
   tri.inc = tri.timer >= 2 ? period_to_inc(32u * (tri.timer + 1)) : 0;
 }
 HOT static void fiveb_update(int c) {
   u32 period = fb.regs[c * 2] | (fb.regs[c * 2 + 1] & 15) << 8;
+  if (period == fb.done_period[c]) return;
+  fb.done_period[c] = period;
   fb.inc[c] = period_to_inc(32u * (period ? period : 1));  // measured in Mesen: 2 cycles a step, 16 steps
   fb.inverse[c] = fb.inc[c] >> 16 ? 65536 / (fb.inc[c] >> 16) : 0;
 }
