@@ -36,8 +36,10 @@ static void copy_chr(volatile u8 *dst, u32 page) {
 }
 
 // Fill a tile map from the NES nametables: t is the NES scroll, and the map's first
-// row holds picture line `line`. Returns the vertical offset into that row.
-HOT __attribute__((long_call, noinline)) static int draw_bg(volatile u16 *map, u16 t, int line, int rows) {
+// row holds picture line `line`. Returns the vertical offset into that row. With
+// only_written, the map already shows this place, and only rows the game has written
+// since are drawn again.
+HOT __attribute__((long_call, noinline)) static int draw_bg(volatile u16 *map, u16 t, int line, int rows, const u32 *only_written) {
   int sy = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + line;
   int nt_y = (t >> 11) & 1;
   while (sy >= 240) { sy -= 240; nt_y ^= 1; }
@@ -49,6 +51,11 @@ HOT __attribute__((long_call, noinline)) static int draw_bg(volatile u16 *map, u
     int col = (t & 31) + 1;  // the screen shows NES columns 8-247
     int ntx = (t >> 10) & 1;
     if (col >= 32) { col = 0; ntx ^= 1; }
+    if (only_written) {
+      u32 left = nt_index(0x2000 + (nty << 11) + (ntx << 10)) >> 10;
+      u32 right = nt_index(0x2000 + (nty << 11) + ((ntx ^ 1) << 10)) >> 10;
+      if (!((only_written[left] | only_written[right]) >> ry & 1)) continue;
+    }
     const u8 *nt = &ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))];
     const u8 *tiles = nt + ry * 32;
     const u8 *attrs = nt + 0x3C0 + (ry >> 2) * 8;
@@ -759,14 +766,32 @@ static void draw_plane_sprites(void) {
 // What a layer's map holds now, so it is only rebuilt when that changes.
 static struct { int t, row; } map_key[LAYERS] = {{-1, -1}, {-1, -1}, {-1, -1}};
 
+// The nametable rows written since each layer's map was drawn: a layer can go
+// undrawn for a while, when its part of the picture is gone.
+static u32 layer_rows[LAYERS][2];
+
+// 1 when a layer's map shows this place as it is, 2 when it shows this place but the
+// game has written to it since, and 0 when it shows somewhere else.
 static int layer_map_up_to_date(int layer, int t, int row) {
-  if (!nt_dirty && map_key[layer].t == t && map_key[layer].row == row) return 1;
+  if (map_key[layer].t == t && map_key[layer].row == row) return layer_rows[layer][0] | layer_rows[layer][1] ? 2 : 1;
   map_key[layer].t = t;
   map_key[layer].row = row;
   return 0;
 }
 
+// Draw a layer's map if it is not up to date: all of it, or the rows written since.
+static void update_layer(int layer, int t, int row, u16 nes_t, int line, int rows) {
+  int up = layer_map_up_to_date(layer, t, row);
+  if (up != 1) draw_bg(MAP(layer_map[layer]), nes_t, line, rows, up == 2 ? layer_rows[layer] : 0);
+  layer_rows[layer][0] = layer_rows[layer][1] = 0;
+}
+
 void video_present(void) {
+  for (int i = 0; i < LAYERS; i++) {
+    layer_rows[i][0] |= nt_rows_dirty[0];
+    layer_rows[i][1] |= nt_rows_dirty[1];
+  }
+  nt_rows_dirty[0] = nt_rows_dirty[1] = 0;
   if (p_loaded && !on_title()) {
     p_loaded = 0;
     loaded_obj[7] = loaded_obj_lower[7] = 0xFF;  // the P's tile is the last page's
@@ -848,7 +873,7 @@ void video_present(void) {
   load_bg_pages(0, top_chr, top_ctrl, cloud_stage >= 0);
 
   int picture_y = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7) + top;
-  if (!layer_map_up_to_date(0, top_t & 0x0C1F, picture_y >> 3)) draw_bg(MAP(layer_map[0]), top_t, top, 22);
+  update_layer(0, top_t & 0x0C1F, picture_y >> 3, top_t, top, 22);
   BG0VOFS = picture_y & 7;
   BG0HOFS = top_x;
   if (cloud_stage >= 0) {
@@ -881,7 +906,7 @@ void video_present(void) {
     int t = (r->t & 0x041F) | (r->own_row ? r->t & ~0x041F : top_t & ~0x041F);
     int y = ((t >> 5) & 31) * 8 + ((t >> 12) & 7) + (r->own_row ? top - SPLIT_ROW(r->line) + SPLIT_ROW(r->line) : top);
     load_bg_pages(layer, r->chr, r->ctrl, 0);
-    if (!layer_map_up_to_date(layer, t, y >> 3)) draw_bg(MAP(layer_map[layer]), t, top, 22);
+    update_layer(layer, t, y >> 3, t, top, 22);
     REG16(0x04000010 + layer * 4) = r->x;
     REG16(0x04000012 + layer * 4) = y & 7;
     int from = SPLIT_ROW(r->line) - top;
@@ -901,8 +926,7 @@ void video_present(void) {
     load_bg_pages(layer, r->chr, r->ctrl, 0);
     int key = r->t | r->own_row << 16;
     int fine = ((r->own_row ? 0 : status_line) + ((r->t >> 5) & 31) * 8 + ((r->t >> 12) & 7)) & 7;
-    if (!layer_map_up_to_date(layer, key, status_line))
-      draw_bg(MAP(layer_map[layer]), r->t, r->own_row ? 0 : status_line, status_h / 8 + 1);
+    update_layer(layer, key, status_line, r->t, r->own_row ? 0 : status_line, status_h / 8 + 1);
     REG16(0x04000010 + layer * 4) = r->x;
     REG16(0x04000012 + layer * 4) = fine - view_h;
     WIN0V = view_h << 8 | SCREEN_H;

@@ -54,9 +54,10 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 ## Known limits
 
 - It has been run in mGBA, and not on a real GBA.
-- Normal play takes about 70% of the GBA's time for a frame, and the busiest about 85%. With all
-  of Gimmick! 1.5's options on it takes about 80%, as their code is not in fast RAM. Some single
-  frames take more, up to about 140%, mostly where the NES itself runs long.
+- Normal play takes about 65% of the GBA's time for a frame, and the busiest stretch of the boss
+  fight about 75%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
+  in fast RAM. Some single frames take more, mostly a little over, where the game does its heavy
+  work every other frame, and up to about 140% while a stage loads.
 - It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
   vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
   But a heavy frame can still run over the GBA's own time for a frame. Then that frame is not

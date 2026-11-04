@@ -31,7 +31,8 @@ static int irq_pending;
 static u32 irq_due = 0xFFFFFFFF;
 
 u8 ppu_ctrl, ppu_mask, mirror_mode, nt_dirty = 1, palette_dirty = 1;
-u8 ciram[0x800] SLOW_RAM, palette[32], oam[256] SLOW_RAM;
+u32 nt_rows_dirty[2] = {~0u, ~0u};
+u8 ciram[0x800] SLOW_RAM, palette[32], oam[256] SLOW_RAM __attribute__((aligned(4)));
 static u8 ppu_status, ppu_buf, ppu_w, ppu_latch;
 static u16 ppu_v;
 u16 ppu_t;
@@ -210,7 +211,16 @@ HOT static u8 ppu_read_data(void) {
 HOT void ppu_data_write(u8 v) {
   ppu_latch = v;
   u16 a = ppu_v & 0x3FFF;
-  if (a >= 0x2000 && a < 0x3F00) { ciram[nt_index(a)] = v; nt_dirty = 1; }
+  if (a >= 0x2000 && a < 0x3F00) {
+    u32 i = nt_index(a), o = i & 0x3FF;
+    // The game writes much of it again as it was, the status bar every frame: that
+    // needs no drawing. An attribute byte colours four rows.
+    if (ciram[i] != v) {
+      ciram[i] = v;
+      nt_dirty = 1;
+      nt_rows_dirty[i >> 10] |= o < 0x3C0 ? 1u << (o >> 5) : 0xFu << ((o - 0x3C0) >> 3 << 2);
+    }
+  }
   else if (a >= 0x3F00) { palette[(a & 3) ? a & 31 : a & 15] = v; palette_dirty = 1; }
   ppu_v += (ppu_ctrl & 4) ? 32 : 1;
 }
@@ -238,7 +248,7 @@ HOT static void fme_write(u8 v) {
     prg_map[c - 9] = v & 0x3F;
     window[c - 9] = prg + (v & 0x3F) * 0x2000;
   }
-  else if (c == 12) mirror_mode = v;
+  else if (c == 12) { mirror_mode = v; nt_dirty = 1; nt_rows_dirty[0] = nt_rows_dirty[1] = ~0u; }
   else if (c == 13) {
     irq_count = irq_now(); irq_base = cyc; irq_ctl = v; irq_pending = 0; irq_schedule();
   } else {
@@ -321,7 +331,13 @@ HOT void wr(u16 a, u8 v) {
   if (a == 0x4014) {
     const u8 *from = &ram[(v & 7) << 8];  // the game only copies from RAM
     if (v >= 0x08) for (int i = 0; i < 256; i++) oam[i] = rd(v << 8 | i);
-    else for (int i = 0; i < 256; i++) oam[i] = from[i];
+    else {
+      // A word at a time: oam is in slow RAM, where a byte costs as much as a word.
+      typedef u32 __attribute__((may_alias)) word;
+      const word *f = (const word *)from;
+      word *o = (word *)oam;
+      for (int i = 0; i < 64; i++) o[i] = f[i];
+    }
     cyc += 513 + (cyc & 1);
     return;
   }

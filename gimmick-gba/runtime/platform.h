@@ -37,6 +37,7 @@ void cpu_power_on(const u8 *on);
 extern const u8 *prg, *chr;
 extern u8 chr_map[8];
 extern u8 ppu_ctrl, ppu_mask, mirror_mode, ppu_x, nt_dirty, palette_dirty;
+extern u32 nt_rows_dirty[2];  // for each of the two nametables, a bit for each row written
 extern u16 ppu_t;
 extern u8 ciram[0x800], palette[32], oam[256];
 // The picture at the top of the frame, and each mid-frame change after it.
