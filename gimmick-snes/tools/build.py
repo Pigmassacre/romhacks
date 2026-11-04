@@ -40,10 +40,11 @@ SOUND_HOOK = 0xEAA1         # sta $8000, in the NMI just after the sound code
 ORDER_FIXED = [(0x1F, 0xF2AC), (0x1F, 0xF399), (0x1D, 0x8F27), (0x1D, 0x8F6A)]
 # Other places that call the runtime, with how many bytes of the game's they take: (bank, pc).
 CALLS = {(0x1B, 0x8116): ("cloud_x", 8), (0x1B, 0x813C): ("title_menu", 64)}
-# Routines of the game's that do many PPU writes in vblank, done directly instead, and its
-# two bank switches, which through the stubs took far longer than the rest of the routine.
+# Routines of the game's that do many PPU writes in vblank, done directly instead; its two
+# bank switches, which through the stubs took far longer than the rest of the routine; and
+# its loop that hides the sprite slots it has not used.
 REPLACED = {0xF06B: "chr_all", 0xF3D3: "vram_flush", 0xF4CA: "spr_draw", 0xF52F: "spr_flip", 0xF32E: "clear_nt",
-            0xF051: "sw_bank8", 0xF05E: "sw_bankA"}
+            0xF051: "sw_bank8", 0xF05E: "sw_bankA", 0xF390: "hide_rest"}
 
 # 2C02 colours.
 NES_RGB = [tuple(bytes.fromhex(c)) for c in """

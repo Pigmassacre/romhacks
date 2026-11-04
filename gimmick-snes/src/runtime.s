@@ -131,17 +131,19 @@ set_wr:      .res 12        ; a split wrote this slot itself, so it must be copi
 nmi_count:   .res 1
 .export obj2_have
 .export apu_regs, sb_cmd, sb_regs, apu_kick
-apu_regs:    .res 32
+apu_regs:    .res 48        ; $4000-$4017, then the 5B's 16 at $20: the SPC700's numbers
+sb_regs = apu_regs + $20
 apu_kick:    .res 5         ; new notes on the four channels, and DPCM started
-apu_sent:    .res 24
-sb_sent:     .res 16
+apu_sent:    .res 48        ; what the SPC700 has, in the same order
+sb_sent = apu_sent + $20
 bank_sent:   .res 1
 spc_tog:     .res 1         ; bit 7 changes with each message to the SPC700
 spc_odd:     .res 1         ; bit 7: a register waits for a second, in spc_reg and spc_val
 spc_reg:     .res 1
 spc_val:     .res 1
+spc_busy:    .res 1         ; a message has gone that the SPC700 may not have taken yet
+spc_last:    .res 1         ; its first register
 sb_cmd:      .res 1
-sb_regs:     .res 16
 hdma_tab:    .res 16
 .export hdma_tab
 attr_shadow: .res 128
@@ -3372,7 +3374,7 @@ spr_check:
 ; of $0200 and convert_oam, which knows about them. There are four copies, as the two halves of
 ; OAM are more than an index register's reach and mirroring changes how X comes out.
 .macro spr_body self, other, mirrored, buf, upper
-.local @sprite, @skip, @fine, @same, @down, @commit, @neg, @on, @up, @set, @slow
+.local @sprite, @skip, @fine, @down, @commit, @neg, @on, @slow, @same
 self:
         lda $EF
         asl a
@@ -3386,6 +3388,7 @@ self:
 @slow:  jsr spr_raw
         jmp self
 @sprite:
+        ; x stays the slot's place in buf until the slot moves on, in @commit or spr_raw.
         lda ($08),y
         bne :+
         rts
@@ -3395,6 +3398,13 @@ self:
         bcc :+
         jmp @skip
 :       sta spr_y
+        ; Both halves' Y, top first: a vertical flip swaps them, below.
+        sec
+        sbc #CROP_TOP - 1
+        sta buf + 1,x
+        clc
+        adc #8
+        sta buf + 5,x
         iny
         lda ($08),y
         lsr a
@@ -3425,22 +3435,12 @@ self:
 @same:  lda spr_attr + 1    ; its top bit is the vertical flip, as on the NES
         sta buf + 3,x
         sta buf + 7,x
-        bmi @down
-        lda spr_y
-        sec
-        sbc #CROP_TOP - 1
+        bpl @fine
+@down:  lda buf + 5,x
         sta buf + 1,x
-        clc
-        adc #8
-        sta buf + 5,x
-        bra @fine
-@down:  lda spr_y
         sec
-        sbc #CROP_TOP - 1
+        sbc #8
         sta buf + 5,x
-        clc
-        adc #8
-        sta buf + 1,x
 @fine:  iny
 .if mirrored
         lda #$FA
@@ -3472,15 +3472,15 @@ self:
         lda $05
         adc #$FF
 @on:    beq @commit
-        jmp self            ; off the screen: the slot is still free
+        jmp @sprite         ; off the screen: the slot is still free
 @skip:  iny
         iny
         iny
         iny
-        jmp self
+        jmp @sprite
 @commit:
         ldx $EF
-        lda #1
+        txa                 ; never 0: the slots start at $20
         sta spr_flag,x
 .ifdef SPR_SHADOW
         lda spr_y
@@ -3491,9 +3491,24 @@ self:
         sta $0202,x
         lda spr_x
         sta $0203,x
+        txa
 .endif
-        jsr_free_advance
-        jmp self
+        clc                 ; jsr_free_advance, with $EF already in a
+        adc #4
+        bne :+
+        lda #$20
+        inc $6F
+:       sta $EF
+        ; as self does, from the new $EF in a
+        asl a
+        tax
+.if upper
+        bcs :+
+.else
+        bcc :+
+.endif
+        jmp other
+:       jmp @sprite
 .endmacro
 
 ; On to the next slot. x is $EF. The game reverses the order every other frame, so that with the
@@ -4042,6 +4057,32 @@ pad_all:
         ldx #0
         rts
 
+; The game's hiding of the sprite slots it has not used this frame, $F390: Y = $F4 in each, from
+; $EF up. ORDER_FIXED makes every frame go up. Its loop takes four iny a slot: this jumps into a
+; run of stores, a third of the time. Left as the game's: a = $F4, y = 0, z set.
+.export hide_rest
+hide_rest:
+        lda $6F
+        bne @out            ; the slots have gone round: none is free
+        phx
+        lda $EF
+        lsr a
+        tax
+        lda #$F4
+        jmp (hide_at,x)
+@out:   rts
+hide_run:
+.repeat 64, k
+        sta $0200 + k * 4
+.endrepeat
+        plx
+        ldy #0
+        rts
+hide_at:
+.repeat 64, k
+        .word hide_run + k * 3
+.endrepeat
+
 ; The same, a bit at a time, for TEST_AUTOPLAY's buttons: the game reads the pad here.
 pad_read:
         lda $4016
@@ -4143,8 +4184,10 @@ sound_hook:
         sta apu_sent + 3,x
 :       dey
         bpl @sw
+        ; What has changed: the APU's $00-$15, then the 5B's $20-$2F. The CPU is in emulation
+        ; mode here, so this is a byte at a time.
         ldy #0
-@apu:   lda apu_regs,y
+@reg:   lda apu_regs,y
         cmp apu_sent,y
         beq :+
         sta apu_sent,y
@@ -4152,20 +4195,10 @@ sound_hook:
         jsr spc_send
 :       iny
         cpy #$16
-        bne @apu
-        ldy #0
-@sb:    lda sb_regs,y
-        cmp sb_sent,y
-        beq :+
-        sta sb_sent,y
-        tya
-        ora #$20
-        tax
-        lda sb_regs,y
-        jsr spc_send
-:       iny
-        cpy #16
-        bne @sb
+        bne :+
+        ldy #$20
+:       cpy #$30
+        bne @reg
         ; The new notes, whose length counter comes from a register sent just now
         ldy #0
 @kick:  lda apu_kick,y
@@ -4203,7 +4236,8 @@ sound_hook:
         rts
 
 ; A value in a for the register in x, keeping y. Each message waits for the SPC700 to
-; answer, so they carry two: the first waits in spc_reg and spc_val for the second.
+; answer, so they carry two: the first waits in spc_reg and spc_val for the second. The wait
+; is just before the next message, so the SPC700 takes this one while the CPU goes on.
 spc_send:
         bit spc_odd
         bmi spc_pair
@@ -4219,6 +4253,14 @@ spc_flush:
         ldx #$FF
 spc_pair:
         stz spc_odd
+        pha
+        lda spc_busy
+        beq @free
+        lda spc_tog
+        ora spc_last
+:       cmp APUIO0
+        bne :-
+@free:  pla
         stx APUIO2
         sta APUIO3
         lda spc_val
@@ -4228,8 +4270,10 @@ spc_pair:
         sta spc_tog
         ora spc_reg
         sta APUIO0
-:       cmp APUIO0
-        bne :-
+        lda spc_reg
+        sta spc_last
+        lda #1
+        sta spc_busy
 :       rts
 
 ; ---- Start-up, called from the boot code ------------------------------------------

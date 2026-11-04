@@ -214,14 +214,23 @@ stubs, which ran from RAM; they are in fast ROM now. Besides that:
   through a stub, 3% of a frame. `pad_all` replaces the whole read with what the SNES reads by itself at the
   start of vblank (`NMITIMEN` bit 0, which every write of it keeps on).
 - **The SPC700.** Each message waited for the driver to answer, and when it was updating its voices that took up
-  to 15% of a frame. Now that update stops for a message, and each message carries two registers.
+  to 15% of a frame. Now that update stops for a message, each message carries two registers, and the wait is
+  just before the next message, so the driver takes one while the CPU goes on: 2,500 master clocks a frame
+  where it was 15,000. The 5B's registers sit after the APU's, at the driver's own numbers, for one loop.
 - **Bank switches.** The game's own two routines for `$8000` and `$A000`, `$F051` and `$F05E`, are done whole
   (`sw_bank8`, `sw_bankA`), not as two stubs and a jump table, and a switch to the bank already there does not
   jump.
+- **Hiding unused sprites.** The game's loop at `$F390` puts Y = `$F4` in each slot it has not used, with four
+  `iny` a slot. `hide_rest` jumps into a run of 64 stores at the first free one.
+- **`spr_body`** writes both halves' Y before it knows of a vertical flip, and swaps them for one, and goes on to
+  the next sprite without reading `$EF` again.
 
-That took the busiest frames found from all of the frame to about 92% of it, and the median frame in the first
-boss's room from 64% to 54%. The first boss's arrival lost frames the NES did not, and no longer does. What is left is
-mostly the DMAs for sprites and CHR pages, the game's sound driver, and `spr_body`.
+The CPU is in emulation mode while the game runs, so `rep #$20` does nothing there: everything is a byte at a time.
+
+That took the busiest frames of the first boss's fight from all of the frame to 79% of it, and its median frame
+from 64% to 52%. The boss's arrival lost frames the NES did not, and no longer does. What is left is spread thin:
+the DMAs for sprites and CHR pages, the game's sound driver and the stubs it writes through, the status bar's
+interrupt, and `spr_body`. `ROMC` is 7.5 KB of its 8.
 
 ## What was found out along the way
 
