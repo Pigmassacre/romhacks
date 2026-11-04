@@ -453,10 +453,25 @@ static int camera(int play_h, int view_h, int has_status) {
     cam_y = TITLE_TOP;
     return cam_y;
   }
+  // Going to another room, the game changes the room a frame before the picture, then
+  // wipes the screen without the status bar while it draws the new one. The camera
+  // stays put on the old room, goes straight to its place in the new one for the wipe,
+  // and is there when the status bar is back. (Easing over looked like the camera
+  // racing to catch up.) A move without a wipe goes there a frame later.
+  static int last_room = -1, room_changed, status_view_h, status_range;
+  // $A4:$9A holds Yumetaro's feet: the room in the top 4 bits, then the line in it.
+  int feet = (ram[0xA4] & 15) << 4 | ram[0x9A] >> 4;
   if (has_status && ram[0x90]) {
-    // $A4:$9A holds Yumetaro's feet: the room in the top 4 bits, then the line in it.
-    int feet = (ram[0xA4] & 15) << 4 | ram[0x9A] >> 4;
     want = feet - view_h * 3 / 5;
+    status_view_h = view_h;
+    status_range = range;
+  } else if (room_changed && ram[0x90]) {
+    want = feet - status_view_h * 3 / 5;
+    if (want > status_range) want = status_range;
+    if (want < 0) want = 0;
+    if (want > range) want = range;
+    cam_y = want;
+    return cam_y;
   } else {
     // The game can fill a nametable while the scroll still points at another, and only
     // then point at it, so a change of either means looking again.
@@ -473,11 +488,13 @@ static int camera(int play_h, int view_h, int has_status) {
   }
   if (want < 0) want = 0;
   if (want > range) want = range;
-  // Going to another room, the NES shows it at once, and so does the camera. Easing
-  // over to Yumetaro's new place looked like the camera racing to catch up.
-  static int last_room = -1;
   if (ram[0xA4] >> 4 != last_room) {
     last_room = ram[0xA4] >> 4;
+    room_changed = 1;
+    return cam_y;
+  }
+  if (room_changed) {
+    room_changed = 0;
     cam_y = want;
     return cam_y;
   }
