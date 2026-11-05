@@ -55,8 +55,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 
 - It has been played in mGBA and on an Analogue Pocket, and not on a real GBA.
 - Normal play takes about 55% of the GBA's time for a frame, and the busiest stretch of the boss
-  fight about 70%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
-  in fast RAM. A few single frames in the boss fight go a little over, up to about 106%, and
+  fight about 65%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
+  in fast RAM. A single frame in the boss fight goes a little over, to about 105%, and
   loading a stage can take two or three frames' worth.
 - It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
   vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
@@ -105,6 +105,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   has to be made in the other by hand.
 - `runtime/core.c` is the FME-7 mapper, the PPU's registers and the loop that runs blocks and takes
   interrupts. `runtime/apu.c` mixes the NES's five sound channels and the Sunsoft 5B's three.
+  The squares cost by their edges, not their samples: the 5B plays notes high enough to
+  have an edge every sample or two, and taken a sample at a time they cost a tenth of a frame.
   `runtime/video.c` draws each frame from the NES's nametables and sprites. A split low on the
   screen is the status bar, on its own background layer, with its own sprites. A higher one, like the title's logo over
   its scrolling ground, is one picture in two parts.

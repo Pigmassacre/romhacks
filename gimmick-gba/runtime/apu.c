@@ -11,8 +11,13 @@
 int apu_only = 0xFF;  // the PC build can render one channel at a time
 #endif
 #define MAX_SPAN 80   // samples between frame counter ticks, at most: 304 a frame, in 4
+#define FIXED_BANK 31  // $E000, the last 8 KB
+extern const u8 *prg;  // core.c's, for the DPCM's bytes
+extern u8 prg_map[3];
 
-static const u8 duty_steps[4] = {0x40, 0x60, 0x78, 0x9F};  // one bit per step
+// Of a wave's 8 steps, the first that is high in the low nibble and how many are in the
+// high one: 12.5%, 25%, 50% and 25% inverted.
+static const u8 duty_steps[4] = {0x16, 0x25, 0x43, 0x67};
 static const u8 length_table[32] = {10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30};
 static const u16 noise_periods[16] = {4,8,16,32,64,96,128,160,202,254,380,508,762,1016,2034,4068};
 static const u16 dmc_periods[16] = {428,380,340,320,286,254,226,214,190,160,142,128,106,84,72,54};
@@ -22,8 +27,8 @@ static const u16 dmc_periods[16] = {428,380,340,320,286,254,226,214,190,160,142,
 static const u8 fiveb_levels[16] = {0,1,1,2,3,4,5,7,10,14,20,28,39,55,78,110};
 
 struct pulse {
-  u32 phase, inc, inverse;
-  u16 timer, done_timer;  // done_timer: what inc and inverse were worked out for
+  u32 phase, inc, wave;
+  u16 timer, done_timer;  // done_timer: what inc and wave were worked out for
   u8 duty, length, env_on, env_loop, env_period, env_div, env_vol, const_vol, start;
   u8 sweep_on, sweep_period, sweep_neg, sweep_shift, sweep_div, sweep_reload, halt, enabled;
 };
@@ -44,12 +49,12 @@ static struct {
 static struct {
   u32 accum, inc;
   u16 addr, left, start_addr, start_len;
-  u8 level, shift, bits, loop, silent;
-} dmc = {.silent = 1};
+  u8 level, shift, bits, loop;
+} dmc;
 
 static struct {
   u8 regs[16], select;
-  u32 phase[3], inc[3], inverse[3];
+  u32 phase[3], inc[3], wave[3];
   u16 done_period[3];
   u32 env_phase, env_inc, noise_accum, noise_inc;
   u16 noise_lfsr;
@@ -62,7 +67,10 @@ static int noise_period = 4;
 // Phase runs over 2^32 for one whole wave: 2^32 * (CPU_HZ / divisor) / sample_hz. The
 // music writes these registers all the time, mostly with the period they already had,
 // so each channel only divides again when its period changes.
-static u32 hz_scale;
+static u32 hz_scale, wave_scale;
+// How many samples a wave of this many cycles lasts, in 16.16: wave_scale is
+// 2^32 * sample_hz / CPU_HZ, worked out once.
+static u32 wave_length(u32 cycles) { return (uint64_t)cycles * wave_scale >> 16; }
 HOT static u32 period_to_inc(u32 divisor) {
   if (!divisor) return 0;
   u32 scaled = hz_scale / divisor;
@@ -80,7 +88,7 @@ static void pulse_update(struct pulse *p) {
   if (p->timer == p->done_timer) return;
   p->done_timer = p->timer;
   p->inc = p->timer >= 8 ? period_to_inc(16u * (p->timer + 1)) : 0;
-  p->inverse = p->inc >> 16 ? 65536 / (p->inc >> 16) : 0;
+  p->wave = p->inc ? wave_length(16u * (p->timer + 1)) : 0;
 }
 HOT static void tri_update(void) {
   if (tri.timer == tri.done_timer) return;
@@ -92,12 +100,13 @@ HOT static void fiveb_update(int c) {
   if (period == fb.done_period[c]) return;
   fb.done_period[c] = period;
   fb.inc[c] = period_to_inc(32u * (period ? period : 1));  // measured in Mesen: 2 cycles a step, 16 steps
-  fb.inverse[c] = fb.inc[c] >> 16 ? 65536 / (fb.inc[c] >> 16) : 0;
+  fb.wave[c] = wave_length(32u * (period ? period : 1));
 }
 
 void apu_init(u32 hz) {
   sample_hz = hz;
   hz_scale = (u32)(((uint64_t)CPU_HZ << 24) / hz);
+  wave_scale = (u32)(((uint64_t)hz << 32) / CPU_HZ);
   noise.inc = period_to_inc(noise_periods[0]);
   dmc.inc = dmc_rate(dmc_periods[0]);
   fb.noise_inc = period_to_inc(32);
@@ -266,46 +275,32 @@ static inline u32 fiveb_env_level(void) {
 
 // Each channel is added to the buffer in a loop of its own, and a silent one costs
 // only its phase. No tables: on the GBA, those would be read from slow ROM.
-// A square wave's edges land between samples. Sampling it plainly turns that into
-// harsh aliasing, so a sample an edge falls in gets the share of its time spent high.
-// The wave has 8 steps, one bit each in shape. Almost every sample is between edges, so
-// it works out how many there are until the next step and takes those in one go.
-// The squares go into a buffer of changes, not of levels: each square writes only where
-// its level changes, and one pass at the end adds them all up. That makes
-// a square cost by its edges, not its samples. inverse is 2^16 / (inc >> 16).
-#define SET(at, v) do { int v_ = (v); if (v_ != cur) { delta[at] += v_ - cur; cur = v_; } } while (0)
-HOT static u32 add_square(short *delta, int n, u32 phase, u32 inc, u32 inverse, int vol, u32 shape) {
-  int i = 0, cur = 0;
-  while (i < n) {
-    // To the next step where the wave changes level, not just the next step: the 5B's
-    // squares change twice a wave, and at high notes the steps come every sample or two.
-    u32 step = phase >> 29, level = (shape >> step) & 1, same = 1;
-    while (same < 7 && ((shape >> ((step + same) & 7)) & 1) == level) same++;
-    u32 left = same * 0x20000000 - (phase & 0x1FFFFFFF);
-    int run = ((left >> 16) * inverse) >> 16;
-    if (run > n - i) run = n - i;
-    if (run) {
-      SET(i, (shape >> (phase >> 29)) & 1 ? vol : 0);
-      i += run;
-      phase += inc * run;
-      if (i >= n) break;
-    }
-    u32 was_high = (shape >> (phase >> 29)) & 1;
-    phase += inc;
-    u32 high = (shape >> (phase >> 29)) & 1;
-    if (was_high == high) {
-      SET(i, high ? vol : 0);
-    } else {
-      u32 since = (((phase & 0x1FFFFFFF) >> 16) * inverse) >> 16;
-      if (since > 65535) since = 65535;
-      SET(i, (vol * (high ? since : 65535 - since)) >> 16);
-    }
-    i++;
+// The squares go into a buffer of changes, not of levels, and one pass at the end adds
+// them all up: each edge adds its step at the first sample after it. So a square costs
+// by its edges and nothing for the samples between, which matters for the 5B's high
+// notes, with an edge every sample or two. Each sample takes the level at its start.
+// Splitting the step between two samples by where the edge falls takes the aliasing
+// out, but Mesen's sound, sampled the same way, matches this better (compare_audio.py).
+// wave is how long a whole wave lasts, in samples as 16.16, and the wave is high for
+// `high` of its 8 steps from step `first`.
+HOT static u32 add_square(short *delta, int n, u32 phase, u32 inc, u32 wave, int vol, u32 first, u32 high) {
+  u32 end = phase + inc * n;
+  if (wave < 1u << 16) {  // more than a wave a sample: what is heard is its average
+    delta[0] += vol * high >> 3;
+    return end;
   }
-  SET(n, 0);  // delta has n + 1 entries: the square ends with the span
-  return phase;
+  int on = ((phase >> 29) - first & 7) < high;
+  if (on) delta[0] += vol;
+  // To the next edge, then from edge to edge: high for high steps, low for the rest.
+  u32 t = (uint64_t)(((on ? first + high : first) << 29) - phase) * wave >> 32;
+  u32 t_high = (uint64_t)(high << 29) * wave >> 32, t_low = (uint64_t)((8 - high) << 29) * wave >> 32;
+  int step = on ? -vol : vol;
+  for (u32 limit = (u32)n << 16; t < limit; step = -step) {
+    delta[(t + 0xFFFF) >> 16] += step;  // up to delta[n], which has room
+    t += step < 0 ? t_low : t_high;
+  }
+  return end;
 }
-#undef SET
 
 #ifdef HOST
 // The squares' changes, added up into the buffer, and cleared for the next ones. The
@@ -323,7 +318,7 @@ HOT static void squares_done(short *buf, short *delta, int n) {
 
 HOT static void mix_pulse(short *delta, int n, struct pulse *p, u32 duty) {
   int vol = pulse_level(p) * 2;
-  if (vol && p->inverse) p->phase = add_square(delta, n, p->phase, p->inc, p->inverse, vol, duty);
+  if (vol && p->wave) p->phase = add_square(delta, n, p->phase, p->inc, p->wave, vol, duty & 15, duty >> 4);
   else p->phase += p->inc * n;
 }
 
@@ -364,42 +359,43 @@ HOT static int mix_dmc(short *buf, int n) {
   u32 accum = dmc.accum, inc = dmc.inc;
   int level = dmc.level;
   if (!dmc.bits && !dmc.left) {
-    dmc.silent = 1;
     dmc.accum = (accum + inc * n) & 0xFFFF;
     return (level * 15) >> 4;
   }
-  // In locals: the writes to buf could be any of these for all the compiler knows.
-  u32 shift = dmc.shift, bits = dmc.bits, silent = dmc.silent, addr = dmc.addr, left = dmc.left;
-  for (int i = 0; i < n; i++) {
+  // In 32-bit locals: the writes to buf could be any of these for all the compiler
+  // knows, and 16-bit ones would be masked again at every step. A bit is played only
+  // while one is left of a byte; with none left and no byte to read, nothing changes.
+  // The bytes are read from the bank straight away: a call to rd() here would leave the
+  // loop too few registers to keep these in.
+  u32 shift = dmc.shift, bits = dmc.bits, addr = dmc.addr, left = dmc.left;
+  int out = (level * 15) >> 4;
+  for (short *end = buf + n; buf < end; buf++) {
     accum += inc;
-    for (u32 steps = accum >> 16; steps; steps--) {
-      if (!bits) {
-        if (left) {
-          shift = rd(addr);
+    if (accum >> 16) {
+      do {
+        accum -= 0x10000;
+        if (!bits) {
+          if (!left) { accum &= 0xFFFF; break; }
+          u32 bank = addr >= 0xE000 ? FIXED_BANK : prg_map[(addr - 0x8000) >> 13];  // samples are at $8000 up
+          shift = prg[bank << 13 | (addr & 0x1FFF)];
           addr = addr == 0xFFFF ? 0x8000 : addr + 1;
           bits = 8;
-          silent = 0;
           if (!--left && dmc.loop) { addr = dmc.start_addr; left = dmc.start_len; }
-        } else {
-          silent = 1;
         }
-      }
-      if (!silent && bits) {
         // Up 2 for a 1 and down 2 for a 0, unless that leaves 0-127.
         int next = level + (int)((shift & 1) << 2) - 2;
         if ((u32)next <= 127) level = next;
         shift >>= 1;
         bits--;
-      }
+      } while (accum >> 16);
+      out = (level * 15) >> 4;
     }
-    accum &= 0xFFFF;
-    buf[i] += (level * 15) >> 4;
+    *buf += out;
   }
   dmc.accum = accum;
   dmc.level = level;
   dmc.shift = shift;
   dmc.bits = bits;
-  dmc.silent = silent;
   dmc.addr = addr;
   dmc.left = left;
   return 0;
@@ -415,8 +411,8 @@ HOT static void mix_fiveb(short *buf, short *delta, int n, const u8 *levels) {
     int vol = levels[r & 15];
     u32 phase = fb.phase[c], inc = fb.inc[c];
     if (vol && !noise_on) {
-      if (tone_on && fb.inverse[c]) {
-        phase = add_square(delta, n, phase, inc, fb.inverse[c], vol, 0xF0);
+      if (tone_on && fb.wave[c]) {
+        phase = add_square(delta, n, phase, inc, fb.wave[c], vol, 4, 4);
       } else if (!tone_on) {
         for (int i = 0; i < n; i++) buf[i] += vol;
       }
