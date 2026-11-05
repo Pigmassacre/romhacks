@@ -56,8 +56,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
 - It has been played in mGBA and on an Analogue Pocket, and not on a real GBA.
 - Normal play takes about 55% of the GBA's time for a frame, and the busiest stretch of the boss
   fight about 65%. With all of Gimmick! 1.5's options on it takes about 70%, as their code is not
-  in fast RAM. A single frame in the boss fight goes a little over, to about 105%, and
-  loading a stage can take two or three frames' worth.
+  in fast RAM. Loading the map or a stage, the game's own work for a frame can take more than a
+  frame while the screen is black, and a few frames just after a stage begins go a little over.
 - It has no slowdown where the NES has it: when the game's work for a frame runs past vblank,
   vblank waits for it, by up to a frame, instead of the game losing that frame as on the NES.
   But a heavy frame can still run over the GBA's own time for a frame. Then the game slows for
@@ -93,6 +93,8 @@ the cartridge's save memory keeps them. See [Gimmick! 1.5](../gimmick-1.5/) for 
   the background go between the stage and the mask, where the NES shows them.
 - The world map's arrival builds the island's tiles from the NES's nametable when it opens: the
   affine layer has 8-bit tiles and one byte a cell, so each tile and palette pair becomes a tile.
+  Its cells take one frame, shown black as the frames before the map are, and its tiles the next:
+  together they take about a frame's time.
   Each line's scale and place on the picture comes from a table that an HBlank DMA copies into
   the affine registers, set up again at every VBlank. Sprites that touch are one thing, placed by
   where its bottom edge lands on the plane. They are drawn into a copy of OAM, shown with the

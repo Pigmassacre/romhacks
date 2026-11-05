@@ -529,9 +529,14 @@ const u8 *parallax;
 static u32 kept_pals;
 static u16 sky_kept[4][256] SLOW_RAM;
 static u8 kept_colours[KEPT_TILES] SLOW_RAM;  // bit c - 1 for each colour c a kept tile has
+static u32 kept_masks[KEPT_TILES * 8] SLOW_RAM;  // made at start-up: see load_kept_masks
 static u8 kept_version[4] SLOW_RAM;  // the version of each page in the picture, or 0
 static u32 not_sky;  // per palette 3 bits: its colours 1-3 that are none of the sky's
 static int kept_masks_in, kept_changed;
+// For each tile of the pages, the kept tile it has or 0xFF, and that one's colours;
+// and the colours each palette's sky_kept was made for (0xFF: none yet).
+static u8 kept_of[256] SLOW_RAM, colours_of[256] SLOW_RAM;
+static u8 kept_made[4] = {0xFF, 0xFF, 0xFF, 0xFF}, kept_of_made;
 
 // The stages with clouds behind them, in play, with the clouds' page in.
 static int parallax_stage(int parts, int status) {
@@ -545,8 +550,10 @@ static void draw_clouds(int stage) {
   if (stage == drawn) return;
   drawn = stage;
   const u8 *st = PAR_STAGE(stage), *cells = PAR_MAPS + (st[0] - 1) * 1024;
-  volatile u16 *map = MAP(CLOUD_MAP);
-  for (int i = 0; i < 32 * 32; i++) map[i] = (CLOUD_TILE + cells[i]) | st[1] << 12;
+  volatile u32 *map = (volatile u32 *)MAP(CLOUD_MAP);  // two cells a write
+  u32 pal = st[1] << 12;
+  for (int i = 0; i < 32 * 32 / 2; i++)
+    map[i] = (CLOUD_TILE + cells[i * 2] | pal) | (CLOUD_TILE + cells[i * 2 + 1] | pal) << 16;
 }
 
 static void plane_init(void);
@@ -572,6 +579,28 @@ void video_init(void) {
     for (int n = 0; n < 16; n += 4)
       if (v >> n & 15) kept_colours[i / 16] |= 1 << ((v >> n & 15) - 1);
   }
+  // The masks, eight pixels at a time: after the shifts, each pixel's lowest bit says
+  // whether it is not colour 0. They go in on every stage after the map, whose island
+  // takes their place.
+  for (int i = 0; i < KEPT_TILES * 8; i++) {
+    const u8 *from = PAR_KEPT_TILES + i * 4;
+    u32 v = from[0] | from[1] << 8 | from[2] << 16 | from[3] << 24;
+    v |= v >> 1;
+    v |= v >> 2;
+    kept_masks[i] = (~v & 0x11111111) * 15;
+  }
+}
+
+// One palette's sky_kept, for the colours it has that are none of the sky's: whether
+// any tile keeps its own. In fast RAM: a stage's first frame makes all four.
+HOT __attribute__((long_call, noinline)) static u32 kept_table(u16 *out, u32 colours) {
+  u32 any = 0;
+  for (int v = 0; v < 256; v++) {
+    u32 hit = colours_of[v] & colours;
+    out[v] = hit ? KEPT_TILE + kept_of[v] : v;
+    any |= hit;
+  }
+  return any;
 }
 
 // Bring sky_kept and kept_pals up to date with the pages and palettes, for a stage
@@ -589,34 +618,34 @@ static int update_kept(int stage) {
   if (mask == not_sky && !(mask && kept_changed)) return 0;
   int was = kept_pals;
   not_sky = mask;
-  kept_changed = 0;
-  kept_pals = 0;
-  for (int p = 0; p < 4; p++) {
-    u32 colours = mask >> (p * 3) & 7;
+  // This runs at changes of palette in a fade, so the tiles are looked up again only
+  // when the pages change, and a palette's table is made again only when its colours do.
+  if (kept_changed || !kept_of_made) {
     for (int i = 0; i < 4; i++) {
       const u8 *index = PAR_KEPT_INDEX + (kept_version[i] - 128) * 64;
       for (int t = 0; t < 64; t++) {
-        u32 v = i * 64 + t;
-        if (kept_version[i] && index[t] != 0xFF && kept_colours[index[t]] & colours) {
-          v = KEPT_TILE + index[t];
-          kept_pals |= 1 << p;
-        }
-        sky_kept[p][i * 64 + t] = v;
+        u32 k = kept_version[i] ? index[t] : 0xFF;
+        kept_of[i * 64 + t] = k;
+        colours_of[i * 64 + t] = k != 0xFF ? kept_colours[k] : 0;
       }
     }
+    for (int p = 0; p < 4; p++) kept_made[p] = 0xFF;
+    kept_of_made = 1;
+  }
+  kept_changed = 0;
+  for (int p = 0; p < 4; p++) {
+    u32 colours = mask >> (p * 3) & 7;
+    if (colours == kept_made[p]) continue;
+    kept_made[p] = colours;
+    kept_pals = kept_table(sky_kept[p], colours) ? kept_pals | 1 << p : kept_pals & ~(1u << p);
   }
   return kept_pals || was;
 }
 
 // The kept sky tiles' masks, on the third layer: the sky's colour where they have colour 0.
 static void load_kept_masks(void) {
-  volatile u16 *to = (volatile u16 *)(VRAM + 2 * 0x4000 + KEPT_TILE * 32);
-  for (int i = 0; i < KEPT_TILES * 16; i++) {
-    u32 v = PAR_KEPT_TILES[i * 2] | PAR_KEPT_TILES[i * 2 + 1] << 8, m = 0;
-    for (int n = 0; n < 16; n += 4)
-      if (!(v >> n & 15)) m |= 15 << n;
-    to[i] = m;
-  }
+  volatile u32 *to = (volatile u32 *)(VRAM + 2 * 0x4000 + KEPT_TILE * 32);
+  for (int i = 0; i < KEPT_TILES * 8; i++) to[i] = kept_masks[i];
   kept_masks_in = 1;
 }
 
@@ -654,51 +683,72 @@ static inline int on_world_map(void) {
   return (top_ctrl & 0x10) && top_chr[4] == 0x54 && top_chr[5] == 0x55;
 }
 
-// The island's cells, as tiles of their own: 0 when that does not fit.
-static int build_island(int top) {
-  static u16 pairs[256] SLOW_RAM;
-  static u8 ids[1024] SLOW_RAM;  // by tile and palette
+// The island's cells, as tiles of their own, made in two parts: island_cells gives
+// each cell the id of its tile and palette and writes the map, 0 when the ids run out,
+// and island_tiles makes the tiles. Together they take most of a frame, so the map's
+// arrival does them on two.
+static u16 island_pairs[256] SLOW_RAM;  // by id: tile and palette
+static int island_count;
+
+static int island_cells(void) {
+  static u8 ids[1024] SLOW_RAM __attribute__((aligned(4)));  // by tile and palette
   int count = 0;
-  for (int i = 0; i < 1024; i++) ids[i] = 0xFF;
-  const u8 *pages = top_chr + 4;
-  volatile u8 *map = VRAM + AFFINE_MAP * 0x800;
+  u16 *pairs = island_pairs;
+  for (int i = 0; i < 1024 / 4; i++) ((u32 *)ids)[i] = 0xFFFFFFFF;
+  volatile u16 *map = (volatile u16 *)(VRAM + AFFINE_MAP * 0x800);  // VRAM takes 16 bits at a time
   int sy = ((top_t >> 5) & 31) * 8 + ((top_t >> 12) & 7);
-  int nt_y = (top_t >> 11) & 1;
-  for (int r = 0; r < 32; r++) {
+  int nt_y = (top_t >> 11) & 1, col0 = top_t & 31, ntx = (top_t >> 10) & 1;
+  for (int r = 0; r < 32; r++, map += 16) {
     int row = sy / 8 + r, nty = nt_y;
     while (row >= 30) { row -= 30; nty ^= 1; }
-    for (int c = 0; c < 32; c += 2) {
-      u8 cell[2];
-      for (int k = 0; k < 2; k++) {
-        int col = (top_t & 31) + c + k, ntx = (top_t >> 10) & 1;
-        if (col >= 32) { col -= 32; ntx ^= 1; }
-        const u8 *nt = &ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))];
-        u16 key = r < 30 ? nt[row * 32 + col] | (nt[0x3C0 + (row >> 2) * 8 + (col >> 2)] >> (((row & 2) << 1) | (col & 2)) & 3) << 8 : 0;
+    // The row's cells come from this nametable, then from the one beside it; below
+    // the picture, tile 0.
+    const u8 *nts[2] = {&ciram[nt_index(0x2000 + (nty << 11) + (ntx << 10))],
+                        &ciram[nt_index(0x2000 + (nty << 11) + ((ntx ^ 1) << 10))]};
+    int attr_row = 0x3C0 + (row >> 2) * 8, attr_shift = (row & 2) << 1;
+    u32 two = 0, last = 0xFFFF, id = 0;
+    for (int c = 0; c < 32; c++) {
+      int col = col0 + c;
+      const u8 *nt = nts[col >> 5];
+      col &= 31;
+      u32 key = r < 30 ? nt[row * 32 + col] | (nt[attr_row + (col >> 2)] >> (attr_shift | (col & 2)) & 3) << 8 : 0;
+      if (key != last) {  // mostly sea, the same as the cell before
+        last = key;
         if (ids[key] == 0xFF) {
           if (count == 255) return 0;
           ids[key] = count;
           pairs[count++] = key;
         }
-        cell[k] = ids[key];
+        id = ids[key];
       }
-      // VRAM takes 16 bits at a time.
-      *(volatile u16 *)(map + r * 32 + c) = cell[0] | cell[1] << 8;
+      two |= id << (c & 1) * 8;
+      if (c & 1) { map[c >> 1] = two; two = 0; }
     }
   }
-  for (int id = 0; id < count; id++) {
-    u32 t = pairs[id] & 0xFF, pal = pairs[id] >> 8;
+  island_count = count;
+  return 1;
+}
+
+static void island_tiles(void) {
+  // Each tile's two planes into 8-bit pixels, four at a time: spread puts a nibble's
+  // bits in a byte each, the first pixel's lowest, and a pixel not colour 0 gets its
+  // palette's 16 colours.
+  u32 spread[16];
+  for (int n = 0; n < 16; n++) spread[n] = (n >> 3 & 1) | (n >> 2 & 1) << 8 | (n >> 1 & 1) << 16 | (n & 1) << 24;
+  const u8 *pages = top_chr + 4;
+  for (int id = 0; id < island_count; id++) {
+    u32 t = island_pairs[id] & 0xFF, pal = (island_pairs[id] >> 8) * 16;
     const u8 *src = chr + pages[t >> 6] * 0x400 + (t & 63) * 16;
-    volatile u16 *dst = (volatile u16 *)(VRAM + 2 * 0x4000 + id * 64);
-    for (int y = 0; y < 8; y++)
-      for (int x = 0; x < 8; x += 2) {
-        u32 a = (src[y] >> (7 - x) & 1) | (src[8 + y] >> (7 - x) & 1) << 1;
-        u32 b = (src[y] >> (6 - x) & 1) | (src[8 + y] >> (6 - x) & 1) << 1;
-        dst[y * 4 + x / 2] = (a ? pal * 16 + a : 0) | (b ? pal * 16 + b : 0) << 8;
-      }
+    volatile u32 *dst = (volatile u32 *)(VRAM + 2 * 0x4000 + id * 64);
+    for (int y = 0; y < 8; y++) {
+      u32 lo = src[y], hi = src[8 + y];
+      u32 left = spread[lo >> 4] | spread[hi >> 4] << 1, right = spread[lo & 15] | spread[hi & 15] << 1;
+      dst[y * 2] = left + ((left | left >> 1) & 0x01010101) * pal;
+      dst[y * 2 + 1] = right + ((right | right >> 1) & 0x01010101) * pal;
+    }
   }
   for (int p = 0; p < 4; p++) loaded_bg[2][p] = 0xFFFF;  // the third layer's tiles are gone
   kept_masks_in = 0;
-  return 1;
 }
 
 // The plane, in the NES picture's pixels: the camera looks down the picture from
@@ -1071,7 +1121,9 @@ void video_present(void) {
   int title = on_title();
   int top = camera(status_line, view_h, status >= 0);
   // The world map: its arrival's frame, then MAP_FRAMES + 1 once it is on the plane; -1
-  // off the map, and -2 on one whose island does not fit, drawn as usual.
+  // off the map, -2 on one whose island does not fit, drawn as usual, and -3 when the
+  // island's cells are made and its tiles are next. The first frame the map is up makes
+  // the cells and shows black, as the frames before it did, and the next the tiles.
   static int island = -1;
   static u16 island_t;
   if (!on_world_map() || !(ppu_mask & 0x18)) {
@@ -1079,16 +1131,39 @@ void video_present(void) {
     island = -1;
     plane_pan = 0;
   } else if (island == -1 && !parts && status < 0) {
-    island = build_island(top) ? 0 : -2;
-    if (!island) plane_on();
     island_t = top_t;
+    if (island_cells()) {
+      island = -3;
+      DISPCNT = 0;
+      BG_PAL[0] = 0;
+      palette_dirty = 1;
+      ring.valid = 0;
+      nt_dirty = 0;
+      return;
+    }
+    island = -2;
+  } else if (island == -3) {
+    // Written since, the cells are made again, and both on this frame.
+    int fits = 1;
+    if (nt_dirty || top_t != island_t) {
+      island_t = top_t;
+      fits = island_cells();
+    }
+    if (fits) {
+      island_tiles();
+      island = 0;
+      plane_on();
+    } else {
+      island = -2;
+    }
   } else if (island >= 0 && (nt_dirty || top_t != island_t)) {
     island_t = top_t;
-    if (!build_island(top)) {
+    if (!island_cells()) {
       plane_off();
       island = -2;
-    } else if (island > MAP_FRAMES) {
-      island = MAP_FRAMES;  // place it again
+    } else {
+      island_tiles();
+      if (island > MAP_FRAMES) island = MAP_FRAMES;  // place it again
     }
   }
   if (island >= 0) {
